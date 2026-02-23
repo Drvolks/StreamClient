@@ -6,7 +6,5 @@
 	<array>
 		<string>group.BUNDLE_ID_PREFIX.NexusPVR</string>
 	</array>
-	<key>com.apple.security.network.client</key>
-	<true/>
 </dict>
 </plist>
