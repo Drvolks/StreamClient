@@ -113,6 +113,8 @@ final class AppState: ObservableObject {
     @Published var currentlyPlayingTitle: String?
     @Published var currentlyPlayingRecordingId: Int?
     @Published var currentlyPlayingResumePosition: Int?
+    @Published var currentlyPlayingChannelId: Int?
+    @Published var currentlyPlayingChannelName: String?
 
     // Navigation state
     @Published var selectedChannel: Channel?
@@ -176,11 +178,20 @@ final class AppState: ObservableObject {
         isShowingAlert = true
     }
 
-    func playStream(url: URL, title: String, recordingId: Int? = nil, resumePosition: Int? = nil) {
+    func playStream(
+        url: URL,
+        title: String,
+        recordingId: Int? = nil,
+        resumePosition: Int? = nil,
+        channelId: Int? = nil,
+        channelName: String? = nil
+    ) {
         currentlyPlayingURL = url
         currentlyPlayingTitle = title
         currentlyPlayingRecordingId = recordingId
         currentlyPlayingResumePosition = resumePosition
+        currentlyPlayingChannelId = channelId
+        currentlyPlayingChannelName = channelName
         isShowingPlayer = true
     }
 
@@ -188,7 +199,14 @@ final class AppState: ObservableObject {
         var history = WatchHistory.load()
         history.recordChannelPlay(channelId: channelId, channelName: channelName)
         history.save()
-        playStream(url: url, title: title)
+        playStream(
+            url: url,
+            title: title,
+            recordingId: nil,
+            resumePosition: nil,
+            channelId: channelId,
+            channelName: channelName
+        )
     }
 
     func stopPlayback() {
@@ -197,5 +215,7 @@ final class AppState: ObservableObject {
         currentlyPlayingTitle = nil
         currentlyPlayingRecordingId = nil
         currentlyPlayingResumePosition = nil
+        currentlyPlayingChannelId = nil
+        currentlyPlayingChannelName = nil
     }
 }
