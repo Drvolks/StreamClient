@@ -164,6 +164,7 @@ struct IOSNavigation: View {
                     recordingId: appState.currentlyPlayingRecordingId,
                     resumePosition: appState.currentlyPlayingResumePosition
                 )
+                .statusBarHidden()
             }
         }
         .onChange(of: searchText) { oldValue, newValue in
