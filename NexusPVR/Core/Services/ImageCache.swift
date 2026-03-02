@@ -135,6 +135,20 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .onChange(of: url) { _, newURL in
+            // Row views are reused (especially on tvOS). Reset state when URL changes
+            // so logos don't stick from the previous channel.
+            loadedImage = nil
+            loadFailed = false
+            isLoading = false
+
+            guard let newURL else { return }
+            if let cached = ImageCache.shared.image(for: newURL) {
+                loadedImage = cached
+            } else {
+                loadImage()
+            }
+        }
     }
 
     private func loadImage() {
