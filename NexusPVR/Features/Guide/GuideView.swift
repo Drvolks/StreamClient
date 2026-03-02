@@ -679,6 +679,7 @@ struct GuideView: View {
                                     gridWidth: gridWidth,
                                     pxPerMinute: pxPerMinute
                                 )
+                                .id(viewModel.channels[rowIndex].id)
                             }
                             Color.clear.frame(height: CGFloat(max(0, totalRows - 1 - lastRow)) * rowHeight)
                         }
@@ -752,7 +753,7 @@ struct GuideView: View {
     struct TVGridContainerButtonStyle: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
