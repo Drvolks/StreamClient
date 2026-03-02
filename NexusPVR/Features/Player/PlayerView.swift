@@ -48,6 +48,10 @@ struct PlayerView: View {
     @State private var videoHeight: Int?
     @State private var hwDecoder: String?
     @State private var audioChannelLayout: String?
+    #if DISPATCHERPVR
+    @State private var dispatchProfileBadge: String?
+    @State private var dispatchProfileRefreshTask: Task<Void, Never>?
+    #endif
     #if os(macOS)
     @State private var sleepAssertionID: IOPMAssertionID = 0
     #endif
@@ -265,6 +269,9 @@ struct PlayerView: View {
             // Prevent screen from sleeping during video playback
             UIApplication.shared.isIdleTimerDisabled = true
             #endif
+            #if DISPATCHERPVR
+            startDispatchProfileRefreshLoop()
+            #endif
         }
         .onDisappear {
             // Stop mpv immediately — dismantleUIView may be delayed by SwiftUI
@@ -286,7 +293,16 @@ struct PlayerView: View {
             // Re-enable screen sleeping
             UIApplication.shared.isIdleTimerDisabled = false
             #endif
+            #if DISPATCHERPVR
+            dispatchProfileRefreshTask?.cancel()
+            dispatchProfileRefreshTask = nil
+            #endif
         }
+        #if DISPATCHERPVR
+        .onChange(of: appState.currentlyPlayingChannelName) {
+            startDispatchProfileRefreshLoop()
+        }
+        #endif
         .onChange(of: duration) {
             // Resume playback position once duration is known (playback has started)
             if !hasResumed && duration > 0 {
@@ -517,15 +533,19 @@ struct PlayerView: View {
             .accessibilityIdentifier("player-close-button")
             #endif
 
-            Text(title)
+            Text(headerTitle)
                 .font(.headline)
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(0)
 
             Spacer()
 
             videoBadges
                 .padding(.trailing, 4)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(2)
         }
         .padding(.horizontal)
         .padding(.top, Theme.spacingMD)
@@ -537,23 +557,132 @@ struct PlayerView: View {
                 badgeText(resolutionLabel(height: height), color: .white)
             }
             if let codec = videoCodec {
-                badgeText(formatCodecName(codec), color: .white)
+                badgeText(codecBadgeText(codec), color: codecBadgeColor)
             }
-            if let hw = hwDecoder, !hw.isEmpty, hw != "no" {
-                badgeText(metalTaggedDecodeBadge(base: "HW"), color: .green)
-            } else if videoCodec != nil {
-                badgeText(metalTaggedDecodeBadge(base: "SW"), color: .orange)
+            #if DISPATCHERPVR
+            if let profile = dispatchProfileBadge {
+                badgeText(profile, color: .white)
             }
+            #endif
             if let audio = audioChannelLayout {
                 badgeText(audio, color: .white)
             }
         }
     }
 
-    private func metalTaggedDecodeBadge(base: String) -> String {
+    private var headerTitle: String {
+        return title
+    }
+
+    private var codecBadgeColor: Color {
+        if let hw = hwDecoder, !hw.isEmpty, hw != "no" {
+            return .green
+        }
+        return .yellow
+    }
+
+    private func codecBadgeText(_ codec: String) -> String {
+        let base = formatCodecName(codec)
         guard isUsingMetalRenderer else { return base }
         return "\(base) (M)"
     }
+
+    #if DISPATCHERPVR
+    private var canQueryDispatchProxyStatus: Bool {
+        // Streamer/output-only users don't have access to /proxy/ts/status.
+        appState.userLevel >= 1 && !client.useOutputEndpoints
+    }
+
+    private func startDispatchProfileRefreshLoop() {
+        dispatchProfileRefreshTask?.cancel()
+        guard canQueryDispatchProxyStatus else {
+            dispatchProfileBadge = nil
+            dispatchProfileRefreshTask = nil
+            return
+        }
+        dispatchProfileRefreshTask = Task {
+            await refreshDispatchProfileBadge()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(8))
+                await refreshDispatchProfileBadge()
+            }
+        }
+    }
+
+    private func refreshDispatchProfileBadge() async {
+        guard canQueryDispatchProxyStatus else {
+            dispatchProfileBadge = nil
+            return
+        }
+        // Stream status can lag behind player start, so retry briefly.
+        dispatchProfileBadge = nil
+        for attempt in 0..<5 {
+            if let profile = await loadDispatchProfileBadge() {
+                dispatchProfileBadge = profile
+                return
+            }
+            if attempt < 4 {
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func loadDispatchProfileBadge() async -> String? {
+        do {
+            let status = try await client.getProxyStatus()
+            guard let channels = status.channels, !channels.isEmpty else { return nil }
+
+            // Prefer active channels only when available.
+            let activeChannels = channels.filter { $0.state.lowercased() == "active" }
+            let candidates = activeChannels.isEmpty ? channels : activeChannels
+
+            let names = [
+                appState.currentlyPlayingChannelName,
+                appState.currentlyPlayingTitle,
+                title
+            ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+            if let matched = candidates.first(where: { channel in
+                names.contains(where: { matchesStreamName(channel.streamName, $0) })
+            }) {
+                return shortDispatchProfileName(from: matched.m3uProfileName)
+            }
+
+            // If only one active stream exists, use its profile as a fallback.
+            if candidates.count == 1 {
+                return shortDispatchProfileName(from: candidates[0].m3uProfileName)
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+
+    private func matchesStreamName(_ lhs: String, _ rhs: String) -> Bool {
+        let a = normalizedStreamName(lhs)
+        let b = normalizedStreamName(rhs)
+        if a.isEmpty || b.isEmpty { return false }
+        return a == b || a.contains(b) || b.contains(a)
+    }
+
+    private func normalizedStreamName(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "default", with: "")
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
+    }
+
+    private func shortDispatchProfileName(from profile: String?) -> String? {
+        guard let profile else { return nil }
+        let shortProfile = profile
+            .replacingOccurrences(of: "Default", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return shortProfile.isEmpty ? nil : shortProfile
+    }
+    #endif
 
     private var isUsingMetalRenderer: Bool {
         #if os(tvOS)
