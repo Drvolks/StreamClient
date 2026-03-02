@@ -16,6 +16,7 @@ enum RecordingFetcher {
 
         let session = URLSession(configuration: {
             let c = URLSessionConfiguration.default
+            c.waitsForConnectivity = true
             c.timeoutIntervalForRequest = 15
             c.timeoutIntervalForResource = 15
             return c

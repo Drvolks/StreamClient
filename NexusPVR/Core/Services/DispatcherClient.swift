@@ -35,6 +35,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     init(config: ServerConfig? = nil) {
         self.config = config ?? ServerConfig.load()
         let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: configuration)
@@ -111,6 +112,38 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return base + Double(attempt) * 0.15
     }
 
+    private func networkErrorDetail(_ error: Error, attempt: Int, willRetry: Bool) -> String {
+        let nsError = error as NSError
+        var parts: [String] = []
+
+        if let urlError = error as? URLError {
+            parts.append("URLError(\(urlError.code.rawValue): \(urlError.code))")
+        } else if nsError.domain == NSURLErrorDomain {
+            let code = URLError.Code(rawValue: nsError.code)
+            parts.append("URLError(\(nsError.code): \(code))")
+        } else {
+            parts.append("\(nsError.domain)(\(nsError.code))")
+        }
+
+        if let nwPath = nsError.userInfo["NSURLErrorNWPathKey"] {
+            parts.append("nwPath=\(nwPath)")
+        } else if let legacyPath = nsError.userInfo["_NSURLErrorNWPathKey"] {
+            parts.append("nwPath=\(legacyPath)")
+        }
+
+        if let failingURL = nsError.userInfo[NSURLErrorFailingURLErrorKey] {
+            parts.append("url=\(failingURL)")
+        } else if let failingURLString = nsError.userInfo["NSErrorFailingURLStringKey"] {
+            parts.append("url=\(failingURLString)")
+        }
+
+        parts.append(error.localizedDescription)
+        if willRetry {
+            parts.append("(retrying \(attempt)/\(Self.maxAttempts))")
+        }
+        return parts.joined(separator: " ")
+    }
+
     private func loggedData(for request: URLRequest) async throws -> (Data, URLResponse) {
         let method = request.httpMethod ?? "GET"
         let path = sanitizePath(request.url)
@@ -153,7 +186,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     timestamp: Date(), method: method, path: path,
                     statusCode: nil, isSuccess: false,
                     durationMs: ms, responseSize: 0,
-                    errorDetail: error.localizedDescription + (willRetry ? " (retrying \(attempt)/\(Self.maxAttempts))" : "")
+                    errorDetail: networkErrorDetail(error, attempt: attempt, willRetry: willRetry)
                 ))
 
                 if willRetry {
