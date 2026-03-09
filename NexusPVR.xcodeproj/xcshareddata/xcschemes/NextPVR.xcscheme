@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "6E74158B2F315368001FE083"
-               BuildableName = "NexusPVR.app"
-               BlueprintName = "NexusPVR"
+               BuildableName = "NextPVR.app"
+               BlueprintName = "NextPVR"
                ReferencedContainer = "container:NexusPVR.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -67,8 +67,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6E74158B2F315368001FE083"
-            BuildableName = "NexusPVR.app"
-            BlueprintName = "NexusPVR"
+            BuildableName = "NextPVR.app"
+            BlueprintName = "NextPVR"
             ReferencedContainer = "container:NexusPVR.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -84,8 +84,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6E74158B2F315368001FE083"
-            BuildableName = "NexusPVR.app"
-            BlueprintName = "NexusPVR"
+            BuildableName = "NextPVR.app"
+            BlueprintName = "NextPVR"
             ReferencedContainer = "container:NexusPVR.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
