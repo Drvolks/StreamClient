@@ -1,5 +1,5 @@
 #!/bin/bash
-# Archive and upload NexusPVR + DispatcherPVR for iOS, tvOS, and macOS to TestFlight
+# Archive and upload NextPVR + Dispatcharr for iOS, tvOS, and macOS to TestFlight
 #
 # Requirements:
 #   App Store Connect API key (.p8 file)
@@ -22,7 +22,7 @@ PROJECT=NexusPVR.xcodeproj
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXPORT_PLIST="$SCRIPT_DIR/ExportOptions.plist"
 
-SCHEMES=(NexusPVR DispatcherPVR)
+SCHEMES=(NextPVR Dispatcharr)
 PLATFORMS=(iOS tvOS macOS)
 
 AUTH_FLAGS=(-allowProvisioningUpdates \
