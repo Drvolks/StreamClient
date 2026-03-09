@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# run_tests.sh — Run UI tests for NexusPVR and DispatcherPVR across all platforms
+# run_tests.sh — Run UI tests for NextPVR and Dispatcharr across all platforms
 #
 # Usage:
 #   ./run_tests.sh              # Run all tests (both schemes, all platforms)
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 # --- Configuration ---
-SCHEMES=("NexusPVR" "DispatcherPVR")
+SCHEMES=("NextPVR" "Dispatcharr")
 DESTINATIONS=(
     "platform=macOS"
     "platform=iOS Simulator,name=iPhone 17 Pro"
@@ -25,9 +25,9 @@ FILTER_SCHEME=""
 FILTER_PLATFORM=""
 
 if [[ ${1:-} == "nexus" ]]; then
-    FILTER_SCHEME="NexusPVR"
+    FILTER_SCHEME="NextPVR"
 elif [[ ${1:-} == "dispatcher" ]]; then
-    FILTER_SCHEME="DispatcherPVR"
+    FILTER_SCHEME="Dispatcharr"
 fi
 
 if [[ ${2:-} == "macos" ]]; then
@@ -125,7 +125,7 @@ run_test() {
 }
 
 # --- Main ---
-log_header "NexusPVR Test Runner"
+log_header "NextPVR/Dispatcharr Test Runner"
 echo -e "  Schemes:   ${FILTER_SCHEME:-all}"
 echo -e "  Platforms:  ${FILTER_PLATFORM:-all}"
 echo ""

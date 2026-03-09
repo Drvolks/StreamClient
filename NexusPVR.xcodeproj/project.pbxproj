@@ -293,11 +293,11 @@
 			fileSystemSynchronizedGroups = (
 				6E74158E2F315368001FE083 /* NexusPVR */,
 			);
-			name = NexusPVR;
+			name = NextPVR;
 			packageProductDependencies = (
 				6E9E3CEF2F31559900D2B8DF /* MPVKit */,
 			);
-			productName = NexusPVR;
+			productName = NextPVR;
 			productReference = 6E74158C2F315368001FE083 /* NexusPVR.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -409,11 +409,11 @@
 				6E74158E2F315368001FE083 /* NexusPVR */,
 				D1AAAA022F31559900D2B8DF /* DispatcherPVR */,
 			);
-			name = DispatcherPVR;
+			name = Dispatcharr;
 			packageProductDependencies = (
 				D1AAAA0B2F31559900D2B8DF /* MPVKit */,
 			);
-			productName = DispatcherPVR;
+			productName = Dispatcharr;
 			productReference = D1AAAA012F31559900D2B8DF /* DispatcherPVR.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -887,7 +887,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NexusPVR.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NexusPVR";
+				TEST_HOST = "$$(BUILT_PRODUCTS_DIR)/NextPVR.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NextPVR";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -914,7 +914,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NexusPVR.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NexusPVR";
+				TEST_HOST = "$$(BUILT_PRODUCTS_DIR)/NextPVR.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NextPVR";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
@@ -940,7 +940,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,3,7";
-				TEST_TARGET_NAME = NexusPVR;
+				TEST_TARGET_NAME = NextPVR;
 				TVOS_DEPLOYMENT_TARGET = 26.2;
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
@@ -967,7 +967,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,3,7";
-				TEST_TARGET_NAME = NexusPVR;
+				TEST_TARGET_NAME = NextPVR;
 				TVOS_DEPLOYMENT_TARGET = 26.2;
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
@@ -984,7 +984,7 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NexusPVR TopShelf/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "NexusPVR TopShelf";
+				INFOPLIST_KEY_CFBundleDisplayName = "NextPVR TopShelf";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1020,7 +1020,7 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NexusPVR TopShelf/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "NexusPVR TopShelf";
+				INFOPLIST_KEY_CFBundleDisplayName = "NextPVR TopShelf";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1057,7 +1057,7 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "DispatcherPVR TopShelf/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "DispatcherPVR TopShelf";
+				INFOPLIST_KEY_CFBundleDisplayName = "Dispatcharr TopShelf";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1093,7 +1093,7 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "DispatcherPVR TopShelf/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "DispatcherPVR TopShelf";
+				INFOPLIST_KEY_CFBundleDisplayName = "Dispatcharr TopShelf";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
