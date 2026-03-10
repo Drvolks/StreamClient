@@ -348,6 +348,13 @@ private struct RecordingsListContentView: View {
                     }
                     .listRowBackground(Theme.surface)
             }
+            #if os(iOS)
+            Color.clear
+                .frame(height: 96)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            #endif
         }
         .listStyle(.plain)
         .refreshable {
