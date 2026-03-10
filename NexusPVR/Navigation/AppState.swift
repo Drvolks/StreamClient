@@ -108,6 +108,7 @@ final class AppState: ObservableObject {
 
     // Recordings filter state (shared between RecordingsListView and iOS nav bar)
     @Published var recordingsFilter: RecordingsFilter = .completed
+    @Published var recordingsFilterUserOverride = false
     @Published var recordingsHasActive = false
     @Published var currentlyPlayingURL: URL?
     @Published var currentlyPlayingTitle: String?
@@ -211,6 +212,13 @@ final class AppState: ObservableObject {
     func showAlert(_ message: String) {
         alertMessage = message
         isShowingAlert = true
+    }
+
+    func setRecordingsFilter(_ filter: RecordingsFilter, userInitiated: Bool) {
+        recordingsFilter = filter
+        if userInitiated {
+            recordingsFilterUserOverride = true
+        }
     }
 
     func playStream(
