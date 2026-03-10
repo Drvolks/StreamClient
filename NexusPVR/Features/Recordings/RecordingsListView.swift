@@ -141,6 +141,10 @@ private struct RecordingsListContentView: View {
         .task {
             await viewModel.loadRecordings()
             #if os(iOS)
+            // Keep the floating iOS picker aligned with the actual list filter on first load.
+            if appState.recordingsFilter != viewModel.filter {
+                appState.recordingsFilter = viewModel.filter
+            }
             appState.recordingsHasActive = viewModel.hasActiveRecordings
             #endif
         }
