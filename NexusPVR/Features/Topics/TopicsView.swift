@@ -320,6 +320,13 @@ struct TopicsView: View {
                 .listRowBackground(Theme.surface)
                 .id("\(item.id)-\(refreshTrigger)")
             }
+            #if os(iOS)
+            Color.clear
+                .frame(height: 96)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            #endif
         }
         .listStyle(.plain)
         .refreshable {
