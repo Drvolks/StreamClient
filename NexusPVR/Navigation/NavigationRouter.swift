@@ -331,7 +331,7 @@ struct IOSNavigation: View {
         Menu {
             if appState.recordingsHasActive {
                 Button {
-                    appState.recordingsFilter = .recording
+                    appState.setRecordingsFilter(.recording, userInitiated: true)
                 } label: {
                     HStack {
                         Text("Recording")
@@ -342,7 +342,7 @@ struct IOSNavigation: View {
                 }
             }
             Button {
-                appState.recordingsFilter = .completed
+                appState.setRecordingsFilter(.completed, userInitiated: true)
             } label: {
                 HStack {
                     Text("Completed")
@@ -352,7 +352,7 @@ struct IOSNavigation: View {
                 }
             }
             Button {
-                appState.recordingsFilter = .scheduled
+                appState.setRecordingsFilter(.scheduled, userInitiated: true)
             } label: {
                 HStack {
                     Text("Scheduled")

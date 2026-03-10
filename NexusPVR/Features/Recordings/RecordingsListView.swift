@@ -31,6 +31,7 @@ private struct RecordingsListContentView: View {
     @Binding var deleteError: String?
     @State private var inProgressRecording: Recording?
     @State private var filterSelection: RecordingsFilter = .completed
+    @State private var suppressNextFilterSelectionChange = false
 
     init(client: PVRClient, appState: AppState,
          selectedRecording: Binding<Recording?>,
@@ -52,7 +53,7 @@ private struct RecordingsListContentView: View {
             VStack(spacing: 0) {
                 // Tab picker (tvOS and macOS only — iOS uses floating nav bar picker)
                 #if os(tvOS)
-                Picker("Filter", selection: $viewModel.filter) {
+                Picker("Filter", selection: $filterSelection) {
                     if viewModel.hasActiveRecordings {
                         Text("Recording").tag(RecordingsFilter.recording)
                     }
@@ -64,6 +65,20 @@ private struct RecordingsListContentView: View {
                 .onMoveCommand { direction in
                     if direction == .up {
                         requestNavBarFocus()
+                    }
+                }
+                .onChange(of: filterSelection) {
+                    if suppressNextFilterSelectionChange {
+                        suppressNextFilterSelectionChange = false
+                        return
+                    }
+                    appState.setRecordingsFilter(filterSelection, userInitiated: true)
+                    Task { viewModel.filter = filterSelection }
+                }
+                .onChange(of: viewModel.filter) {
+                    if filterSelection != viewModel.filter {
+                        suppressNextFilterSelectionChange = true
+                        filterSelection = viewModel.filter
                     }
                 }
                 .padding(.horizontal)
@@ -83,10 +98,16 @@ private struct RecordingsListContentView: View {
                 .padding(.vertical, Theme.spacingSM)
                 .background(Theme.background)
                 .onChange(of: filterSelection) {
+                    if suppressNextFilterSelectionChange {
+                        suppressNextFilterSelectionChange = false
+                        return
+                    }
+                    appState.setRecordingsFilter(filterSelection, userInitiated: true)
                     Task { viewModel.filter = filterSelection }
                 }
                 .onChange(of: viewModel.filter) {
                     if filterSelection != viewModel.filter {
+                        suppressNextFilterSelectionChange = true
                         filterSelection = viewModel.filter
                     }
                 }
@@ -140,24 +161,38 @@ private struct RecordingsListContentView: View {
         .background(Theme.background)
         .task {
             await viewModel.loadRecordings()
+            if !appState.recordingsFilterUserOverride {
+                let initialFilter: RecordingsFilter = viewModel.hasActiveRecordings ? .recording : .completed
+                if viewModel.filter != initialFilter {
+                    viewModel.filter = initialFilter
+                }
+                if appState.recordingsFilter != initialFilter {
+                    appState.recordingsFilter = initialFilter
+                }
+            }
             appState.recordingsHasActive = viewModel.hasActiveRecordings
-            #if os(iOS)
-            // Keep the floating iOS picker aligned with the actual list filter on first load.
             if appState.recordingsFilter != viewModel.filter {
                 appState.recordingsFilter = viewModel.filter
             }
-            #endif
+            if filterSelection != viewModel.filter {
+                suppressNextFilterSelectionChange = true
+                filterSelection = viewModel.filter
+            }
         }
-        #if os(iOS)
         .onChange(of: appState.recordingsFilter) {
-            Task { viewModel.filter = appState.recordingsFilter }
+            if viewModel.filter != appState.recordingsFilter {
+                Task { viewModel.filter = appState.recordingsFilter }
+            }
         }
         .onChange(of: viewModel.filter) {
             if appState.recordingsFilter != viewModel.filter {
                 appState.recordingsFilter = viewModel.filter
             }
+            if filterSelection != viewModel.filter {
+                suppressNextFilterSelectionChange = true
+                filterSelection = viewModel.filter
+            }
         }
-        #endif
         .onChange(of: viewModel.hasActiveRecordings) {
             Task { appState.recordingsHasActive = viewModel.hasActiveRecordings }
         }

@@ -73,13 +73,6 @@ final class RecordingsViewModel: ObservableObject {
             activeRecordings = recording
             scheduledRecordings = scheduled
 
-            // Auto-select recording tab if there are active recordings, or switch away if empty
-            if !activeRecordings.isEmpty && filter == .completed {
-                filter = .recording
-            } else if filter == .recording && activeRecordings.isEmpty {
-                filter = .completed
-            }
-
             isLoading = false
             probeDurations()
         } catch {
