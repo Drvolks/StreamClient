@@ -75,6 +75,16 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
         return duration / 60
     }
 
+    var isWatched: Bool {
+        guard let position = playbackPosition,
+              let duration,
+              duration > 0,
+              position > 0 else {
+            return false
+        }
+        return Double(position) / Double(duration) >= 0.9
+    }
+
     /// Total recording duration including pre/post padding, in seconds
     var totalRecordingDuration: Int? {
         guard let duration else { return nil }
