@@ -175,6 +175,19 @@ struct RecordingDetailView: View {
                                 .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(AccentButtonStyle())
+
+                            if recording.isWatched {
+                                Button {
+                                    playFromBeginning()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "arrow.counterclockwise")
+                                        Text("Watch from Beginning")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(SecondaryButtonStyle())
+                            }
                         }
 
                         #if DISPATCHERPVR
@@ -356,6 +369,19 @@ struct RecordingDetailView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(AccentButtonStyle())
+
+                if recording.isWatched {
+                    Button {
+                        playFromBeginning()
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.counterclockwise")
+                            Text("Watch from Beginning")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
             }
 
             #if DISPATCHERPVR
@@ -414,6 +440,24 @@ struct RecordingDetailView: View {
                     title: recording.name,
                     recordingId: recording.id,
                     resumePosition: recording.playbackPosition
+                )
+                dismiss()
+            } catch {
+                deleteError = error.localizedDescription
+            }
+        }
+    }
+
+    private func playFromBeginning() {
+        Task {
+            do {
+                try await client.setRecordingPosition(recordingId: recording.id, positionSeconds: 0)
+                let url = try await client.recordingStreamURL(recordingId: recording.id)
+                appState.playStream(
+                    url: url,
+                    title: recording.name,
+                    recordingId: recording.id,
+                    resumePosition: 0
                 )
                 dismiss()
             } catch {
