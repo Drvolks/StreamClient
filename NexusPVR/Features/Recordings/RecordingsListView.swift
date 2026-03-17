@@ -305,6 +305,13 @@ private struct RecordingsListContentView: View {
                             } label: {
                                 Label("Play", systemImage: "play.fill")
                             }
+                            if recording.isWatched {
+                                Button {
+                                    playRecordingFromBeginning(recording)
+                                } label: {
+                                    Label("Watch from Beginning", systemImage: "arrow.counterclockwise")
+                                }
+                            }
                         }
 
                         Button {
@@ -371,6 +378,13 @@ private struct RecordingsListContentView: View {
                             } label: {
                                 Label("Play", systemImage: "play.fill")
                             }
+                            if recording.isWatched {
+                                Button {
+                                    playRecordingFromBeginning(recording)
+                                } label: {
+                                    Label("Watch from Beginning", systemImage: "arrow.counterclockwise")
+                                }
+                            }
                         }
 
                         Button {
@@ -413,6 +427,23 @@ private struct RecordingsListContentView: View {
                     title: recording.name,
                     recordingId: recording.id,
                     resumePosition: recording.playbackPosition
+                )
+            } catch {
+                deleteError = error.localizedDescription
+            }
+        }
+    }
+
+    private func playRecordingFromBeginning(_ recording: Recording) {
+        Task {
+            do {
+                try await client.setRecordingPosition(recordingId: recording.id, positionSeconds: 0)
+                let url = try await viewModel.playRecording(recording)
+                appState.playStream(
+                    url: url,
+                    title: recording.name,
+                    recordingId: recording.id,
+                    resumePosition: 0
                 )
             } catch {
                 deleteError = error.localizedDescription
