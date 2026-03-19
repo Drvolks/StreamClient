@@ -672,14 +672,20 @@ struct PlayerView: View {
             return
         }
 
-        // Create a format description that describes the HDR video
-        let width = videoHeight.map { Int($0) * 16 / 9 } ?? 3840  // Estimate width from height
+        // Create a format description that fully describes the HDR video.
+        // The system needs codec type, resolution, transfer function, color primaries,
+        // YCbCr matrix, AND bit depth to properly trigger HDR display mode.
+        let width = videoHeight.map { Int($0) * 16 / 9 } ?? 3840
         let height = videoHeight ?? 2160
+        let bitsPerComponent: Int = 10
         var formatDescription: CMFormatDescription?
         let extensions: [String: Any] = [
             kCMFormatDescriptionExtension_TransferFunction as String: transferFunction,
             kCMFormatDescriptionExtension_ColorPrimaries as String: kCMFormatDescriptionColorPrimaries_ITU_R_2020,
             kCMFormatDescriptionExtension_YCbCrMatrix as String: kCMFormatDescriptionYCbCrMatrix_ITU_R_2020,
+            kCMFormatDescriptionExtension_BitsPerComponent as String: bitsPerComponent,
+            kCMFormatDescriptionExtension_FullRangeVideo as String: false,
+            "CVPixelFormatType" as String: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
         ]
         CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
