@@ -1197,12 +1197,7 @@ struct GuideView: View {
     }
 
     private func clampFocusedRowToChannels() {
-        let count = viewModel.channels.count
-        if count > 0 {
-            focusedRow = min(focusedRow, count - 1)
-        } else {
-            focusedRow = 0
-        }
+        focusedRow = 0
         scrollTopRow = 0
         focusedColumn = 0
     }
