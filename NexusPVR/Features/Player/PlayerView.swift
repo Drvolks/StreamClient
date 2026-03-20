@@ -3185,7 +3185,33 @@ class MPVPlayerMetalView: UIView {
     }
 
     #if os(tvOS)
-    // MARK: - tvOS Remote Control
+    private var seekTimer: Timer?
+    private var seekDirection: Int = 0
+
+    private func startSeeking(direction: Int) {
+        stopSeeking()
+        seekDirection = direction
+        if direction < 0 {
+            onSeekBackward?()
+        } else {
+            onSeekForward?()
+        }
+        seekTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.seekDirection < 0 {
+                self.onSeekBackward?()
+            } else {
+                self.onSeekForward?()
+            }
+        }
+    }
+
+    private func stopSeeking() {
+        seekTimer?.invalidate()
+        seekTimer = nil
+        seekDirection = 0
+    }
+
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         for press in presses {
             switch press.type {
@@ -3193,10 +3219,10 @@ class MPVPlayerMetalView: UIView {
                 onPlayPause?()
                 return
             case .leftArrow:
-                onSeekBackward?()
+                startSeeking(direction: -1)
                 return
             case .rightArrow:
-                onSeekForward?()
+                startSeeking(direction: 1)
                 return
             case .select:
                 onSelect?()
@@ -3209,6 +3235,30 @@ class MPVPlayerMetalView: UIView {
             }
         }
         super.pressesBegan(presses, with: event)
+    }
+
+    override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            if press.type == .leftArrow || press.type == .rightArrow {
+                return
+            }
+        }
+        super.pressesChanged(presses, with: event)
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            if press.type == .leftArrow || press.type == .rightArrow {
+                stopSeeking()
+                return
+            }
+        }
+        super.pressesEnded(presses, with: event)
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        stopSeeking()
+        super.pressesCancelled(presses, with: event)
     }
     #endif
 }
@@ -3367,6 +3417,33 @@ class MPVPlayerPixelBufferView: UIView {
     }
 
     #if os(tvOS)
+    private var seekTimer: Timer?
+    private var seekDirection: Int = 0
+
+    private func startSeeking(direction: Int) {
+        stopSeeking()
+        seekDirection = direction
+        if direction < 0 {
+            onSeekBackward?()
+        } else {
+            onSeekForward?()
+        }
+        seekTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.seekDirection < 0 {
+                self.onSeekBackward?()
+            } else {
+                self.onSeekForward?()
+            }
+        }
+    }
+
+    private func stopSeeking() {
+        seekTimer?.invalidate()
+        seekTimer = nil
+        seekDirection = 0
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil {
@@ -3392,10 +3469,10 @@ class MPVPlayerPixelBufferView: UIView {
                 onPlayPause?()
                 return
             case .leftArrow:
-                onSeekBackward?()
+                startSeeking(direction: -1)
                 return
             case .rightArrow:
-                onSeekForward?()
+                startSeeking(direction: 1)
                 return
             case .select:
                 onSelect?()
@@ -3408,6 +3485,30 @@ class MPVPlayerPixelBufferView: UIView {
             }
         }
         super.pressesBegan(presses, with: event)
+    }
+
+    override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            if press.type == .leftArrow || press.type == .rightArrow {
+                return
+            }
+        }
+        super.pressesChanged(presses, with: event)
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            if press.type == .leftArrow || press.type == .rightArrow {
+                stopSeeking()
+                return
+            }
+        }
+        super.pressesEnded(presses, with: event)
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        stopSeeking()
+        super.pressesCancelled(presses, with: event)
     }
     #endif
 }
@@ -3598,6 +3699,33 @@ class MPVPlayerGLView: GLKView {
     }
 
     #if os(tvOS)
+    private var seekTimer: Timer?
+    private var seekDirection: Int = 0
+
+    private func startSeeking(direction: Int) {
+        stopSeeking()
+        seekDirection = direction
+        if direction < 0 {
+            onSeekBackward?()
+        } else {
+            onSeekForward?()
+        }
+        seekTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.seekDirection < 0 {
+                self.onSeekBackward?()
+            } else {
+                self.onSeekForward?()
+            }
+        }
+    }
+
+    private func stopSeeking() {
+        seekTimer?.invalidate()
+        seekTimer = nil
+        seekDirection = 0
+    }
+
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         for press in presses {
             switch press.type {
@@ -3605,10 +3733,10 @@ class MPVPlayerGLView: GLKView {
                 onPlayPause?()
                 return
             case .leftArrow:
-                onSeekBackward?()
+                startSeeking(direction: -1)
                 return
             case .rightArrow:
-                onSeekForward?()
+                startSeeking(direction: 1)
                 return
             case .select:
                 onSelect?()
@@ -3621,6 +3749,30 @@ class MPVPlayerGLView: GLKView {
             }
         }
         super.pressesBegan(presses, with: event)
+    }
+
+    override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            if press.type == .leftArrow || press.type == .rightArrow {
+                return
+            }
+        }
+        super.pressesChanged(presses, with: event)
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            if press.type == .leftArrow || press.type == .rightArrow {
+                stopSeeking()
+                return
+            }
+        }
+        super.pressesEnded(presses, with: event)
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        stopSeeking()
+        super.pressesCancelled(presses, with: event)
     }
     #endif
 }
