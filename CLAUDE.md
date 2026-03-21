@@ -154,24 +154,9 @@ Server config stored separately in `ServerConfig` (Core/Models/Session.swift).
 
 The project has two schemes:
 - **NextPVR** — StreamClient - For NextPVR
-- **DispatcharrPVR** — StreamClient
+- **Dispatcharr** — StreamClient
 
-### Build Commands
-
-```bash
-# iOS Simulator
-xcodebuild -project NexusPVR.xcodeproj -scheme NextPVR -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 16' build
-xcodebuild -project NexusPVR.xcodeproj -scheme DispatcharrPVR -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 16' build
-
-# tvOS Simulator
-xcodebuild -project NexusPVR.xcodeproj -scheme NextPVR -configuration Debug -destination 'platform=tvOS Simulator,name=Apple TV' build
-
-# macOS
-xcodebuild -project NexusPVR.xcodeproj -scheme NextPVR -configuration Debug -destination 'platform=macOS' build
-
-# Archive all (script)
-./archive-all.sh
-```
+Never build after a change unless explicitly requested.
 
 ### Running the App
 
@@ -181,12 +166,6 @@ xcodebuild -project NexusPVR.xcodeproj -scheme NextPVR -configuration Debug -des
 4. Build and run (Cmd+R)
 
 Note: MPV framework must be properly linked for video playback.
-
-## Code Quality
-
-- Build must succeed before committing
-- Use SwiftLint if configured in the project
-- Verify on simulator after major changes
 
 ## Dependencies
 

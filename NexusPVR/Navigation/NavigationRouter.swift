@@ -433,7 +433,12 @@ struct IOSNavigation: View {
     // MARK: - Topic Picker
 
     private var topicPicker: some View {
-        HStack(spacing: 10) {
+        let defaultTopic = appState.topicKeywords.first ?? ""
+        let selectedTopic = appState.topicKeywords.contains(appState.selectedTopicKeyword) && !appState.selectedTopicKeyword.isEmpty
+            ? appState.selectedTopicKeyword
+            : defaultTopic
+
+        return HStack(spacing: 10) {
             Menu {
                 ForEach(appState.topicKeywords, id: \.self) { keyword in
                     Button {
@@ -441,7 +446,7 @@ struct IOSNavigation: View {
                     } label: {
                         HStack {
                             Text(keyword)
-                            if keyword == appState.selectedTopicKeyword {
+                            if keyword == selectedTopic {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -449,7 +454,7 @@ struct IOSNavigation: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Text(appState.selectedTopicKeyword.isEmpty ? "All Topics" : appState.selectedTopicKeyword)
+                    Text(selectedTopic)
                         .font(.subheadline)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
