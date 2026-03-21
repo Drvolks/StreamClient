@@ -52,6 +52,38 @@ struct KeywordsEditorView: View {
                                 Text(keyword)
                                     .foregroundStyle(Theme.textPrimary)
                                 Spacer()
+                                #if !os(iOS)
+                                HStack(spacing: Theme.spacingMD) {
+                                    Button {
+                                        moveKeyword(keyword, offset: -1)
+                                    } label: {
+                                        Image(systemName: "arrow.up")
+                                            .foregroundStyle(canMoveKeyword(keyword, offset: -1) ? Theme.accent : Theme.textTertiary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(!canMoveKeyword(keyword, offset: -1))
+                                    .accessibilityLabel("Move \(keyword) up")
+
+                                    Button {
+                                        moveKeyword(keyword, offset: 1)
+                                    } label: {
+                                        Image(systemName: "arrow.down")
+                                            .foregroundStyle(canMoveKeyword(keyword, offset: 1) ? Theme.accent : Theme.textTertiary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(!canMoveKeyword(keyword, offset: 1))
+                                    .accessibilityLabel("Move \(keyword) down")
+
+                                    Button {
+                                        removeKeyword(keyword)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundStyle(Theme.error)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                #endif
+                                #if os(iOS)
                                 Button {
                                     removeKeyword(keyword)
                                 } label: {
@@ -59,15 +91,22 @@ struct KeywordsEditorView: View {
                                         .foregroundStyle(Theme.error)
                                 }
                                 .buttonStyle(.plain)
+                                #endif
                             }
                         }
+                        #if os(iOS)
+                        .onMove(perform: moveKeywords)
+                        #endif
                     } header: {
                         Text("Your Keywords (\(preferences.keywords.count))")
+                    } footer: {
+                        Text("Reorder topics here. The first topic becomes the default selection.")
                     }
                 }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
+            .environment(\.editMode, .constant(.active))
             #endif
             .navigationTitle("Topic Keywords")
             .toolbar {
@@ -130,24 +169,41 @@ struct KeywordsEditorView: View {
                             .foregroundStyle(Theme.textSecondary)
 
                         ForEach(preferences.keywords, id: \.self) { keyword in
-                            Button {
-                                removeKeyword(keyword)
-                            } label: {
-                                HStack {
-                                    Text(keyword)
-                                        .foregroundStyle(Theme.textPrimary)
-                                    Spacer()
+                            HStack(spacing: Theme.spacingSM) {
+                                Text(keyword)
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Button {
+                                    moveKeyword(keyword, offset: -1)
+                                } label: {
+                                    Image(systemName: "arrow.up")
+                                }
+                                .buttonStyle(.card)
+                                .disabled(!canMoveKeyword(keyword, offset: -1))
+
+                                Button {
+                                    moveKeyword(keyword, offset: 1)
+                                } label: {
+                                    Image(systemName: "arrow.down")
+                                }
+                                .buttonStyle(.card)
+                                .disabled(!canMoveKeyword(keyword, offset: 1))
+
+                                Button {
+                                    removeKeyword(keyword)
+                                } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "trash")
                                         Text("Delete")
                                     }
                                     .foregroundStyle(Theme.error)
                                 }
-                                .padding()
-                                .background(Theme.surfaceElevated)
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+                                .buttonStyle(.card)
                             }
-                            .buttonStyle(.card)
+                            .padding()
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                         }
                     }
                     .padding()
@@ -188,6 +244,26 @@ struct KeywordsEditorView: View {
 
     private func removeKeyword(_ keyword: String) {
         preferences.keywords.removeAll { $0 == keyword }
+        preferences.save()
+    }
+
+    private func canMoveKeyword(_ keyword: String, offset: Int) -> Bool {
+        guard let index = preferences.keywords.firstIndex(of: keyword) else { return false }
+        let destination = index + offset
+        return preferences.keywords.indices.contains(destination)
+    }
+
+    private func moveKeyword(_ keyword: String, offset: Int) {
+        guard let index = preferences.keywords.firstIndex(of: keyword) else { return }
+        let destination = index + offset
+        guard preferences.keywords.indices.contains(destination) else { return }
+
+        preferences.keywords.swapAt(index, destination)
+        preferences.save()
+    }
+
+    private func moveKeywords(from source: IndexSet, to destination: Int) {
+        preferences.keywords.move(fromOffsets: source, toOffset: destination)
         preferences.save()
     }
 }

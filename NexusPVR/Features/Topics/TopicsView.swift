@@ -37,6 +37,26 @@ struct TopicsView: View {
     }
     #endif
 
+    private func syncTopicSelection(with keywords: [String], preferFirst: Bool = false) {
+        appState.topicKeywords = keywords
+
+        guard let first = keywords.first else {
+            selectedKeyword = ""
+            appState.selectedTopicKeyword = ""
+            return
+        }
+
+        let selection = appState.selectedTopicKeyword
+        let resolved = preferFirst ? first : (keywords.contains(selection) && !selection.isEmpty ? selection : first)
+
+        if selectedKeyword != resolved {
+            selectedKeyword = resolved
+        }
+        if appState.selectedTopicKeyword != resolved {
+            appState.selectedTopicKeyword = resolved
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -113,13 +133,7 @@ struct TopicsView: View {
                     selectedKeyword = viewModel.keywords.first ?? manageTag
                 }
                 #else
-                Task {
-                    appState.topicKeywords = viewModel.keywords
-                    if selectedKeyword.isEmpty, let first = viewModel.keywords.first {
-                        selectedKeyword = first
-                        appState.selectedTopicKeyword = first
-                    }
-                }
+                syncTopicSelection(with: viewModel.keywords)
                 #endif
             }
         }
@@ -148,26 +162,37 @@ struct TopicsView: View {
         .task {
             viewModel.epgCache = epgCache
             await viewModel.loadData()
-            #if !os(tvOS)
-            appState.topicKeywords = viewModel.keywords
-            if selectedKeyword.isEmpty, let first = viewModel.keywords.first {
-                selectedKeyword = first
-                appState.selectedTopicKeyword = first
-            } else if !appState.selectedTopicKeyword.isEmpty {
-                selectedKeyword = appState.selectedTopicKeyword
-            }
+            #if os(iOS)
+            syncTopicSelection(with: viewModel.keywords, preferFirst: true)
+            #elseif !os(tvOS)
+            syncTopicSelection(with: viewModel.keywords)
             #endif
         }
+        #if os(iOS)
+        .onAppear {
+            syncTopicSelection(with: viewModel.keywords, preferFirst: true)
+        }
+        #endif
         .onChange(of: appState.selectedTopicKeyword) {
+            #if !os(tvOS)
+            syncTopicSelection(with: viewModel.keywords)
+            #else
             if selectedKeyword != appState.selectedTopicKeyword {
                 selectedKeyword = appState.selectedTopicKeyword
             }
+            #endif
         }
         .onChange(of: scenePhase) {
             if scenePhase == .active {
                 Task { await viewModel.loadData() }
             }
         }
+        #if os(iOS)
+        .onChange(of: appState.selectedTab) {
+            guard appState.selectedTab == .topics else { return }
+            syncTopicSelection(with: viewModel.keywords, preferFirst: true)
+        }
+        #endif
     }
 
     @ViewBuilder
