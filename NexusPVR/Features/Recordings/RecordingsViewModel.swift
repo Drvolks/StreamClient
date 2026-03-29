@@ -26,12 +26,13 @@ struct SeriesGroup: Identifiable {
 
 struct RecordingsSeriesSummary: Identifiable {
     let name: String
+    let active: [Recording]
     let completed: [Recording]
     let scheduled: [Recording]
     let bannerURL: String?
 
     var id: String { name }
-    var totalCount: Int { completed.count + scheduled.count }
+    var totalCount: Int { active.count + completed.count + scheduled.count }
 }
 
 @MainActor
@@ -78,7 +79,12 @@ final class RecordingsViewModel: ObservableObject {
 
     /// Recordings that are NOT part of a series (standalone)
     var standaloneRecordings: [Recording] {
-        filteredRecordings.filter { $0.seriesInfo == nil }
+        switch filter {
+        case .recording:
+            return filteredRecordings
+        case .completed, .scheduled:
+            return filteredRecordings.filter { $0.seriesInfo == nil }
+        }
     }
 
     /// Series groups for the current filter, sorted by series name
@@ -100,11 +106,18 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     var recordingsSeriesSummaries: [RecordingsSeriesSummary] {
+        let activeBySeries = Dictionary(grouping: activeRecordings.filter { $0.seriesInfo != nil }) { $0.seriesInfo!.seriesName }
         let completedBySeries = Dictionary(grouping: completedRecordings.filter { $0.seriesInfo != nil }) { $0.seriesInfo!.seriesName }
         let scheduledBySeries = Dictionary(grouping: scheduledRecordings.filter { $0.seriesInfo != nil }) { $0.seriesInfo!.seriesName }
-        let allSeriesNames = Set(completedBySeries.keys).union(scheduledBySeries.keys)
+        let allSeriesNames = Set(activeBySeries.keys)
+            .union(completedBySeries.keys)
+            .union(scheduledBySeries.keys)
 
         return allSeriesNames.map { name in
+            let active = (activeBySeries[name] ?? []).sorted { r1, r2 in
+                guard let d1 = r1.startDate, let d2 = r2.startDate else { return false }
+                return d1 > d2
+            }
             let completed = (completedBySeries[name] ?? []).sorted { r1, r2 in
                 guard let d1 = r1.startDate, let d2 = r2.startDate else { return false }
                 return d1 > d2
@@ -113,8 +126,14 @@ final class RecordingsViewModel: ObservableObject {
                 guard let d1 = r1.startDate, let d2 = r2.startDate else { return false }
                 return d1 < d2
             }
-            let bannerURL = (completed + scheduled).compactMap(\.seriesBannerURL).first
-            return RecordingsSeriesSummary(name: name, completed: completed, scheduled: scheduled, bannerURL: bannerURL)
+            let bannerURL = (active + completed + scheduled).compactMap(\.seriesBannerURL).first
+            return RecordingsSeriesSummary(
+                name: name,
+                active: active,
+                completed: completed,
+                scheduled: scheduled,
+                bannerURL: bannerURL
+            )
         }
         .filter { $0.totalCount > 0 }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
