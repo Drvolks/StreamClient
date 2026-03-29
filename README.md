@@ -89,6 +89,19 @@ Explore the full app without a server. Provides 15 simulated channels across 5 g
 - Default port: **9191**
 - Authentication: Username and password
 
+### Dispatcharr Role Access
+
+For Dispatcharr users, access depends on `user_level`:
+- `0` = Streamer
+- `1` = Standard
+- `10` = Admin
+
+| Role | Access | No Access |
+|------|--------|-----------|
+| **Streamer** (`user_level = 0`) | Watch Live TV and browse Guide/Topics/Search/Settings | Recordings tab, Status tab, recording management (create/cancel/delete), proxy/M3U admin APIs |
+| **Standard** (`user_level = 1`) | Everything Streamer can do, plus Recordings and Status navigation | Full recording management in detail views (admin required for create/cancel/delete controls) |
+| **Admin** (`user_level = 10`) | Full access to all app features | None |
+
 ## Build Instructions
 
 1. Open `NexusPVR.xcodeproj` in Xcode 26+
