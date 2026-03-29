@@ -23,6 +23,7 @@ struct DemoDataProvider {
     /// Pre-seeded recurring recording: The Quantum Detective on Sci-Fi Universe
     private static let preSeededRecurrings: [(id: Int, name: String, channelId: Int, channel: String)] = [
         (id: 8001, name: "The Quantum Detective", channelId: 1009, channel: "Sci-Fi Universe"),
+        (id: 8002, name: "Stand-Up Spotlight", channelId: 1005, channel: "Comedy Gold"),
     ]
 
     static func scheduleRecording(eventId: Int) {
@@ -112,6 +113,23 @@ struct DemoDataProvider {
 
     static func channelIconURL(channelId: Int) -> URL? {
         Bundle.main.url(forResource: "demo_icon_\(channelId)", withExtension: "png")
+    }
+
+    static func recordingArtworkURL(recordingId: Int, fanart: Bool) -> URL? {
+        let allRecordings = recordings()
+        let recordings = allRecordings.completed + allRecordings.recording + allRecordings.scheduled
+        guard let recording = recordings.first(where: { $0.id == recordingId }) else { return nil }
+
+        let name = recording.name.lowercased()
+        if name.contains("the quantum detective") {
+            let resourceName = fanart ? "demo_series_quantum_fanart" : "demo_series_quantum_poster"
+            return Bundle.main.url(forResource: resourceName, withExtension: "png")
+        }
+        if name.contains("stand-up spotlight") {
+            let resourceName = fanart ? "demo_series_spotlight_fanart" : "demo_series_spotlight_image"
+            return Bundle.main.url(forResource: resourceName, withExtension: "png")
+        }
+        return nil
     }
 
     // MARK: - EPG Listings

@@ -578,7 +578,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     }
 
     func recordingArtworkURL(recordingId: Int, fanart: Bool) -> URL? {
-        guard !config.isDemoMode else { return nil }
+        guard !config.isDemoMode else { return DemoDataProvider.recordingArtworkURL(recordingId: recordingId, fanart: fanart) }
         var components = URLComponents(string: "\(baseURL)/services/service")
         var items: [URLQueryItem] = [
             URLQueryItem(name: "method", value: "recording.artwork"),
