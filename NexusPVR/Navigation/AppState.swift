@@ -264,7 +264,7 @@ final class AppState: ObservableObject {
             let (completed, recording, scheduled) = try await client.getAllRecordings()
             activeRecordingCount = recording.count
 
-            let grouped = Dictionary(grouping: (completed + scheduled).filter { $0.seriesInfo != nil }) {
+            let grouped = Dictionary(grouping: (completed + recording + scheduled).filter { $0.seriesInfo != nil }) {
                 $0.seriesInfo!.seriesName
             }
             recordingsSeriesItems = grouped

@@ -471,7 +471,7 @@ private struct RecordingsListContentView: View {
 
     private func seriesDetailList(_ vm: RecordingsViewModel, seriesName: String) -> some View {
         let summary = vm.seriesSummary(named: seriesName)
-        let representativeRecordingId = summary?.completed.first?.id ?? summary?.scheduled.first?.id
+        let representativeRecordingId = summary?.active.first?.id ?? summary?.completed.first?.id ?? summary?.scheduled.first?.id
         let resolvedBannerURLString =
             representativeRecordingId.flatMap { client.recordingArtworkURL(recordingId: $0, fanart: true)?.absoluteString } ??
             summary?.bannerURL
@@ -479,27 +479,37 @@ private struct RecordingsListContentView: View {
             representativeRecordingId.flatMap { client.recordingArtworkURL(recordingId: $0, fanart: false)?.absoluteString } ??
             summary?.bannerURL
         #if os(tvOS)
-        let recordings = (summary?.completed ?? []) + (summary?.scheduled ?? [])
+        let recordings = (summary?.active ?? []) + (summary?.completed ?? []) + (summary?.scheduled ?? [])
         let channelIdByName = buildChannelIdByNameMap(from: recordings)
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: Theme.spacingMD) {
                 if let summary {
-                    let inlineCompletedCount = min(3, summary.completed.count)
-                    let inlineScheduledCount = min(3 - inlineCompletedCount, summary.scheduled.count)
+                    let inlineActiveCount = min(3, summary.active.count)
+                    let inlineCompletedCount = min(3 - inlineActiveCount, summary.completed.count)
+                    let inlineScheduledCount = min(3 - inlineActiveCount - inlineCompletedCount, summary.scheduled.count)
+                    let inlineActive = Array(summary.active.prefix(inlineActiveCount))
                     let inlineCompleted = Array(summary.completed.prefix(inlineCompletedCount))
                     let inlineScheduled = Array(summary.scheduled.prefix(inlineScheduledCount))
 
-                    if resolvedLeftArtworkURLString != nil || !inlineCompleted.isEmpty || !inlineScheduled.isEmpty {
+                    if resolvedLeftArtworkURLString != nil || !inlineActive.isEmpty || !inlineCompleted.isEmpty || !inlineScheduled.isEmpty {
                         seriesInlineTopRowTV(
                             artworkURLString: resolvedLeftArtworkURLString,
+                            inlineActive: inlineActive,
                             inlineCompleted: inlineCompleted,
                             inlineScheduled: inlineScheduled
                         )
                     }
 
+                    let remainingActive = Array(summary.active.dropFirst(inlineActiveCount))
                     let remainingCompleted = Array(summary.completed.dropFirst(inlineCompletedCount))
                     let remainingScheduled = Array(summary.scheduled.dropFirst(inlineScheduledCount))
 
+                    if !remainingActive.isEmpty {
+                        sectionHeaderTV("Active")
+                        ForEach(remainingActive) { recording in
+                            tvOSSeriesRecordingRow(recording, channelIdByName: channelIdByName)
+                        }
+                    }
                     if !remainingCompleted.isEmpty {
                         sectionHeaderTV("Completed")
                         ForEach(remainingCompleted) { recording in
@@ -528,22 +538,32 @@ private struct RecordingsListContentView: View {
             if let summary {
                 if resolvedLeftArtworkURLString != nil {
                     let maxInlineRows = horizontalSizeClass == .compact ? 1 : 3
-                    let inlineCompletedCount = min(maxInlineRows, summary.completed.count)
-                    let inlineScheduledCount = min(maxInlineRows - inlineCompletedCount, summary.scheduled.count)
+                    let inlineActiveCount = min(maxInlineRows, summary.active.count)
+                    let inlineCompletedCount = min(maxInlineRows - inlineActiveCount, summary.completed.count)
+                    let inlineScheduledCount = min(maxInlineRows - inlineActiveCount - inlineCompletedCount, summary.scheduled.count)
+                    let inlineActive = Array(summary.active.prefix(inlineActiveCount))
                     let inlineCompleted = Array(summary.completed.prefix(inlineCompletedCount))
                     let inlineScheduled = Array(summary.scheduled.prefix(inlineScheduledCount))
 
                     seriesInlineTopRow(
                         bannerURLString: resolvedLeftArtworkURLString,
+                        inlineActive: inlineActive,
                         inlineCompleted: inlineCompleted,
                         inlineScheduled: inlineScheduled
                     )
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
 
+                    let remainingActive = Array(summary.active.dropFirst(inlineActiveCount))
                     let remainingCompleted = Array(summary.completed.dropFirst(inlineCompletedCount))
                     let remainingScheduled = Array(summary.scheduled.dropFirst(inlineScheduledCount))
 
+                    if !remainingActive.isEmpty {
+                        sectionHeaderIOS("Active")
+                        ForEach(remainingActive) { recording in
+                            seriesRecordingRow(recording)
+                        }
+                    }
                     if !remainingCompleted.isEmpty {
                         sectionHeaderIOS("Completed")
                         ForEach(remainingCompleted) { recording in
@@ -557,6 +577,12 @@ private struct RecordingsListContentView: View {
                         }
                     }
                 } else {
+                    if !summary.active.isEmpty {
+                        sectionHeaderIOS("Active")
+                        ForEach(summary.active) { recording in
+                            seriesRecordingRow(recording)
+                        }
+                    }
                     if !summary.completed.isEmpty {
                         sectionHeaderIOS("Completed")
                         ForEach(summary.completed) { recording in
@@ -676,6 +702,7 @@ private struct RecordingsListContentView: View {
 
     private func seriesInlineTopRowTV(
         artworkURLString: String?,
+        inlineActive: [Recording],
         inlineCompleted: [Recording],
         inlineScheduled: [Recording]
     ) -> some View {
@@ -686,10 +713,20 @@ private struct RecordingsListContentView: View {
             }
 
             VStack(alignment: .leading, spacing: Theme.spacingSM) {
+                if !inlineActive.isEmpty {
+                    Text("Active")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Theme.textPrimary)
+                    ForEach(inlineActive) { recording in
+                        tvOSSeriesInlineRecordingRow(recording)
+                    }
+                }
+
                 if !inlineCompleted.isEmpty {
                     Text("Completed")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(Theme.textPrimary)
+                        .padding(.top, inlineActive.isEmpty ? 0 : Theme.spacingXS)
                     ForEach(inlineCompleted) { recording in
                         tvOSSeriesInlineRecordingRow(recording)
                     }
@@ -828,6 +865,7 @@ private struct RecordingsListContentView: View {
     #if !os(tvOS)
     private func seriesInlineTopRow(
         bannerURLString: String?,
+        inlineActive: [Recording],
         inlineCompleted: [Recording],
         inlineScheduled: [Recording]
     ) -> some View {
@@ -855,10 +893,20 @@ private struct RecordingsListContentView: View {
             }
 
             VStack(alignment: .leading, spacing: Theme.spacingSM) {
+                if !inlineActive.isEmpty {
+                    Text("Active")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                    ForEach(inlineActive) { recording in
+                        seriesInlineCompactRow(recording)
+                    }
+                }
+
                 if !inlineCompleted.isEmpty {
                     Text("Completed")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.textSecondary)
+                        .padding(.top, inlineActive.isEmpty ? 0 : Theme.spacingXS)
                     ForEach(inlineCompleted) { recording in
                         seriesInlineCompactRow(recording)
                     }
@@ -1236,7 +1284,10 @@ private struct RecordingsListContentView: View {
         if let parentId = summary.scheduled.compactMap(\.recurringParent).first {
             return parentId
         }
-        return summary.scheduled.first?.id
+        if let parentId = summary.active.compactMap(\.recurringParent).first {
+            return parentId
+        }
+        return summary.scheduled.first?.id ?? summary.active.first?.id
     }
 
     private func cancelSeries(recurringId: Int) {
