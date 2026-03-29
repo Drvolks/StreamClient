@@ -659,7 +659,9 @@ struct IOSNavigation: View {
                 Color.clear.frame(width: 28)
                 Text("\(series.name) (\(series.count))")
                     .font(.subheadline)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
@@ -1111,7 +1113,8 @@ struct TVOSNavigation: View {
                                         tvOSSidebarSubRow(
                                             label: "\(series.name) (\(series.count))",
                                             item: .recordingsSeries(series.name),
-                                            isSelected: appState.selectedTab == .recordings && appState.selectedRecordingsSeriesName == series.name
+                                            isSelected: appState.selectedTab == .recordings && appState.selectedRecordingsSeriesName == series.name,
+                                            maxLines: 2
                                         ) { EmptyView() }
                                     }
                                     if appState.recordingsSeriesItems.count > maxSeriesSidebarItems {
@@ -1249,6 +1252,7 @@ struct TVOSNavigation: View {
         label: String,
         item: TVSidebarItem,
         isSelected: Bool,
+        maxLines: Int = 1,
         @ViewBuilder badge: () -> Badge
     ) -> some View {
         Button {
@@ -1283,9 +1287,11 @@ struct TVOSNavigation: View {
 
                 Text(label)
                     .font(.subheadline)
-                    .lineLimit(1)
+                    .lineLimit(maxLines)
                     .minimumScaleFactor(0.8)
                     .allowsTightening(true)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
 
                 Spacer()

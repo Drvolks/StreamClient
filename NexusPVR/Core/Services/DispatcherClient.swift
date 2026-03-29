@@ -1267,7 +1267,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     }
 
     func recordingArtworkURL(recordingId: Int, fanart: Bool) -> URL? {
-        nil
+        guard !config.isDemoMode else { return DemoDataProvider.recordingArtworkURL(recordingId: recordingId, fanart: fanart) }
+        return nil
     }
 
     // MARK: - Proxy Status
