@@ -1205,7 +1205,18 @@ class MPVPlayerCore: NSObject {
     private var lastAudioChannels: String?
     private var hasTriedHwdecCopy = false
     private var currentURLPath: String?
+    private var currentURL: URL?
+    private var sourceURL: URL?
     private var lastPlaybackError: String?
+    private var hasTriedMasterPlaylistFallback = false
+    private var masterVariantCandidates: [URL] = []
+    private var failedVariantURLs: Set<String> = []
+    private var recoveryVariantCursor = 0
+    private var lastLiveHLSReloadAt: Date = .distantPast
+    private var hasDisabledHwdecForSession = false
+    private var hasAppliedLiveHLSProfile = false
+    private var lastPrintedMPVLog: String?
+    private var lastPrintedMPVLogAt: Date = .distantPast
 
     // Performance stats accumulation
     private var fpsSamples: [Double] = []
@@ -1705,8 +1716,9 @@ class MPVPlayerCore: NSObject {
 
         print("MPV: Initialized successfully")
 
-        // Request verbose log messages for debugging
-        mpv_request_log_messages(mpv, "v")
+        // Request error/fatal logs only to avoid MPV log buffer overflows
+        // on noisy live HLS streams.
+        mpv_request_log_messages(mpv, "error")
 
         // Observe eof-reached so we know when playback finishes
         // (keep-open=yes prevents MPV_EVENT_END_FILE from firing on EOF)
@@ -1719,13 +1731,28 @@ class MPVPlayerCore: NSObject {
     }
 
     func loadURL(_ url: URL) {
+        loadURL(url, isFallbackAttempt: false)
+    }
+
+    private func loadURL(_ url: URL, isFallbackAttempt: Bool) {
         guard let mpv = mpv else {
             print("MPV: No context available")
             return
         }
 
         let urlString = url.absoluteString
+        currentURL = url
         currentURLPath = url.path
+        if !isFallbackAttempt {
+            sourceURL = url
+            hasTriedMasterPlaylistFallback = false
+            masterVariantCandidates = []
+            failedVariantURLs.removeAll()
+            recoveryVariantCursor = 0
+        }
+        if isLikelyUnstableLiveHLS(url) {
+            applyLiveHLSProfileIfNeeded(mpv: mpv)
+        }
         print("MPV: Loading URL: \(urlString)")
 
         // Fix TS timing issues (genpts regenerates PTS, igndts ignores broken DTS)
@@ -1909,13 +1936,16 @@ class MPVPlayerCore: NSObject {
             if let msg = event.data?.assumingMemoryBound(to: mpv_event_log_message.self).pointee,
                let text = msg.text {
                 let logText = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !logText.isEmpty && !logText.hasPrefix("Set property:") {
-                    print("MPV [\(String(cString: msg.level!))]: \(logText)")
+                let level = msg.level.map { String(cString: $0) } ?? "info"
+                if (level == "error" || level == "fatal"),
+                   !logText.isEmpty,
+                   !logText.hasPrefix("Set property:"),
+                   shouldEmitMPVLog(level: level, text: logText) {
+                    print("MPV [\(level)]: \(logText)")
                 }
 
                 // Log mpv errors and HTTP warnings to the event log
-                let level = String(cString: msg.level!)
-                if level == "error" || (level == "warn" && logText.contains("http:")) {
+                if level == "error" || level == "fatal" {
                     NetworkEventLog.shared.log(NetworkEvent(
                         timestamp: Date(),
                         method: "PLAY",
@@ -1937,6 +1967,10 @@ class MPVPlayerCore: NSObject {
                     if logText.contains("Failed to open") || logText.contains("Failed to recognize") {
                         lastPlaybackError = logText
                     }
+                }
+
+                if level == "error", tryNextVariantAfterSegmentError(logText) {
+                    return
                 }
 
                 // Detect hardware decoding texture failures on iOS/tvOS where
@@ -1963,6 +1997,16 @@ class MPVPlayerCore: NSObject {
                         responseSize: 0,
                         errorDetail: logText
                     ))
+                }
+
+                // Some live HLS feeds repeatedly fail VT init (err=-12906) before
+                // eventually falling back to software. Disable hwdec early for this
+                // session to reduce startup stalls and repeated decoder churn.
+                if !hasDisabledHwdecForSession && level == "error" &&
+                    logText.contains("Failed setup for format videotoolbox_vld") {
+                    hasDisabledHwdecForSession = true
+                    mpv_set_property_string(mpv, "hwdec", "no")
+                    print("MPV: Disabled hwdec for this session after repeated VT init failures")
                 }
                 #endif
             }
@@ -1994,6 +2038,11 @@ class MPVPlayerCore: NSObject {
                 let reason = data.reason
                 print("MPV: Playback ended (reason: \(reason))")
                 if reason == MPV_END_FILE_REASON_EOF {
+                    if shouldIgnoreEOFAsTransientLiveHLS() {
+                        print("MPV: Ignoring transient EOF for live HLS stream")
+                        recoverLiveHLSAfterEOFIfNeeded()
+                        return
+                    }
                     // Normal end of file - video finished playing
                     print("MPV: Video playback completed naturally")
                     DispatchQueue.main.async { [weak self] in
@@ -2002,6 +2051,14 @@ class MPVPlayerCore: NSObject {
                 } else if reason == MPV_END_FILE_REASON_ERROR {
                     let error = data.error
                     let errorStr = String(cString: mpv_error_string(error))
+                    if tryMasterPlaylistFallbackIfNeeded() {
+                        return
+                    }
+                    if shouldAutoRecoverLiveHLSOnError(errorText: errorStr) {
+                        print("MPV: Recovering live HLS stream after error: \(errorStr)")
+                        recoverLiveHLSAfterFailureIfNeeded()
+                        return
+                    }
                     let path = currentURLPath ?? "unknown"
                     let detail = lastPlaybackError ?? errorStr
                     print("MPV: Playback error: \(errorStr)")
@@ -2034,6 +2091,11 @@ class MPVPlayerCore: NSObject {
                    prop.format == MPV_FORMAT_FLAG,
                    let flag = prop.data?.assumingMemoryBound(to: Int32.self).pointee,
                    flag != 0 {
+                    if shouldIgnoreEOFAsTransientLiveHLS() {
+                        print("MPV: Ignoring eof-reached for live HLS stream")
+                        recoverLiveHLSAfterEOFIfNeeded()
+                        return
+                    }
                     print("MPV: EOF reached (keep-open)")
                     DispatchQueue.main.async { [weak self] in
                         self?.onPlaybackEnded?()
@@ -2050,6 +2112,341 @@ class MPVPlayerCore: NSObject {
         default:
             print("MPV: Event \(event.event_id.rawValue)")
         }
+    }
+
+    private func tryMasterPlaylistFallbackIfNeeded() -> Bool {
+        guard !hasTriedMasterPlaylistFallback, let url = currentURL else { return false }
+        guard url.pathExtension.lowercased() == "m3u8" else { return false }
+        guard url.lastPathComponent.lowercased().contains("master") else { return false }
+        hasTriedMasterPlaylistFallback = true
+
+        Task { [weak self] in
+            guard let self else { return }
+            let variants = await self.resolvePreferredVariantURLs(from: url)
+            let reachableVariants = await self.filterReachableVariantURLs(variants)
+            let usableVariants = reachableVariants.isEmpty ? variants : reachableVariants
+            guard let mediaURL = usableVariants.first, mediaURL != url else {
+                return
+            }
+            self.masterVariantCandidates = usableVariants
+            self.failedVariantURLs.removeAll()
+            self.recoveryVariantCursor = 0
+
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "PLAY",
+                path: mediaURL.path,
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Master playlist fallback applied"
+            ))
+
+            self.loadURL(mediaURL, isFallbackAttempt: true)
+        }
+
+        return true
+    }
+
+    private func resolvePreferredVariantURLs(from masterURL: URL) async -> [URL] {
+        do {
+            let (data, _) = try await URLSession.shared.data(from: masterURL)
+            guard let content = String(data: data, encoding: .utf8) else { return [] }
+            guard content.contains("#EXT-X-STREAM-INF") else { return [] }
+
+            let lines = content
+                .split(whereSeparator: \.isNewline)
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            var candidates: [(url: URL, score: Int, bandwidth: Int)] = []
+            var pendingInf: String?
+
+            for line in lines {
+                if line.hasPrefix("#EXT-X-STREAM-INF:") {
+                    pendingInf = String(line.dropFirst("#EXT-X-STREAM-INF:".count))
+                    continue
+                }
+                guard let inf = pendingInf else { continue }
+                if line.isEmpty || line.hasPrefix("#") { continue }
+                guard let variantURL = URL(string: line, relativeTo: masterURL)?.absoluteURL else {
+                    pendingInf = nil
+                    continue
+                }
+
+                let attrs = parseHLSAttributes(inf)
+                let codecs = (attrs["CODECS"] ?? "").lowercased()
+                let bandwidth = Int(attrs["BANDWIDTH"] ?? "") ?? 0
+                var score = 0
+
+                if codecs.contains("avc1") { score += 100 }
+                if codecs.contains("hvc1") || codecs.contains("hev1") || codecs.contains("av01") { score -= 100 }
+                if codecs.contains("mp4a") { score += 10 }
+
+                candidates.append((variantURL, score, bandwidth))
+                pendingInf = nil
+            }
+
+            let avcCandidates = candidates
+                .filter { $0.score > 0 } // AVC + audio preferred
+
+            // Prefer a conservative bitrate for unstable live HLS.
+            // In practice this is often much more resilient than forcing the top variant.
+            let conservativeCap = 2_500_000
+            if let underCap = avcCandidates
+                .filter({ $0.bandwidth > 0 && $0.bandwidth <= conservativeCap })
+                .sorted(by: { $0.bandwidth > $1.bandwidth })
+                .first {
+                var ordered: [URL] = [underCap.url]
+                ordered.append(contentsOf: avcCandidates
+                    .filter { $0.url != underCap.url }
+                    .sorted(by: { lhs, rhs in
+                        if lhs.bandwidth == 0 { return false }
+                        if rhs.bandwidth == 0 { return true }
+                        return lhs.bandwidth < rhs.bandwidth
+                    })
+                    .map(\.url))
+                return dedupeURLs(ordered)
+            }
+
+            if let lowestAVC = avcCandidates
+                .sorted(by: { lhs, rhs in
+                    if lhs.bandwidth == 0 { return false }
+                    if rhs.bandwidth == 0 { return true }
+                    return lhs.bandwidth < rhs.bandwidth
+                })
+                .first {
+                var ordered: [URL] = [lowestAVC.url]
+                ordered.append(contentsOf: avcCandidates
+                    .filter { $0.url != lowestAVC.url }
+                    .sorted(by: { $0.bandwidth < $1.bandwidth })
+                    .map(\.url))
+                return dedupeURLs(ordered)
+            }
+
+            return dedupeURLs(candidates
+                .sorted { lhs, rhs in
+                    if lhs.score != rhs.score { return lhs.score > rhs.score }
+                    if lhs.bandwidth == 0 { return false }
+                    if rhs.bandwidth == 0 { return true }
+                    return lhs.bandwidth < rhs.bandwidth
+                }
+                .map(\.url))
+        } catch {
+            return []
+        }
+    }
+
+    private func parseHLSAttributes(_ raw: String) -> [String: String] {
+        var result: [String: String] = [:]
+        let parts = splitCSVPreservingQuotedCommas(raw)
+        for part in parts {
+            let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
+            guard pieces.count == 2 else { continue }
+            let key = String(pieces[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+            var value = String(pieces[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
+                value.removeFirst()
+                value.removeLast()
+            }
+            result[key] = value
+        }
+        return result
+    }
+
+    private func splitCSVPreservingQuotedCommas(_ text: String) -> [Substring] {
+        var result: [Substring] = []
+        var start = text.startIndex
+        var index = text.startIndex
+        var inQuotes = false
+
+        while index < text.endIndex {
+            let char = text[index]
+            if char == "\"" {
+                inQuotes.toggle()
+            } else if char == ",", !inQuotes {
+                result.append(text[start..<index])
+                start = text.index(after: index)
+            }
+            index = text.index(after: index)
+        }
+
+        if start <= text.endIndex {
+            result.append(text[start..<text.endIndex])
+        }
+        return result.filter { !$0.isEmpty }
+    }
+
+    private func shouldIgnoreEOFAsTransientLiveHLS() -> Bool {
+        guard !isRecordingInProgress else { return false }
+        guard let url = currentURL, url.pathExtension.lowercased() == "m3u8" else { return false }
+        return !isCurrentStreamSeekable()
+    }
+
+    private func isCurrentStreamSeekable() -> Bool {
+        guard let mpv else { return true }
+        var flag: Int32 = 1
+        if mpv_get_property(mpv, "seekable", MPV_FORMAT_FLAG, &flag) >= 0 {
+            return flag != 0
+        }
+        return true
+    }
+
+    private func recoverLiveHLSAfterEOFIfNeeded() {
+        print("MPV: Live HLS EOF detected, scheduling reload")
+        recoverLiveHLSAfterFailureIfNeeded()
+    }
+
+    private func recoverLiveHLSAfterFailureIfNeeded() {
+        guard let url = currentURL else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastLiveHLSReloadAt) >= 1.5 else { return }
+        lastLiveHLSReloadAt = now
+        let targetURL = nextRecoveryURL(current: url)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            print("MPV: Reloading live HLS stream after EOF (\(targetURL.absoluteString))")
+            self.loadURL(targetURL, isFallbackAttempt: true)
+        }
+    }
+
+    private func shouldAutoRecoverLiveHLSOnError(errorText: String) -> Bool {
+        guard let url = currentURL, isLikelyUnstableLiveHLS(url) else { return false }
+        let text = errorText.lowercased()
+        return text.contains("timed out") ||
+            text.contains("tls") ||
+            text.contains("avformat_open_input() failed") ||
+            text.contains("failed to recognize file format")
+    }
+
+    private func isLikelyUnstableLiveHLS(_ url: URL) -> Bool {
+        guard !isRecordingInProgress else { return false }
+        return url.pathExtension.lowercased() == "m3u8"
+    }
+
+    private func applyLiveHLSProfileIfNeeded(mpv: OpaquePointer) {
+        guard !hasAppliedLiveHLSProfile else { return }
+        hasAppliedLiveHLSProfile = true
+
+        // Tune buffering/reconnect behavior for flaky live HLS feeds.
+        // Goal: start faster and recover quickly rather than waiting for deep cache.
+        mpv_set_property_string(mpv, "cache-secs", "12")
+        mpv_set_property_string(mpv, "demuxer-readahead-secs", "6")
+        mpv_set_property_string(mpv, "cache-pause-initial", "no")
+        mpv_set_property_string(mpv, "cache-pause-wait", "0.2")
+        mpv_set_property_string(mpv, "network-timeout", "12")
+        mpv_set_property_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=2")
+        mpv_set_property_string(mpv, "hls-bitrate", "min")
+        print("MPV: Applied live HLS low-latency recovery profile")
+    }
+
+    private func tryNextVariantAfterSegmentError(_ logText: String) -> Bool {
+        guard logText.contains("hls: Error when loading first segment") else { return false }
+        guard let current = currentURL else { return false }
+        guard !masterVariantCandidates.isEmpty else { return false }
+
+        failedVariantURLs.insert(current.absoluteString)
+        guard let next = masterVariantCandidates.first(where: { !failedVariantURLs.contains($0.absoluteString) }) else {
+            return false
+        }
+
+        print("MPV: Switching to next HLS variant after segment error: \(next.absoluteString)")
+        loadURL(next, isFallbackAttempt: true)
+        return true
+    }
+
+    private func dedupeURLs(_ urls: [URL]) -> [URL] {
+        var seen: Set<String> = []
+        var result: [URL] = []
+        for url in urls {
+            let key = url.absoluteString
+            if seen.insert(key).inserted {
+                result.append(url)
+            }
+        }
+        return result
+    }
+
+    private func filterReachableVariantURLs(_ urls: [URL]) async -> [URL] {
+        guard !urls.isEmpty else { return [] }
+        var out: [URL] = []
+        for url in urls {
+            if await sanityCheckVariantPlaylist(url) {
+                out.append(url)
+            }
+        }
+        return out
+    }
+
+    private func sanityCheckVariantPlaylist(_ url: URL) async -> Bool {
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 4
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<400).contains(http.statusCode) else {
+                return false
+            }
+            guard let body = String(data: data, encoding: .utf8) else { return false }
+            return body.contains("#EXTINF")
+        } catch {
+            return false
+        }
+    }
+
+    private func nextRecoveryURL(current: URL) -> URL {
+        let currentKey = current.absoluteString
+        if !masterVariantCandidates.isEmpty {
+            failedVariantURLs.insert(currentKey)
+            let candidates = masterVariantCandidates.filter { !failedVariantURLs.contains($0.absoluteString) }
+            if !candidates.isEmpty {
+                let index = recoveryVariantCursor % candidates.count
+                recoveryVariantCursor += 1
+                return candidates[index]
+            }
+            // All variants failed once: reset and keep cycling.
+            failedVariantURLs.removeAll()
+            let index = recoveryVariantCursor % masterVariantCandidates.count
+            recoveryVariantCursor += 1
+            return masterVariantCandidates[index]
+        }
+        return preferredRecoveryURL(from: current)
+    }
+
+    private func shouldEmitMPVLog(level: String, text: String) -> Bool {
+        let now = Date()
+        let key = "\(level):\(text)"
+        if lastPrintedMPVLog == key, now.timeIntervalSince(lastPrintedMPVLogAt) < 1 {
+            return false
+        }
+        lastPrintedMPVLog = key
+        lastPrintedMPVLogAt = now
+        return true
+    }
+
+    private func preferredRecoveryURL(from current: URL) -> URL {
+        if let primary = normalizedPrimaryMirrorURL(current), primary != current {
+            return primary
+        }
+        if let sourceURL, sourceURL != current {
+            return sourceURL
+        }
+        return current
+    }
+
+    private func normalizedPrimaryMirrorURL(_ url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let rewritten = components.path
+            .split(separator: "/")
+            .map { segment -> String in
+                let value = String(segment)
+                if value.hasSuffix("-b"), value.count > 2 {
+                    return String(value.dropLast(2))
+                }
+                return value
+            }
+            .joined(separator: "/")
+        components.path = "/" + rewritten
+        return components.url
     }
 }
 
