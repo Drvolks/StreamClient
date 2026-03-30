@@ -46,6 +46,7 @@ nonisolated struct UserPreferences: Codable {
     var tvosGPUAPI: GPUAPI = .pixelbuffer
     var iosGPUAPI: GPUAPI = .pixelbuffer
     var macosGPUAPI: GPUAPI = .pixelbuffer
+    var updatedAt: Date = .distantPast
 
     /// The GPU API for the current platform.
     var currentGPUAPI: GPUAPI {
@@ -68,6 +69,7 @@ nonisolated struct UserPreferences: Codable {
         case tvosGPUAPI
         case iosGPUAPI
         case macosGPUAPI
+        case updatedAt
     }
 
     init() {}
@@ -88,6 +90,7 @@ nonisolated struct UserPreferences: Codable {
         tvosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .tvosGPUAPI) ?? .pixelbuffer
         iosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .iosGPUAPI) ?? .pixelbuffer
         macosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .macosGPUAPI) ?? .pixelbuffer
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
     func encode(to encoder: Encoder) throws {
@@ -99,6 +102,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(tvosGPUAPI, forKey: .tvosGPUAPI)
         try container.encode(iosGPUAPI, forKey: .iosGPUAPI)
         try container.encode(macosGPUAPI, forKey: .macosGPUAPI)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 
     private static let storageKey = "UserPreferences"
@@ -110,17 +114,11 @@ nonisolated struct UserPreferences: Codable {
     static func load() -> UserPreferences {
         if let demo = demoStore { return demo }
 
-        // Try iCloud first
-        if let data = ubiquitousStore.data(forKey: storageKey),
-           let prefs = try? JSONDecoder().decode(UserPreferences.self, from: data) {
-            return prefs
-        }
+        let cloudPrefs = ubiquitousStore.data(forKey: storageKey).flatMap(decode)
+        let localPrefs = UserDefaults.standard.data(forKey: storageKey).flatMap(decode)
 
-        // Fall back to UserDefaults for migration or offline use
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let prefs = try? JSONDecoder().decode(UserPreferences.self, from: data) {
-            // Migrate to iCloud
-            prefs.save()
+        if let prefs = resolvePersistence(local: localPrefs, cloud: cloudPrefs) {
+            persist(prefs)
             return prefs
         }
 
@@ -132,17 +130,9 @@ nonisolated struct UserPreferences: Codable {
             Self.demoStore = self
             return
         }
-        if let data = try? JSONEncoder().encode(self) {
-            // Save to iCloud for sync
-            Self.ubiquitousStore.set(data, forKey: Self.storageKey)
-            Self.ubiquitousStore.synchronize()
-
-            // Also save locally as backup
-            UserDefaults.standard.set(data, forKey: Self.storageKey)
-
-            // Save to App Group for Top Shelf extension
-            UserDefaults(suiteName: ServerConfig.appGroupSuite)?.set(data, forKey: Self.storageKey)
-        }
+        var prefs = self
+        prefs.updatedAt = Date()
+        Self.persist(prefs)
     }
 
     static func loadFromAppGroup() -> UserPreferences {
@@ -162,5 +152,39 @@ nonisolated struct UserPreferences: Codable {
         ) { _ in
             onChange()
         }
+    }
+
+    private static func decode(_ data: Data) -> UserPreferences? {
+        try? JSONDecoder().decode(UserPreferences.self, from: data)
+    }
+
+    static func resolvePersistence(local: UserPreferences?, cloud: UserPreferences?) -> UserPreferences? {
+        switch (local, cloud) {
+        case let (local?, cloud?):
+            if local.updatedAt == .distantPast && cloud.updatedAt == .distantPast {
+                return local
+            }
+            return local.updatedAt >= cloud.updatedAt ? local : cloud
+        case let (local?, nil):
+            return local
+        case let (nil, cloud?):
+            return cloud
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private static func persist(_ prefs: UserPreferences) {
+        guard let data = try? JSONEncoder().encode(prefs) else { return }
+
+        // Save to iCloud for sync
+        ubiquitousStore.set(data, forKey: storageKey)
+        ubiquitousStore.synchronize()
+
+        // Also save locally as backup
+        UserDefaults.standard.set(data, forKey: storageKey)
+
+        // Save to App Group for Top Shelf extension
+        UserDefaults(suiteName: ServerConfig.appGroupSuite)?.set(data, forKey: storageKey)
     }
 }
