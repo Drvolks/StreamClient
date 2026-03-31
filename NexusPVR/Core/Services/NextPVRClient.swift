@@ -224,6 +224,12 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
         for attempt in 1...Self.maxAttempts {
             let start = CFAbsoluteTimeGetCurrent()
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(), method: method, path: path,
+                statusCode: nil, isSuccess: true,
+                durationMs: 0, responseSize: 0,
+                errorDetail: "Request started (attempt \(attempt)/\(Self.maxAttempts))"
+            ))
             do {
                 let (data, response) = try await session.data(from: url)
                 let status = (response as? HTTPURLResponse)?.statusCode
@@ -313,14 +319,56 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         defer { isConnecting = false }
 
         do {
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/session",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Starting NextPVR authentication against \(baseURL)"
+            ))
+
             // Step 1: Initiate session
             let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=\(deviceName)&format=json")!
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/session.initiate",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Preparing session initiation"
+            ))
             let (initiateData, _) = try await loggedData(from: initiateURL)
             let initiateResponse = try JSONDecoder().decode(SessionInitiateResponse.self, from: initiateData)
 
             guard let tempSid = initiateResponse.sid, let salt = initiateResponse.salt else {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/session.initiate",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: initiateData.count,
+                    errorDetail: "Initiate response missing sid or salt"
+                ))
                 throw NextPVRError.invalidResponse
             }
+
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/session.initiate",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: initiateData.count,
+                errorDetail: "Received sid and salt"
+            ))
 
             // Step 2: Compute hash: md5(":" + md5(PIN) + ":" + salt)
             let pinMd5 = MD5Hasher.hash(config.pin)
@@ -329,21 +377,71 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
             // Step 3: Login
             let loginURL = URL(string: "\(baseURL)/services/service?method=session.login&sid=\(tempSid)&md5=\(loginHash)&format=json")!
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/session.login",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Submitting login request"
+            ))
             let (loginData, _) = try await loggedData(from: loginURL)
             let loginResponse = try JSONDecoder().decode(SessionLoginResponse.self, from: loginData)
 
             if loginResponse.isSuccess {
                 sid = tempSid
                 isAuthenticated = true
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/session.login",
+                    statusCode: nil,
+                    isSuccess: true,
+                    durationMs: 0,
+                    responseSize: loginData.count,
+                    errorDetail: "Authentication succeeded"
+                ))
             } else {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/session.login",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: loginData.count,
+                    errorDetail: "Authentication failed: session.login did not return ok"
+                ))
                 throw NextPVRError.authenticationFailed
             }
         } catch let error as NextPVRError {
             lastError = error
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/session",
+                statusCode: nil,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Authentication error: \(error.localizedDescription)"
+            ))
             throw error
         } catch {
             let npvrError = NextPVRError.networkError(error)
             lastError = npvrError
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/session",
+                statusCode: nil,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Authentication threw unexpected error: \(error.localizedDescription)"
+            ))
             throw npvrError
         }
     }

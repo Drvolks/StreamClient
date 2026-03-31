@@ -201,6 +201,12 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
         for attempt in 1...Self.maxAttempts {
             let start = CFAbsoluteTimeGetCurrent()
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(), method: method, path: path,
+                statusCode: nil, isSuccess: true,
+                durationMs: 0, responseSize: 0,
+                errorDetail: "Request started (attempt \(attempt)/\(Self.maxAttempts))"
+            ))
             do {
                 let (data, response) = try await session.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode
@@ -285,8 +291,29 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             isConnecting = true
             defer { isConnecting = false }
 
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/dispatcharr/api-key",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Starting Dispatcharr API key authentication against \(baseURL)"
+            ))
+
             // Probe /api/accounts/users/me/ — accessible to all authenticated users regardless of role
             guard let url = URL(string: "\(baseURL)/api/accounts/users/me/") else {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/api-key",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: 0,
+                    errorDetail: "Invalid URL for API key probe"
+                ))
                 throw PVRClientError.invalidResponse
             }
 
@@ -297,21 +324,81 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             do {
                 let (_, response) = try await loggedData(for: request)
                 guard let httpResponse = response as? HTTPURLResponse else {
+                    NetworkEventLog.shared.log(NetworkEvent(
+                        timestamp: Date(),
+                        method: "AUTH",
+                        path: "/dispatcharr/api-key",
+                        statusCode: nil,
+                        isSuccess: false,
+                        durationMs: 0,
+                        responseSize: 0,
+                        errorDetail: "API key probe returned a non-HTTP response"
+                    ))
                     throw PVRClientError.invalidResponse
                 }
                 if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                    NetworkEventLog.shared.log(NetworkEvent(
+                        timestamp: Date(),
+                        method: "AUTH",
+                        path: "/dispatcharr/api-key",
+                        statusCode: httpResponse.statusCode,
+                        isSuccess: false,
+                        durationMs: 0,
+                        responseSize: 0,
+                        errorDetail: "API key rejected"
+                    ))
                     throw PVRClientError.authenticationFailed
                 }
                 guard (200...299).contains(httpResponse.statusCode) else {
+                    NetworkEventLog.shared.log(NetworkEvent(
+                        timestamp: Date(),
+                        method: "AUTH",
+                        path: "/dispatcharr/api-key",
+                        statusCode: httpResponse.statusCode,
+                        isSuccess: false,
+                        durationMs: 0,
+                        responseSize: 0,
+                        errorDetail: "Unexpected API key auth status"
+                    ))
                     throw PVRClientError.invalidResponse
                 }
                 accessToken = config.apiKey
                 refreshToken = nil
                 useApiKeyAuth = true
                 isAuthenticated = true
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/api-key",
+                    statusCode: httpResponse.statusCode,
+                    isSuccess: true,
+                    durationMs: 0,
+                    responseSize: 0,
+                    errorDetail: "API key authentication succeeded"
+                ))
             } catch let error as PVRClientError {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/api-key",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: 0,
+                    errorDetail: "API key authentication error: \(error.localizedDescription)"
+                ))
                 throw error
             } catch {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/api-key",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: 0,
+                    errorDetail: "API key authentication threw unexpected error: \(error.localizedDescription)"
+                ))
                 throw PVRClientError.networkError(error)
             }
             return
@@ -320,7 +407,28 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         isConnecting = true
         defer { isConnecting = false }
 
+        NetworkEventLog.shared.log(NetworkEvent(
+            timestamp: Date(),
+            method: "AUTH",
+            path: "/dispatcharr/jwt",
+            statusCode: nil,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "Starting Dispatcharr JWT authentication against \(baseURL)"
+        ))
+
         guard let url = URL(string: "\(baseURL)/api/accounts/token/") else {
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/dispatcharr/jwt",
+                statusCode: nil,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Invalid URL for token endpoint"
+            ))
             throw PVRClientError.invalidResponse
         }
 
@@ -338,16 +446,46 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             let (data, response) = try await loggedData(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/jwt",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: data.count,
+                    errorDetail: "Token endpoint returned a non-HTTP response"
+                ))
                 throw PVRClientError.invalidResponse
             }
 
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 400 {
                 // JWT failed — try XC API as fallback (password may be XC, not Django)
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/jwt",
+                    statusCode: httpResponse.statusCode,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: data.count,
+                    errorDetail: "JWT auth rejected, trying XC fallback"
+                ))
                 if try await authenticateViaXC() { return }
                 throw PVRClientError.authenticationFailed
             }
 
             guard httpResponse.statusCode == 200 else {
+                NetworkEventLog.shared.log(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/jwt",
+                    statusCode: httpResponse.statusCode,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: data.count,
+                    errorDetail: "Unexpected token endpoint status"
+                ))
                 throw PVRClientError.invalidResponse
             }
 
@@ -356,9 +494,39 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             refreshToken = tokenResponse.refresh
             useApiKeyAuth = false
             isAuthenticated = true
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/dispatcharr/jwt",
+                statusCode: httpResponse.statusCode,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: data.count,
+                errorDetail: "JWT authentication succeeded"
+            ))
         } catch let error as PVRClientError {
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/dispatcharr/jwt",
+                statusCode: nil,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "JWT authentication error: \(error.localizedDescription)"
+            ))
             throw error
         } catch {
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/dispatcharr/jwt",
+                statusCode: nil,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "JWT authentication threw unexpected error: \(error.localizedDescription)"
+            ))
             throw PVRClientError.networkError(error)
         }
     }
@@ -370,14 +538,47 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         let encodedPass = config.password.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? config.password
         guard let xcURL = URL(string: "\(baseURL)/player_api.php?username=\(encodedUser)&password=\(encodedPass)") else { return false }
 
+        NetworkEventLog.shared.log(NetworkEvent(
+            timestamp: Date(),
+            method: "AUTH",
+            path: "/dispatcharr/xc",
+            statusCode: nil,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "Attempting XC fallback authentication"
+        ))
+
         let (_, xcResponse) = try await loggedData(from: xcURL)
         guard let httpResponse = xcResponse as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else { return false }
+              (200...299).contains(httpResponse.statusCode) else {
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "AUTH",
+                path: "/dispatcharr/xc",
+                statusCode: (xcResponse as? HTTPURLResponse)?.statusCode,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "XC fallback authentication failed"
+            ))
+            return false
+        }
 
         // XC auth succeeded — mark as authenticated without JWT tokens
         useApiKeyAuth = false
         useOutputEndpoints = true
         isAuthenticated = true
+        NetworkEventLog.shared.log(NetworkEvent(
+            timestamp: Date(),
+            method: "AUTH",
+            path: "/dispatcharr/xc",
+            statusCode: httpResponse.statusCode,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "XC fallback authentication succeeded"
+        ))
         return true
     }
 

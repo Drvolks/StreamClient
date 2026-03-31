@@ -32,6 +32,13 @@ struct ContentView: View {
     #if os(tvOS)
     @FocusState private var focusedServerId: String?
     #endif
+    #if !DISPATCHERPVR
+    @State private var discoveryPIN = Brand.defaultPIN
+    @State private var hasStartedDiscovery = false
+    #if os(tvOS)
+    @FocusState private var findServersFocused: Bool
+    #endif
+    #endif
     #if DISPATCHERPVR
     @State private var discoveryUsername = ""
     @State private var discoveryPassword = ""
@@ -86,12 +93,6 @@ struct ContentView: View {
             isCheckingCloud = false
 
             // Only scan if no config found (NextPVR auto-scans; Dispatcharr waits for credentials)
-            #if !DISPATCHERPVR
-            if !client.isConfigured {
-                discovery.startScan()
-            }
-            #endif
-
             // Authenticate without blocking the UI.
             // No artificial timeout — URLSession's timeoutIntervalForRequest (30s)
             if client.isConfigured {
@@ -123,7 +124,8 @@ struct ContentView: View {
                     discoveryApiKey = ""
                     useApiKey = false
                     #else
-                    discovery.startScan()
+                    hasStartedDiscovery = false
+                    discoveryPIN = Brand.defaultPIN
                     #endif
                 }
             }
@@ -210,8 +212,11 @@ struct ContentView: View {
                 credentialsForm
             }
             #else
-            // Discovered servers section
-            discoveredServersSection
+            if hasStartedDiscovery {
+                discoveredServersSection
+            } else {
+                pinForm
+            }
             #endif
 
             Spacer()
@@ -221,7 +226,9 @@ struct ContentView: View {
                 manualConfigButton
             }
             #else
-            manualConfigButton
+            if hasStartedDiscovery {
+                manualConfigButton
+            }
             #endif
             
             Spacer()
@@ -243,7 +250,12 @@ struct ContentView: View {
                     useHTTPS: false
                 ))
                 #else
-                sheetConfig = SetupSheetConfig(prefill: nil)
+                sheetConfig = SetupSheetConfig(prefill: ServerConfig(
+                    host: "",
+                    port: Brand.defaultPort,
+                    pin: discoveryPIN,
+                    useHTTPS: false
+                ))
                 #endif
             } label: {
                 HStack {
@@ -255,6 +267,51 @@ struct ContentView: View {
         }
         .padding()
     }
+
+    #if !DISPATCHERPVR
+    private var pinForm: some View {
+        VStack(spacing: Theme.spacingMD) {
+            Text("Enter your NextPVR PIN to find servers on your network.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+
+            TextField("PIN", text: $discoveryPIN)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+                #if !os(tvOS)
+                .padding(Theme.spacingMD)
+                .background(Theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+                #endif
+                .frame(maxWidth: 400)
+                #if os(tvOS)
+                .onSubmit {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        findServersFocused = true
+                    }
+                }
+                #endif
+
+            Button {
+                hasStartedDiscovery = true
+                discovery.startScan(pin: discoveryPIN)
+            } label: {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                    Text("Find or Configure Server")
+                }
+            }
+            #if os(tvOS)
+            .focused($findServersFocused)
+            #endif
+            .buttonStyle(AccentButtonStyle())
+            .disabled(discoveryPIN.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(.horizontal, Theme.spacingLG)
+    }
+    #endif
 
     #if DISPATCHERPVR
     private var credentialsForm: some View {
@@ -418,12 +475,24 @@ struct ContentView: View {
     private func selectServer(_ server: DiscoveredServer) {
         if server.requiresAuth {
             // Server needs credentials — open config with host/port pre-filled
+            #if DISPATCHERPVR
             sheetConfig = SetupSheetConfig(prefill: ServerConfig(
                 host: server.host,
                 port: server.port,
                 pin: "",
+                username: discoveryUsername,
+                password: discoveryPassword,
+                apiKey: discoveryApiKey,
                 useHTTPS: false
             ))
+            #else
+            sheetConfig = SetupSheetConfig(prefill: ServerConfig(
+                host: server.host,
+                port: server.port,
+                pin: discoveryPIN,
+                useHTTPS: false
+            ))
+            #endif
         } else {
             // Credentials verified during discovery — auto-connect
             #if DISPATCHERPVR
@@ -440,7 +509,7 @@ struct ContentView: View {
             let config = ServerConfig(
                 host: server.host,
                 port: server.port,
-                pin: Brand.defaultPIN,
+                pin: discoveryPIN,
                 useHTTPS: false
             )
             #endif
