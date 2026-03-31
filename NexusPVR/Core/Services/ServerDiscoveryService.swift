@@ -14,7 +14,12 @@ nonisolated struct DiscoveredServer: Identifiable, Equatable {
     let host: String
     let port: Int
     let serverName: String
-    let requiresAuth: Bool // true if default PIN/credentials don't work
+    let requiresAuth: Bool // true if provided PIN/credentials don't work
+}
+
+nonisolated struct HostProbeResult: Equatable {
+    let port: Int
+    let useHTTPS: Bool
 }
 
 @MainActor
@@ -23,18 +28,22 @@ class ServerDiscoveryService: ObservableObject {
     @Published var isScanning = false
 
     private var scanTask: Task<Void, Never>?
+    private var pin: String?
     private var credentials: (username: String, password: String)?
     private var apiKey: String?
 
-    func startScan(username: String = "", password: String = "", apiKey: String = "") {
+    func startScan(pin: String = "", username: String = "", password: String = "", apiKey: String = "") {
         guard !isScanning else { return }
         discoveredServers = []
         isScanning = true
+        self.pin = !pin.isEmpty ? pin : nil
         credentials = (!username.isEmpty && !password.isEmpty) ? (username, password) : nil
         self.apiKey = !apiKey.isEmpty ? apiKey : nil
 
         // Demo credentials: show a fake server immediately, skip real network scan
-        if (username.lowercased() == "demo" && password == "demo") || apiKey.lowercased() == "demo" {
+        if pin.lowercased() == "demo"
+            || (username.lowercased() == "demo" && password == "demo")
+            || apiKey.lowercased() == "demo" {
             discoveredServers = [
                 DiscoveredServer(id: "demo", host: "demo", port: Brand.defaultPort, serverName: "Demo Server", requiresAuth: false)
             ]
@@ -69,6 +78,7 @@ class ServerDiscoveryService: ObservableObject {
 
         let candidates = generateCandidateIPs(localIP: localIP, subnetMask: subnetMask)
         let port = Brand.defaultPort
+        let pin = pin
         let creds = credentials
         let key = apiKey
 
@@ -89,7 +99,7 @@ class ServerDiscoveryService: ObservableObject {
                 }
 
                 group.addTask {
-                    await self.probeHost(ip, port: port, credentials: creds, apiKey: key)
+                    await self.probeHost(ip, port: port, pin: pin, credentials: creds, apiKey: key)
                 }
                 activeTasks += 1
             }
@@ -168,15 +178,83 @@ class ServerDiscoveryService: ObservableObject {
 
     // MARK: - Probing
 
-    private nonisolated func probeHost(_ host: String, port: Int, credentials: (username: String, password: String)?, apiKey: String? = nil) async -> DiscoveredServer? {
+    nonisolated static func detectHostConfiguration(host rawHost: String, preferredHTTPS: Bool? = nil) async -> HostProbeResult? {
+        let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty, host.lowercased() != "demo" else { return nil }
+
+        let candidates = probeCandidates(preferredHTTPS: preferredHTTPS)
+
+        for candidate in candidates {
+            if await probeHostConfiguration(host: host, port: candidate.port, useHTTPS: candidate.useHTTPS) {
+                return HostProbeResult(port: candidate.port, useHTTPS: candidate.useHTTPS)
+            }
+        }
+
+        return nil
+    }
+
+    private nonisolated static func probeCandidates(preferredHTTPS: Bool?) -> [(port: Int, useHTTPS: Bool)] {
+        switch preferredHTTPS {
+        case true:
+            var candidates: [(port: Int, useHTTPS: Bool)] = [(443, true)]
+            if Brand.defaultPort != 443 {
+                candidates.append((Brand.defaultPort, true))
+            }
+            return candidates
+        case false:
+            var candidates: [(port: Int, useHTTPS: Bool)] = [(Brand.defaultPort, false)]
+            if Brand.defaultPort != 80 {
+                candidates.append((80, false))
+            }
+            return candidates
+        case nil:
+            var candidates: [(port: Int, useHTTPS: Bool)] = [(Brand.defaultPort, false)]
+            if Brand.defaultPort != 80 {
+                candidates.append((80, false))
+            }
+            candidates.append((443, true))
+            if Brand.defaultPort != 443 {
+                candidates.append((Brand.defaultPort, true))
+            }
+            return candidates
+        }
+    }
+
+    private nonisolated static func probeHostConfiguration(host: String, port: Int, useHTTPS: Bool) async -> Bool {
+        let scheme = useHTTPS ? "https" : "http"
+        let defaultPort = useHTTPS ? 443 : 80
+        let baseURL = port == defaultPort ? "\(scheme)://\(host)" : "\(scheme)://\(host):\(port)"
+        guard let url = URL(string: "\(baseURL)\(Brand.discoveryProbePath)") else { return false }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            return isValidProbeStatus(httpResponse.statusCode)
+        } catch {
+            return false
+        }
+    }
+
+    private nonisolated static func isValidProbeStatus(_ statusCode: Int) -> Bool {
+        #if DISPATCHERPVR
+        return (200...399).contains(statusCode) || statusCode == 401 || statusCode == 403 || statusCode == 405
+        #else
+        return (200...399).contains(statusCode)
+        #endif
+    }
+
+    private nonisolated func probeHost(_ host: String, port: Int, pin: String?, credentials: (username: String, password: String)?, apiKey: String? = nil) async -> DiscoveredServer? {
         let baseURL = "http://\(host):\(port)"
 
         #if DISPATCHERPVR
         // Dispatcharr: authenticate with provided credentials via JWT token endpoint or API key
         return await verifyDispatcharr(baseURL: baseURL, host: host, port: port, credentials: credentials, apiKey: apiKey)
         #else
-        // NextPVR: hit session.initiate and try default PIN
-        return await verifyNextPVR(baseURL: baseURL, host: host, port: port)
+        // NextPVR: hit session.initiate and try the provided PIN when available
+        return await verifyNextPVR(baseURL: baseURL, host: host, port: port, pin: pin)
         #endif
     }
 
@@ -251,7 +329,7 @@ class ServerDiscoveryService: ObservableObject {
         }
     }
     #else
-    private nonisolated func verifyNextPVR(baseURL: String, host: String, port: Int) async -> DiscoveredServer? {
+    private nonisolated func verifyNextPVR(baseURL: String, host: String, port: Int, pin: String?) async -> DiscoveredServer? {
         let probeURL = "\(baseURL)\(Brand.discoveryProbePath)"
         guard let url = URL(string: probeURL) else { return nil }
 
@@ -266,7 +344,7 @@ class ServerDiscoveryService: ObservableObject {
             }
 
             let serverName = parseServerName(from: data) ?? Brand.serverName
-            let requiresAuth = await !tryDefaultPINAuth(baseURL: baseURL, initiateData: data)
+            let requiresAuth = await !tryPINAuth(baseURL: baseURL, initiateData: data, pin: pin ?? Brand.defaultPIN)
             return DiscoveredServer(id: host, host: host, port: port, serverName: serverName, requiresAuth: requiresAuth)
         } catch {
             return nil
@@ -284,8 +362,8 @@ class ServerDiscoveryService: ObservableObject {
     }
 
     #if !DISPATCHERPVR
-    /// Attempt login with default PIN using the session.initiate response already fetched
-    private nonisolated func tryDefaultPINAuth(baseURL: String, initiateData: Data) async -> Bool {
+    /// Attempt login with the supplied PIN using the session.initiate response already fetched
+    private nonisolated func tryPINAuth(baseURL: String, initiateData: Data, pin: String) async -> Bool {
         guard let initResponse = try? JSONDecoder().decode(SessionInitiateResponse.self, from: initiateData),
               let sid = initResponse.sid,
               let salt = initResponse.salt else {
@@ -293,7 +371,7 @@ class ServerDiscoveryService: ObservableObject {
         }
 
         // md5(":" + md5(PIN) + ":" + salt)
-        let pinHash = md5(Brand.defaultPIN)
+        let pinHash = md5(pin)
         let loginHash = md5(":\(pinHash):\(salt)")
 
         guard let loginURL = URL(string: "\(baseURL)/services/service?method=session.login&sid=\(sid)&md5=\(loginHash)&format=json") else {

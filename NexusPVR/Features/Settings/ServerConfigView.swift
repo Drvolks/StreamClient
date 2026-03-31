@@ -18,6 +18,9 @@ struct ServerConfigView: View {
     @State private var useApiKey: Bool
     #endif
     @State private var portString: String
+    @State private var hostProbeTask: Task<Void, Never>?
+    @State private var isProbingHost = false
+    @State private var hostProbeGeneration = 0
 
     init(prefillConfig: ServerConfig? = nil) {
         let c = prefillConfig ?? ServerConfig.load()
@@ -25,56 +28,18 @@ struct ServerConfigView: View {
         #if DISPATCHERPVR
         _useApiKey = State(initialValue: !c.apiKey.isEmpty)
         #endif
-        _portString = State(initialValue: c.port.map(String.init) ?? "")
+        _portString = State(initialValue: c.port.map(String.init) ?? String(c.useHTTPS ? 443 : Brand.defaultPort))
+    }
+
+    private var defaultPortPlaceholder: String {
+        String(config.useHTTPS ? 443 : Brand.defaultPort)
     }
 
     var body: some View {
-        #if os(tvOS)
-        formContent
-            .navigationTitle("Server Setup")
-            .alert("Connection Error", isPresented: .constant(connectionError != nil)) {
-                Button("OK") {
-                    connectionError = nil
-                }
-            } message: {
-                if let error = connectionError {
-                    Text(error)
-                }
-            }
-        #elseif os(macOS)
-        formContent
-            .alert("Connection Error", isPresented: .constant(connectionError != nil)) {
-                Button("OK") {
-                    connectionError = nil
-                }
-            } message: {
-                if let error = connectionError {
-                    Text(error)
-                }
-            }
-        #else
-        NavigationStack {
+        Group {
+            #if os(tvOS)
             formContent
                 .navigationTitle("Server Setup")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            dismiss()
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        if isConnecting {
-                            ProgressView()
-                                .tint(Theme.accent)
-                        } else {
-                            Button("Save") {
-                                saveAndConnect()
-                            }
-                            .disabled(!config.isConfigured)
-                        }
-                    }
-                }
                 .alert("Connection Error", isPresented: .constant(connectionError != nil)) {
                     Button("OK") {
                         connectionError = nil
@@ -84,8 +49,66 @@ struct ServerConfigView: View {
                         Text(error)
                     }
                 }
+            #elseif os(macOS)
+            formContent
+                .alert("Connection Error", isPresented: .constant(connectionError != nil)) {
+                    Button("OK") {
+                        connectionError = nil
+                    }
+                } message: {
+                    if let error = connectionError {
+                        Text(error)
+                    }
+                }
+            #else
+            NavigationStack {
+                formContent
+                    .navigationTitle("Server Setup")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                dismiss()
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            if isConnecting {
+                                ProgressView()
+                                    .tint(Theme.accent)
+                            } else {
+                                Button("Save") {
+                                    saveAndConnect()
+                                }
+                                .disabled(!config.isConfigured)
+                            }
+                        }
+                    }
+                    .alert("Connection Error", isPresented: .constant(connectionError != nil)) {
+                        Button("OK") {
+                            connectionError = nil
+                        }
+                    } message: {
+                        if let error = connectionError {
+                            Text(error)
+                        }
+                    }
+            }
+            #endif
         }
-        #endif
+        .task {
+            if !config.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                scheduleHostProbe(for: config.host)
+            }
+        }
+        .onChange(of: config.host) { newHost in
+            scheduleHostProbe(for: newHost)
+        }
+        .onChange(of: config.useHTTPS) { _ in
+            scheduleHostProbe(for: config.host)
+        }
+        .onDisappear {
+            hostProbeTask?.cancel()
+        }
     }
 
     @ViewBuilder
@@ -117,12 +140,6 @@ struct ServerConfigView: View {
                             TextField("Host (e.g. 192.168.1.100)", text: $config.host)
                                                                 .autocorrectionDisabled()
 
-                            TextField("Port (default: \(config.useHTTPS ? "443" : "80"))", text: $portString)
-                                .keyboardType(.numberPad)
-                                .onChange(of: portString) { newValue in
-                                    config.port = Int(newValue)
-                                }
-
                             HStack {
                                 Text("Use HTTPS")
                                     .foregroundStyle(Theme.textPrimary)
@@ -139,6 +156,23 @@ struct ServerConfigView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                                 }
                                 .buttonStyle(.card)
+                            }
+
+                            if isProbingHost {
+                                HStack {
+                                    ProgressView()
+                                        .tint(Theme.accent)
+                                    Spacer()
+                                    Text("Finding port...")
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                TextField("Port (default: \(defaultPortPlaceholder))", text: $portString)
+                                    .keyboardType(.numberPad)
+                                    .onChange(of: portString) { newValue in
+                                        config.port = Int(newValue)
+                                    }
                             }
                         }
                     }
@@ -268,25 +302,31 @@ struct ServerConfigView: View {
                             }
 
                             HStack {
-                                Text("Port")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .frame(width: 60, alignment: .trailing)
-                                TextField(config.useHTTPS ? "443" : "80", text: $portString)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 80)
-                                    .onChange(of: portString) { newValue in
-                                        config.port = Int(newValue)
-                                    }
-                                Spacer()
-                            }
-
-                            HStack {
                                 Text("")
                                     .frame(width: 60)
                                 Toggle("Use HTTPS", isOn: $config.useHTTPS)
                                     .toggleStyle(.switch)
                                     .tint(Theme.accent)
+                                Spacer()
+                            }
+
+                            HStack {
+                                Text("Port")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .frame(width: 60, alignment: .trailing)
+                                if isProbingHost {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .frame(width: 80, alignment: .leading)
+                                } else {
+                                    TextField(defaultPortPlaceholder, text: $portString)
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 80)
+                                        .onChange(of: portString) { newValue in
+                                            config.port = Int(newValue)
+                                        }
+                                }
                                 Spacer()
                             }
                         }
@@ -407,20 +447,25 @@ struct ServerConfigView: View {
         Section {
             LabeledContent("Host") {
                 TextField("192.168.1.100", text: $config.host)
-                                        .keyboardType(.URL)
+                    .keyboardType(.URL)
                     .autocapitalization(.none)
             }
 
-            LabeledContent("Port") {
-                TextField(config.useHTTPS ? "443" : "80", text: $portString)
-                    .multilineTextAlignment(.trailing)
-                    .keyboardType(.numberPad)
-                    .onChange(of: portString) { newValue in
-                        config.port = Int(newValue)
-                    }
-            }
-
             Toggle("Use HTTPS", isOn: $config.useHTTPS)
+
+            LabeledContent("Port") {
+                if isProbingHost {
+                    ProgressView()
+                        .tint(Theme.accent)
+                } else {
+                    TextField(defaultPortPlaceholder, text: $portString)
+                        .multilineTextAlignment(.trailing)
+                        .keyboardType(.numberPad)
+                        .onChange(of: portString) { newValue in
+                            config.port = Int(newValue)
+                        }
+                }
+            }
         } header: {
             Text("Server Address")
         } footer: {
@@ -491,6 +536,63 @@ struct ServerConfigView: View {
             } catch {
                 isConnecting = false
                 connectionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func scheduleHostProbe(for host: String) {
+        hostProbeTask?.cancel()
+        isProbingHost = false
+        hostProbeGeneration += 1
+
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty, trimmedHost.lowercased() != "demo" else { return }
+
+        let probeGeneration = hostProbeGeneration
+        let preferredHTTPS = config.useHTTPS
+
+        hostProbeTask = Task {
+            await MainActor.run {
+                isProbingHost = true
+            }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else {
+                await MainActor.run {
+                    if hostProbeGeneration == probeGeneration {
+                        isProbingHost = false
+                    }
+                }
+                return
+            }
+
+            let currentHost = await MainActor.run {
+                config.host.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard currentHost.caseInsensitiveCompare(trimmedHost) == .orderedSame else {
+                await MainActor.run {
+                    if hostProbeGeneration == probeGeneration {
+                        isProbingHost = false
+                    }
+                }
+                return
+            }
+
+            if let detected = await ServerDiscoveryService.detectHostConfiguration(host: trimmedHost, preferredHTTPS: preferredHTTPS) {
+                await MainActor.run {
+                    guard hostProbeGeneration == probeGeneration else { return }
+                    guard config.host.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedHost) == .orderedSame else { return }
+                    config.port = detected.port
+                    portString = String(detected.port)
+                    config.useHTTPS = detected.useHTTPS
+                    isProbingHost = false
+                }
+            } else {
+                await MainActor.run {
+                    if hostProbeGeneration == probeGeneration,
+                       config.host.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedHost) == .orderedSame {
+                        isProbingHost = false
+                    }
+                }
             }
         }
     }
