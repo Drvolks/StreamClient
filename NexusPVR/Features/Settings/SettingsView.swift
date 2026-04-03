@@ -20,6 +20,9 @@ struct SettingsView: View {
     @State private var tvosGPUAPI: GPUAPI = UserPreferences.load().tvosGPUAPI
     @State private var iosGPUAPI: GPUAPI = UserPreferences.load().iosGPUAPI
     @State private var macosGPUAPI: GPUAPI = UserPreferences.load().macosGPUAPI
+    @State private var subtitleMode: SubtitleMode = UserPreferences.load().subtitleMode
+    @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
+    @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
     @ObservedObject private var eventLog = NetworkEventLog.shared
     #if os(tvOS)
     @State private var activeTVPopup: TVSettingsPopup?
@@ -29,6 +32,7 @@ struct SettingsView: View {
     #if DEBUG
     @State private var debugStreamEnabled: Bool = UserDefaults.standard.bool(forKey: "debugStreamEnabled")
     @State private var debugStreamURL: String = UserDefaults.standard.string(forKey: "debugStreamURL") ?? "http://localhost:9000/video"
+    @State private var debugStreamAsRecording: Bool = UserDefaults.standard.bool(forKey: "debugStreamAsRecording")
     #endif
 
     #if os(tvOS)
@@ -37,6 +41,9 @@ struct SettingsView: View {
         case seekBackward
         case seekForward
         case audioOutput
+        case subtitleMode
+        case subtitleSize
+        case subtitleBackground
         case renderer
     }
     #endif
@@ -143,6 +150,28 @@ struct SettingsView: View {
                                 activeTVPopup = .audioOutput
                             }
                             tvSettingsRow(
+                                title: "Subtitles",
+                                value: subtitleMode == .auto ? "Auto" : "Manual",
+                                icon: "captions.bubble",
+                                detail: subtitleModeDescription
+                            ) {
+                                activeTVPopup = .subtitleMode
+                            }
+                            tvSettingsRow(
+                                title: "Subtitle Size",
+                                value: subtitleSize.displayName,
+                                icon: "textformat.size"
+                            ) {
+                                activeTVPopup = .subtitleSize
+                            }
+                            tvSettingsRow(
+                                title: "Subtitle Background",
+                                value: subtitleBackground ? "On" : "Off",
+                                icon: "rectangle.fill"
+                            ) {
+                                activeTVPopup = .subtitleBackground
+                            }
+                            tvSettingsRow(
                                 title: "Renderer",
                                 value: rendererName(for: tvosGPUAPI),
                                 icon: "display.2",
@@ -174,15 +203,24 @@ struct SettingsView: View {
                                         }
                                 }
 
+                                Toggle("Play as Recording", isOn: $debugStreamAsRecording)
+                                    .onChange(of: debugStreamAsRecording) { newValue in
+                                        UserDefaults.standard.set(newValue, forKey: "debugStreamAsRecording")
+                                    }
+
                                 Button {
                                     if let url = URL(string: debugStreamURL) {
-                                        appState.playStream(url: url, title: "Test Stream")
+                                        appState.playStream(
+                                            url: url,
+                                            title: debugStreamAsRecording ? "Test Recording" : "Test Stream",
+                                            recordingId: debugStreamAsRecording ? -1 : nil
+                                        )
                                     }
                                 } label: {
                                     HStack {
                                         Image(systemName: "play.circle")
                                             .foregroundStyle(Theme.accent)
-                                        Text("Play Test Stream")
+                                        Text(debugStreamAsRecording ? "Play Test Recording" : "Play Test Stream")
                                             .foregroundStyle(Theme.textPrimary)
                                         Spacer()
                                     }
@@ -414,6 +452,12 @@ struct SettingsView: View {
             return "Seek Forward"
         case .audioOutput:
             return "Audio Output"
+        case .subtitleMode:
+            return "Subtitles"
+        case .subtitleSize:
+            return "Subtitle Size"
+        case .subtitleBackground:
+            return "Subtitle Background"
         case .renderer:
             return "Renderer"
         }
@@ -475,6 +519,50 @@ struct SettingsView: View {
                     audioChannels = "stereo"
                     var prefs = UserPreferences.load()
                     prefs.audioChannels = "stereo"
+                    prefs.save()
+                }
+            ]
+        case .subtitleMode:
+            return [
+                TVPopupOption(id: "settings-popup-subtitle-manual", title: "Manual", isCurrent: subtitleMode == .manual, isDestructive: false) {
+                    subtitleMode = .manual
+                    var prefs = UserPreferences.load()
+                    prefs.subtitleMode = .manual
+                    prefs.save()
+                },
+                TVPopupOption(id: "settings-popup-subtitle-auto", title: "Auto", isCurrent: subtitleMode == .auto, isDestructive: false) {
+                    subtitleMode = .auto
+                    var prefs = UserPreferences.load()
+                    prefs.subtitleMode = .auto
+                    prefs.save()
+                }
+            ]
+        case .subtitleSize:
+            return SubtitleSize.allCases.map { size in
+                TVPopupOption(
+                    id: "settings-popup-subtitle-size-\(size.rawValue)",
+                    title: size.displayName,
+                    isCurrent: subtitleSize == size,
+                    isDestructive: false
+                ) {
+                    subtitleSize = size
+                    var prefs = UserPreferences.load()
+                    prefs.subtitleSize = size
+                    prefs.save()
+                }
+            }
+        case .subtitleBackground:
+            return [
+                TVPopupOption(id: "settings-popup-subtitle-bg-on", title: "On", isCurrent: subtitleBackground, isDestructive: false) {
+                    subtitleBackground = true
+                    var prefs = UserPreferences.load()
+                    prefs.subtitleBackground = true
+                    prefs.save()
+                },
+                TVPopupOption(id: "settings-popup-subtitle-bg-off", title: "Off", isCurrent: !subtitleBackground, isDestructive: false) {
+                    subtitleBackground = false
+                    var prefs = UserPreferences.load()
+                    prefs.subtitleBackground = false
                     prefs.save()
                 }
             ]
@@ -587,6 +675,22 @@ struct SettingsView: View {
                 Text("Stereo").tag("stereo")
             }
 
+            Picker("Subtitles", selection: $subtitleMode) {
+                Text("Manual").tag(SubtitleMode.manual)
+                Text("Auto").tag(SubtitleMode.auto)
+            }
+            Text(subtitleModeDescription)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+
+            Picker("Subtitle Size", selection: $subtitleSize) {
+                ForEach(SubtitleSize.allCases, id: \.self) { size in
+                    Text(size.displayName).tag(size)
+                }
+            }
+
+            Toggle("Subtitle Background", isOn: $subtitleBackground)
+
             #if os(iOS)
             Picker("Renderer", selection: $iosGPUAPI) {
                 Text("OpenGL").tag(GPUAPI.opengl)
@@ -624,6 +728,21 @@ struct SettingsView: View {
             prefs.audioChannels = audioChannels
             prefs.save()
         }
+        .onChange(of: subtitleMode) { _ in
+            var prefs = UserPreferences.load()
+            prefs.subtitleMode = subtitleMode
+            prefs.save()
+        }
+        .onChange(of: subtitleSize) { _ in
+            var prefs = UserPreferences.load()
+            prefs.subtitleSize = subtitleSize
+            prefs.save()
+        }
+        .onChange(of: subtitleBackground) { _ in
+            var prefs = UserPreferences.load()
+            prefs.subtitleBackground = subtitleBackground
+            prefs.save()
+        }
         #if os(iOS)
         .onChange(of: iosGPUAPI) { _ in
             var prefs = UserPreferences.load()
@@ -637,6 +756,15 @@ struct SettingsView: View {
             prefs.save()
         }
         #endif
+    }
+
+    private var subtitleModeDescription: String {
+        switch subtitleMode {
+        case .manual:
+            return "Select subtitles manually each time from the player settings panel."
+        case .auto:
+            return "Automatically select the last used subtitle language when available."
+        }
     }
 
     private func rendererDescription(for api: GPUAPI) -> String {
@@ -660,7 +788,7 @@ struct SettingsView: View {
 
             if debugStreamEnabled {
                 TextField("Stream URL", text: $debugStreamURL)
-                                        .autocorrectionDisabled()
+                    .autocorrectionDisabled()
                     #if os(iOS)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
@@ -669,9 +797,18 @@ struct SettingsView: View {
                         UserDefaults.standard.set(newValue, forKey: "debugStreamURL")
                     }
 
-                Button("Play Test Stream") {
+                Toggle("Play as Recording", isOn: $debugStreamAsRecording)
+                    .onChange(of: debugStreamAsRecording) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: "debugStreamAsRecording")
+                    }
+
+                Button(debugStreamAsRecording ? "Play Test Recording" : "Play Test Stream") {
                     if let url = URL(string: debugStreamURL) {
-                        appState.playStream(url: url, title: "Test Stream")
+                        appState.playStream(
+                            url: url,
+                            title: debugStreamAsRecording ? "Test Recording" : "Test Stream",
+                            recordingId: debugStreamAsRecording ? -1 : nil
+                        )
                     }
                 }
             }
