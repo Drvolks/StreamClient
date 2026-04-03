@@ -152,6 +152,7 @@ final class AppState: ObservableObject {
     @Published var tvosSettingsShowingEventLog = false
     @Published var tvosSettingsDismissPopupRequest = 0
     @Published var tvosSettingsDismissEventLogRequest = 0
+    @Published var tvosPlayerSettingsPanelOpen = false
     #endif
 
     // Alert state

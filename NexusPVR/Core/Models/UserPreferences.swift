@@ -13,6 +13,45 @@ enum GPUAPI: String, Codable, CaseIterable {
     case pixelbuffer
 }
 
+enum SubtitleMode: String, Codable, CaseIterable {
+    case manual
+    case auto
+}
+
+enum SubtitleSize: String, Codable, CaseIterable {
+    case small
+    case medium
+    case large
+    case extraLarge
+
+    var displayName: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        case .extraLarge: return "Extra Large"
+        }
+    }
+
+    var fontSize: CGFloat {
+        #if os(tvOS)
+        switch self {
+        case .small: return 40
+        case .medium: return 50
+        case .large: return 65
+        case .extraLarge: return 80
+        }
+        #else
+        switch self {
+        case .small: return 16
+        case .medium: return 20
+        case .large: return 26
+        case .extraLarge: return 32
+        }
+        #endif
+    }
+}
+
 nonisolated struct PlayerStats: Codable {
     var avgFps: Double = 0
     var avgBitrateKbps: Double = 0
@@ -46,6 +85,10 @@ nonisolated struct UserPreferences: Codable {
     var tvosGPUAPI: GPUAPI = .pixelbuffer
     var iosGPUAPI: GPUAPI = .pixelbuffer
     var macosGPUAPI: GPUAPI = .pixelbuffer
+    var subtitleMode: SubtitleMode = .manual
+    var subtitleSize: SubtitleSize = .medium
+    var subtitleBackground: Bool = true
+    var preferredSubtitleLanguage: String? = nil
     var updatedAt: Date = .distantPast
 
     /// The GPU API for the current platform.
@@ -69,6 +112,10 @@ nonisolated struct UserPreferences: Codable {
         case tvosGPUAPI
         case iosGPUAPI
         case macosGPUAPI
+        case subtitleMode
+        case subtitleSize
+        case subtitleBackground
+        case preferredSubtitleLanguage
         case updatedAt
     }
 
@@ -90,6 +137,10 @@ nonisolated struct UserPreferences: Codable {
         tvosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .tvosGPUAPI) ?? .pixelbuffer
         iosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .iosGPUAPI) ?? .pixelbuffer
         macosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .macosGPUAPI) ?? .pixelbuffer
+        subtitleMode = try container.decodeIfPresent(SubtitleMode.self, forKey: .subtitleMode) ?? .manual
+        subtitleSize = try container.decodeIfPresent(SubtitleSize.self, forKey: .subtitleSize) ?? .medium
+        subtitleBackground = try container.decodeIfPresent(Bool.self, forKey: .subtitleBackground) ?? true
+        preferredSubtitleLanguage = try container.decodeIfPresent(String.self, forKey: .preferredSubtitleLanguage)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
@@ -102,6 +153,10 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(tvosGPUAPI, forKey: .tvosGPUAPI)
         try container.encode(iosGPUAPI, forKey: .iosGPUAPI)
         try container.encode(macosGPUAPI, forKey: .macosGPUAPI)
+        try container.encode(subtitleMode, forKey: .subtitleMode)
+        try container.encode(subtitleSize, forKey: .subtitleSize)
+        try container.encode(subtitleBackground, forKey: .subtitleBackground)
+        try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 

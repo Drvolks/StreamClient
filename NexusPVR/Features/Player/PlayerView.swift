@@ -23,6 +23,20 @@ import OpenGL.GL3
 import UIKit
 #endif
 
+enum StreamSettingsTab: String, CaseIterable {
+    case video = "Video"
+    case audio = "Audio"
+    case subtitles = "Subs"
+
+    var icon: String {
+        switch self {
+        case .video: return "film"
+        case .audio: return "speaker.wave.2"
+        case .subtitles: return "captions.bubble"
+        }
+    }
+}
+
 struct PlayerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
@@ -56,7 +70,17 @@ struct PlayerView: View {
     @State private var audioChannelLayout: String?
     @State private var droppedFrames: Int64 = 0
     @State private var videoGamma: String?
-    @State private var showVideoInfo = false
+    @State private var showSettingsPanel = false
+    @State private var settingsTab: StreamSettingsTab = .video
+    @State private var trackList: [MPVTrack] = []
+    @State private var getTrackListFunc: (() -> [MPVTrack])?
+    @State private var setAudioTrackFunc: ((Int) -> Void)?
+    @State private var setSubtitleTrackFunc: ((Int?) -> Void)?
+    @State private var getSubtitleTextFunc: (() -> String?)?
+    @State private var currentSubtitleText: String?
+    #if os(tvOS)
+    @State private var tvFocusedTrackIndex: Int = -1  // -1 = tabs focused, 0+ = track list index
+    #endif
     @State private var isBuffering = false
     @State private var lastBufferingCheckPosition: Double = -1
     @State private var bufferingStallCount = 0
@@ -127,6 +151,25 @@ struct PlayerView: View {
                     savePlaybackPosition()
                     appState.stopPlayback()
                 },
+                onOpenSettings: {
+                    if showSettingsPanel {
+                        // Already open: navigate up in track list or close
+                        if tvFocusedTrackIndex >= 0 {
+                            tvFocusedTrackIndex -= 1
+                        } else {
+                            dismissSettingsPanel()
+                            tvFocusedTrackIndex = -1
+                        }
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showSettingsPanel = true
+                        }
+                        trackList = getTrackListFunc?() ?? []
+                        showControls = true
+                        hideControlsTask?.cancel()
+                        tvFocusedTrackIndex = -1
+                    }
+                },
                 onVideoInfoUpdate: { codec, height, hwdec, audioChannels, dropped, gamma, fps in
                     videoCodec = codec
                     videoHeight = height
@@ -138,7 +181,16 @@ struct PlayerView: View {
                     updateDisplayCriteriaIfNeeded(gamma: gamma, fps: fps)
                     #endif
                 },
-                cleanupAction: $cleanupAction
+                cleanupAction: $cleanupAction,
+                getTrackListFunc: $getTrackListFunc,
+                setAudioTrackFunc: $setAudioTrackFunc,
+                setSubtitleTrackFunc: $setSubtitleTrackFunc,
+                getSubtitleTextFunc: $getSubtitleTextFunc,
+                showSettingsPanel: $showSettingsPanel,
+                settingsTab: $settingsTab,
+                tvFocusedTrackIndex: $tvFocusedTrackIndex,
+                tvTrackCountProvider: { tvTrackCount },
+                tvSelectTrack: { tvSelectFocusedTrack() }
             )
                 .ignoresSafeArea()
             #elseif os(iOS)
@@ -173,7 +225,11 @@ struct PlayerView: View {
                     #endif
                 },
                 cleanupAction: $cleanupAction,
-                pixelBufferViewRef: $pixelBufferView
+                pixelBufferViewRef: $pixelBufferView,
+                getTrackListFunc: $getTrackListFunc,
+                setAudioTrackFunc: $setAudioTrackFunc,
+                setSubtitleTrackFunc: $setSubtitleTrackFunc,
+                getSubtitleTextFunc: $getSubtitleTextFunc
             )
                 .ignoresSafeArea()
                 .onTapGesture {
@@ -215,7 +271,11 @@ struct PlayerView: View {
                     #if os(tvOS)
                     updateDisplayCriteriaIfNeeded(gamma: gamma, fps: fps)
                     #endif
-                }
+                },
+                getTrackListFunc: $getTrackListFunc,
+                setAudioTrackFunc: $setAudioTrackFunc,
+                setSubtitleTrackFunc: $setSubtitleTrackFunc,
+                getSubtitleTextFunc: $getSubtitleTextFunc
             )
                 .ignoresSafeArea()
                 .onTapGesture {
@@ -271,25 +331,37 @@ struct PlayerView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
             }
 
+            // Subtitle text overlay — positioned at the bottom of the video content
+            // (not the screen) so subtitles stay inside the video in portrait mode
+            if let subtitleText = currentSubtitleText, isPlayerReady {
+                let subPrefs = UserPreferences.load()
+                GeometryReader { geo in
+                    let videoAspect: CGFloat = 16.0 / 9.0
+                    let screenAspect = geo.size.width / geo.size.height
+                    let videoHeight = screenAspect < videoAspect
+                        ? geo.size.width / videoAspect
+                        : geo.size.height
+                    let blackBarHeight = (geo.size.height - videoHeight) / 2
+                    let controlsOffset: CGFloat = showControls && !isLiveStream && duration > 0 ? 80 : 20
+                    let bottomY = geo.size.height - blackBarHeight - controlsOffset
+
+                    subtitleLabel(subtitleText, size: subPrefs.subtitleSize, showBackground: subPrefs.subtitleBackground)
+                        .position(x: geo.size.width / 2, y: bottomY)
+                }
+                .allowsHitTesting(false)
+            }
+
             // Custom controls overlay
             if showControls && isPlayerReady {
                 controlsOverlay
             }
 
-            // Keep video info dropdown visible even when controls are hidden (iOS/macOS only)
-            #if !os(tvOS)
-            if !showControls && showVideoInfo && isPlayerReady {
-                VStack {
-                    HStack {
-                        Spacer()
-                        videoBadges
-                            .padding(.trailing)
-                    }
-                    .padding(.top, Theme.spacingMD)
-                    Spacer()
-                }
+            // Stream settings panel overlay
+            if showSettingsPanel && isPlayerReady {
+                streamSettingsPanel
+                    .transition(.move(edge: .trailing))
+                    .zIndex(2)
             }
-            #endif
 
             // Error message
             if let error = errorMessage {
@@ -361,6 +433,17 @@ struct PlayerView: View {
         }
         .background(Color.black)
         .accessibilityIdentifier("player-view")
+        #if os(tvOS)
+        .onExitCommand {
+            if showSettingsPanel {
+                dismissSettingsPanel()
+                tvFocusedTrackIndex = -1
+            } else {
+                savePlaybackPosition()
+                appState.stopPlayback()
+            }
+        }
+        #endif
         .onAppear {
             scheduleHideControls()
             #if os(macOS)
@@ -457,9 +540,28 @@ struct PlayerView: View {
                 savePlaybackPosition()
             }
         }
+        .task(id: isPlayerReady) {
+            guard isPlayerReady else { return }
+            // Wait for tracks to be populated after demuxing starts
+            try? await Task.sleep(for: .seconds(2))
+            autoSelectSubtitleIfNeeded()
+            // Poll subtitle text while playing
+            while !Task.isCancelled {
+                let text = getSubtitleTextFunc?()
+                if text != currentSubtitleText {
+                    currentSubtitleText = text
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
         .onChange(of: currentPosition) { _ in
             detectBuffering()
         }
+        #if os(tvOS)
+        .onChange(of: showSettingsPanel) { _ in
+            appState.tvosPlayerSettingsPanelOpen = showSettingsPanel
+        }
+        #endif
         .onChange(of: duration) { _ in
             // duration keeps growing for in-progress recordings even when
             // position is frozen by cache-pause, so this fires the detection
@@ -847,103 +949,170 @@ struct PlayerView: View {
             }
             #endif
 
-            videoBadges
-                .padding(.trailing, 4)
+            #if !os(tvOS)
+            if videoHeight != nil {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showSettingsPanel.toggle()
+                    }
+                    if showSettingsPanel {
+                        trackList = getTrackListFunc?() ?? []
+                        hideControlsTask?.cancel()
+                    } else {
+                        scheduleHideControls()
+                    }
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+            }
+            #endif
         }
         .padding(.horizontal)
         .padding(.top, Theme.spacingMD)
     }
 
-    private var videoBadges: some View {
-        #if os(tvOS)
-        tvBadges
-        #else
-        VStack(alignment: .trailing, spacing: 4) {
-            if let height = videoHeight {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showVideoInfo.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(resolutionLabel(height: height))
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                        Image(systemName: showVideoInfo ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(4)
-                }
-                .buttonStyle(.plain)
+    // MARK: - Stream Settings Panel
 
-                if showVideoInfo {
-                    videoInfoDropdown
-                }
-            }
-        }
+    private var panelWidth: CGFloat {
+        #if os(tvOS)
+        return 400
+        #elseif os(macOS)
+        return 340
+        #else
+        return 320
         #endif
     }
 
     #if os(tvOS)
-    private var tvBadges: some View {
-        HStack(spacing: 6) {
-            if let height = videoHeight {
-                badgeText(resolutionLabel(height: height))
-            }
-            if let codec = videoCodec {
-                badgeText(formatCodecName(codec), color: hwBadgeColor)
-            }
-            if let gamma = videoGamma, isHDR(gamma) {
-                badgeText(hdrBadgeLabel(gamma), color: .cyan)
-            }
-            #if DISPATCHERPVR
-            if let profile = dispatchProfileBadge {
-                badgeText(profile)
-            }
-            #endif
-            if let audio = audioChannelLayout {
-                badgeText(audio)
-            }
+    private var tvTrackCount: Int {
+        switch settingsTab {
+        case .video: return 0
+        case .audio: return trackList.filter { $0.type == "audio" }.count
+        case .subtitles: return trackList.filter { $0.type == "sub" }.count + 1 // +1 for "None"
         }
     }
 
-    private var hwBadgeColor: Color {
-        if let hw = hwDecoder, !hw.isEmpty, hw != "no" {
-            return .green
+    private func tvSelectFocusedTrack() {
+        guard tvFocusedTrackIndex >= 0 else { return }
+        switch settingsTab {
+        case .video: break
+        case .audio:
+            let audioTracks = trackList.filter { $0.type == "audio" }
+            if tvFocusedTrackIndex < audioTracks.count {
+                setAudioTrackFunc?(audioTracks[tvFocusedTrackIndex].id)
+                trackList = getTrackListFunc?() ?? []
+            }
+        case .subtitles:
+            if tvFocusedTrackIndex == 0 {
+                // "None" option
+                setSubtitleTrackFunc?(nil)
+                trackList = getTrackListFunc?() ?? []
+                let prefs = UserPreferences.load()
+                if prefs.subtitleMode == .auto {
+                    var updated = prefs
+                    updated.preferredSubtitleLanguage = nil
+                    updated.save()
+                }
+            } else {
+                let subtitleTracks = trackList.filter { $0.type == "sub" }
+                let idx = tvFocusedTrackIndex - 1 // -1 for "None" row
+                if idx < subtitleTracks.count {
+                    let track = subtitleTracks[idx]
+                    setSubtitleTrackFunc?(track.id)
+                    trackList = getTrackListFunc?() ?? []
+                    let prefs = UserPreferences.load()
+                    if prefs.subtitleMode == .auto {
+                        var updated = prefs
+                        updated.preferredSubtitleLanguage = track.lang ?? track.codec
+                        updated.save()
+                    }
+                }
+            }
         }
-        return .yellow
-    }
-
-    private func isHDR(_ gamma: String) -> Bool {
-        let g = gamma.lowercased()
-        return g == "pq" || g == "smpte-st2084" || g == "smpte2084" || g == "hlg" || g == "arib-std-b67"
-    }
-
-    private func hdrBadgeLabel(_ gamma: String) -> String {
-        switch gamma.lowercased() {
-        case "pq", "smpte-st2084", "smpte2084": return "HDR10"
-        case "hlg", "arib-std-b67": return "HLG"
-        default: return "HDR"
-        }
-    }
-
-    private func badgeText(_ text: String, color: Color = .white) -> some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.semibold)
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.black.opacity(0.6))
-            .cornerRadius(4)
     }
     #endif
 
-    private var videoInfoDropdown: some View {
+    private func dismissSettingsPanel() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            showSettingsPanel = false
+        }
+        scheduleHideControls()
+    }
+
+    private var streamSettingsPanel: some View {
+        HStack(spacing: 0) {
+            #if !os(tvOS)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    dismissSettingsPanel()
+                }
+            #else
+            Spacer()
+            #endif
+
+            VStack(alignment: .leading, spacing: 0) {
+                settingsTabBar
+                    .padding(.top, Theme.spacingMD)
+
+                Divider()
+                    .background(Color.white.opacity(0.2))
+
+                // Tab content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.spacingSM) {
+                        switch settingsTab {
+                        case .video:
+                            videoTabContent
+                        case .audio:
+                            audioTabContent
+                        case .subtitles:
+                            subtitlesTabContent
+                        }
+                    }
+                    .padding(Theme.spacingMD)
+                }
+            }
+            .frame(width: panelWidth)
+            .background(Color.black.opacity(0.9))
+        }
+    }
+
+
+    private var settingsTabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(StreamSettingsTab.allCases, id: \.self) { tab in
+                Button {
+                    settingsTab = tab
+                } label: {
+                    VStack(spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: tab.icon)
+                                .font(.caption)
+                            Text(tab.rawValue)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(settingsTab == tab ? Theme.accent : .white.opacity(0.6))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+
+                        Rectangle()
+                            .fill(settingsTab == tab ? Theme.accent : Color.clear)
+                            .frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Theme.spacingSM)
+    }
+
+    private var videoTabContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let height = videoHeight {
                 videoInfoRow("Resolution", resolutionLabel(height: height))
@@ -956,26 +1125,159 @@ struct PlayerView: View {
             } else {
                 videoInfoRow("HW Decode", "No")
             }
-            if let audio = audioChannelLayout {
-                videoInfoRow("Audio", audio)
+            if let gamma = videoGamma, !gamma.isEmpty {
+                videoInfoRow("HDR", hdrLabel(gamma))
             }
             #if DISPATCHERPVR
             if let profile = dispatchProfileBadge {
                 videoInfoRow("Profile", profile)
             }
             #endif
-            if let gamma = videoGamma, !gamma.isEmpty {
-                videoInfoRow("HDR", hdrLabel(gamma))
-            }
             videoInfoRow("Renderer", rendererTag)
             if droppedFrames > 0 {
                 videoInfoRow("Dropped", "\(droppedFrames)")
             }
         }
-        .padding(10)
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(8)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private var audioTabContent: some View {
+        let audioTracks = trackList.filter { $0.type == "audio" }
+        return VStack(alignment: .leading, spacing: 0) {
+            // Current audio info
+            if let audio = audioChannelLayout {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Current Audio")
+                        .font(.caption)
+                        .foregroundStyle(.gray)
+                    if let selectedTrack = audioTracks.first(where: { $0.isSelected }) {
+                        Text(selectedTrack.audioDetail)
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                    } else {
+                        Text(audio)
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.bottom, Theme.spacingMD)
+            }
+
+            if audioTracks.isEmpty {
+                Text("No audio tracks available")
+                    .font(.subheadline)
+                    .foregroundStyle(.gray)
+                    .padding(.vertical, Theme.spacingMD)
+            } else {
+                Text("Audio Tracks")
+                    .font(.caption)
+                    .foregroundStyle(.gray)
+                    .padding(.bottom, 4)
+
+                ForEach(Array(audioTracks.enumerated()), id: \.element.id) { index, track in
+                    trackRow(track, isActive: track.isSelected, isTVFocused: tvOSFocused(index)) {
+                        setAudioTrackFunc?(track.id)
+                        trackList = getTrackListFunc?() ?? []
+                    }
+                }
+            }
+        }
+    }
+
+    private var subtitlesTabContent: some View {
+        let subtitleTracks = trackList.filter { $0.type == "sub" }
+        let noneSelected = !subtitleTracks.contains(where: { $0.isSelected })
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("Subtitle Tracks")
+                .font(.caption)
+                .foregroundStyle(.gray)
+                .padding(.bottom, 4)
+
+            // "None" option
+            Button {
+                setSubtitleTrackFunc?(nil)
+                trackList = getTrackListFunc?() ?? []
+                let prefs = UserPreferences.load()
+                if prefs.subtitleMode == .auto {
+                    var updated = prefs
+                    updated.preferredSubtitleLanguage = nil
+                    updated.save()
+                }
+            } label: {
+                HStack {
+                    Text("None")
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    if noneSelected {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
+                .padding(.horizontal, Theme.spacingMD)
+                .padding(.vertical, 10)
+                .background(tvOSFocused(0) ? Color.white.opacity(0.2) : Color.clear)
+                .cornerRadius(6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if subtitleTracks.isEmpty {
+                Text("No subtitle tracks available")
+                    .font(.subheadline)
+                    .foregroundStyle(.gray)
+                    .padding(.vertical, Theme.spacingMD)
+                    .padding(.horizontal, Theme.spacingMD)
+            } else {
+                ForEach(Array(subtitleTracks.enumerated()), id: \.element.id) { index, track in
+                    trackRow(track, isActive: track.isSelected, isTVFocused: tvOSFocused(index + 1)) {
+                        setSubtitleTrackFunc?(track.id)
+                        trackList = getTrackListFunc?() ?? []
+                        let prefs = UserPreferences.load()
+                        if prefs.subtitleMode == .auto {
+                            var updated = prefs
+                            updated.preferredSubtitleLanguage = track.lang ?? track.codec
+                            updated.save()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func tvOSFocused(_ index: Int) -> Bool {
+        #if os(tvOS)
+        return tvFocusedTrackIndex == index
+        #else
+        return false
+        #endif
+    }
+
+    private func trackRow(_ track: MPVTrack, isActive: Bool, isTVFocused: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.displayName)
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                    if !track.audioDetail.isEmpty {
+                        Text(track.audioDetail)
+                            .font(.caption)
+                            .foregroundStyle(.gray)
+                    }
+                }
+                Spacer()
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .padding(.horizontal, Theme.spacingMD)
+            .padding(.vertical, 10)
+            .background(isTVFocused ? Color.white.opacity(0.2) : Color.clear)
+            .cornerRadius(6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func hdrLabel(_ gamma: String) -> String {
@@ -989,6 +1291,18 @@ struct PlayerView: View {
     }
 
     private func videoInfoRow(_ label: String, _ value: String) -> some View {
+        #if os(tvOS)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.gray)
+            Text(value)
+                .font(.body)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+        }
+        .padding(.vertical, 4)
+        #else
         HStack {
             Text(label)
                 .font(.caption2)
@@ -999,6 +1313,7 @@ struct PlayerView: View {
                 .fontWeight(.medium)
                 .foregroundStyle(.white)
         }
+        #endif
     }
 
     private var headerTitle: String {
@@ -1160,9 +1475,52 @@ struct PlayerView: View {
     }
     #endif
 
+    @ViewBuilder
+    private func subtitleLabel(_ text: String, size: SubtitleSize, showBackground: Bool) -> some View {
+        if showBackground {
+            Text(text)
+                .font(.system(size: size.fontSize, weight: .medium))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.spacingLG)
+                .padding(.vertical, Theme.spacingSM)
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(4)
+        } else {
+            Text(text)
+                .font(.system(size: size.fontSize, weight: .medium))
+                .foregroundStyle(.white)
+                .shadow(color: .black, radius: 0, x: -1, y: -1)
+                .shadow(color: .black, radius: 0, x: 1, y: -1)
+                .shadow(color: .black, radius: 0, x: -1, y: 1)
+                .shadow(color: .black, radius: 0, x: 1, y: 1)
+                .shadow(color: .black, radius: 2, x: 0, y: 0)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.spacingLG)
+                .padding(.vertical, Theme.spacingSM)
+        }
+    }
+
+    private func autoSelectSubtitleIfNeeded() {
+        let prefs = UserPreferences.load()
+        guard prefs.subtitleMode == .auto,
+              let preferred = prefs.preferredSubtitleLanguage else { return }
+        let tracks = getTrackListFunc?() ?? []
+        let subtitleTracks = tracks.filter { $0.type == "sub" }
+        // Match by language first, then fall back to codec (e.g. "eia_608" for CC)
+        let match = subtitleTracks.first(where: { $0.lang == preferred })
+            ?? subtitleTracks.first(where: { $0.codec == preferred })
+        if let match {
+            setSubtitleTrackFunc?(match.id)
+        }
+    }
+
     private func toggleControls() {
         withAnimation(.easeInOut(duration: 0.2)) {
             showControls.toggle()
+            if !showControls && showSettingsPanel {
+                showSettingsPanel = false
+            }
         }
 
         if showControls {
@@ -1171,6 +1529,7 @@ struct PlayerView: View {
     }
 
     private func scheduleHideControls() {
+        guard !showSettingsPanel else { return }
         hideControlsTask?.cancel()
         hideControlsTask = Task {
             try? await Task.sleep(for: .seconds(4))
@@ -1182,6 +1541,51 @@ struct PlayerView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - MPV Track Model
+
+struct MPVTrack: Identifiable, Equatable {
+    let id: Int
+    let type: String       // "video", "audio", "sub"
+    let title: String?
+    let lang: String?
+    let codec: String?
+    let channels: String?  // audio only
+    let bitrate: Int?      // demux-bitrate
+    let isSelected: Bool
+
+    var displayName: String {
+        var parts: [String] = []
+        if let lang = lang, !lang.isEmpty {
+            parts.append(Locale.current.localizedString(forLanguageCode: lang) ?? lang)
+        }
+        if let title = title, !title.isEmpty {
+            parts.append(title)
+        }
+        if parts.isEmpty {
+            parts.append("Track \(id)")
+        }
+        return parts.joined(separator: " - ")
+    }
+
+    var audioDetail: String {
+        var parts: [String] = []
+        if let codec = codec { parts.append(codec.uppercased()) }
+        if let ch = channels, let n = Int(ch) {
+            switch n {
+            case 1: parts.append("Mono")
+            case 2: parts.append("Stereo")
+            case 6: parts.append("5.1")
+            case 8: parts.append("7.1")
+            default: parts.append("\(n)ch")
+            }
+        }
+        if let br = bitrate, br > 0 {
+            parts.append("\(br / 1000) kbps")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -1504,6 +1908,99 @@ class MPVPlayerCore: NSObject {
         return (codec, width, height, hwdec, audioChannels, droppedFrames, gamma, fps)
     }
 
+    func getTrackList() -> [MPVTrack] {
+        guard let mpv = mpv else { return [] }
+
+        var count: Int64 = 0
+        mpv_get_property(mpv, "track-list/count", MPV_FORMAT_INT64, &count)
+
+        var tracks: [MPVTrack] = []
+        for i in 0..<Int(count) {
+            var trackId: Int64 = 0
+            mpv_get_property(mpv, "track-list/\(i)/id", MPV_FORMAT_INT64, &trackId)
+
+            var type: String?
+            if let cString = mpv_get_property_string(mpv, "track-list/\(i)/type") {
+                type = String(cString: cString)
+                mpv_free(cString)
+            }
+            guard let trackType = type else { continue }
+
+            var title: String?
+            if let cString = mpv_get_property_string(mpv, "track-list/\(i)/title") {
+                title = String(cString: cString)
+                mpv_free(cString)
+            }
+
+            var lang: String?
+            if let cString = mpv_get_property_string(mpv, "track-list/\(i)/lang") {
+                lang = String(cString: cString)
+                mpv_free(cString)
+            }
+
+            var codec: String?
+            if let cString = mpv_get_property_string(mpv, "track-list/\(i)/codec") {
+                codec = String(cString: cString)
+                mpv_free(cString)
+            }
+
+            var channels: String?
+            if let cString = mpv_get_property_string(mpv, "track-list/\(i)/demux-channel-count") {
+                channels = String(cString: cString)
+                mpv_free(cString)
+            }
+
+            var bitrate: Int64 = 0
+            mpv_get_property(mpv, "track-list/\(i)/demux-bitrate", MPV_FORMAT_INT64, &bitrate)
+
+            var selected: Int32 = 0
+            mpv_get_property(mpv, "track-list/\(i)/selected", MPV_FORMAT_FLAG, &selected)
+
+            tracks.append(MPVTrack(
+                id: Int(trackId),
+                type: trackType,
+                title: title,
+                lang: lang,
+                codec: codec,
+                channels: channels,
+                bitrate: bitrate > 0 ? Int(bitrate) : nil,
+                isSelected: selected != 0
+            ))
+        }
+        return tracks
+    }
+
+    private var isChangingTrack = false
+
+    func setAudioTrack(_ trackId: Int) {
+        guard let mpv = mpv else { return }
+        isChangingTrack = true
+        var value = Int64(trackId)
+        mpv_set_property(mpv, "aid", MPV_FORMAT_INT64, &value)
+        // Allow enough time for mpv to reconfigure audio on non-seekable streams
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            self?.isChangingTrack = false
+        }
+    }
+
+    func getSubtitleText() -> String? {
+        guard let mpv = mpv else { return nil }
+        guard let cString = mpv_get_property_string(mpv, "sub-text") else { return nil }
+        let text = String(cString: cString)
+        mpv_free(cString)
+        return text.isEmpty ? nil : text
+    }
+
+    func setSubtitleTrack(_ trackId: Int?) {
+        guard let mpv = mpv else { return }
+        if let trackId = trackId {
+            var value = Int64(trackId)
+            mpv_set_property(mpv, "sid", MPV_FORMAT_INT64, &value)
+        } else {
+            mpv_set_property_string(mpv, "sid", "no")
+        }
+    }
+
     private var hasLoggedVideoInfo = false
 
     private func logVideoInfo(_ info: (codec: String?, width: Int?, height: Int?, hwdec: String?, audioChannels: String?, droppedFrames: Int64, gamma: String?, fps: Double)) {
@@ -1690,6 +2187,11 @@ class MPVPlayerCore: NSObject {
 
         // Seeking - precise seeks for better audio sync with external audio tracks
         mpv_set_option_string(mpv, "hr-seek", "yes")
+
+        // Subtitles: start with no subtitle selected; user picks from settings panel.
+        // Subtitle text is read via sub-text and rendered as a SwiftUI overlay,
+        // since the custom pixelbuffer VO does not support OSD/subtitle rendering.
+        mpv_set_option_string(mpv, "sid", "no")
 
         // Disable MPV's built-in OSD (seek bar, etc.) — we use our own SwiftUI overlay
         mpv_set_option_string(mpv, "osd-level", "0")
@@ -1945,7 +2447,8 @@ class MPVPlayerCore: NSObject {
                 }
 
                 // Log mpv errors and HTTP warnings to the event log
-                if level == "error" || level == "fatal" {
+                // Skip transient errors during audio/subtitle track changes
+                if (level == "error" || level == "fatal") && !isChangingTrack {
                     NetworkEventLog.shared.log(NetworkEvent(
                         timestamp: Date(),
                         method: "PLAY",
@@ -1961,15 +2464,17 @@ class MPVPlayerCore: NSObject {
                 // Capture HTTP errors for on-screen display.
                 // Prefer HTTP errors (e.g. "503 Service Unavailable") over generic
                 // "Failed to open" messages that follow.
-                if level == "warn" && logText.contains("HTTP error") {
-                    lastPlaybackError = logText
-                } else if level == "error" && lastPlaybackError == nil {
-                    if logText.contains("Failed to open") || logText.contains("Failed to recognize") {
+                if !isChangingTrack {
+                    if level == "warn" && logText.contains("HTTP error") {
                         lastPlaybackError = logText
+                    } else if level == "error" && lastPlaybackError == nil {
+                        if logText.contains("Failed to open") || logText.contains("Failed to recognize") {
+                            lastPlaybackError = logText
+                        }
                     }
                 }
 
-                if level == "error", tryNextVariantAfterSegmentError(logText) {
+                if level == "error", !isChangingTrack, tryNextVariantAfterSegmentError(logText) {
                     return
                 }
 
@@ -2051,6 +2556,12 @@ class MPVPlayerCore: NSObject {
                 } else if reason == MPV_END_FILE_REASON_ERROR {
                     let error = data.error
                     let errorStr = String(cString: mpv_error_string(error))
+                    // Ignore transient errors during audio/subtitle track changes —
+                    // mpv may internally seek to resync, which fails on non-seekable streams.
+                    if isChangingTrack {
+                        print("MPV: Ignoring error during track change: \(errorStr)")
+                        return
+                    }
                     if tryMasterPlaylistFallbackIfNeeded() {
                         return
                     }
@@ -2091,6 +2602,10 @@ class MPVPlayerCore: NSObject {
                    prop.format == MPV_FORMAT_FLAG,
                    let flag = prop.data?.assumingMemoryBound(to: Int32.self).pointee,
                    flag != 0 {
+                    if isChangingTrack {
+                        print("MPV: Ignoring eof-reached during track change")
+                        return
+                    }
                     if shouldIgnoreEOFAsTransientLiveHLS() {
                         print("MPV: Ignoring eof-reached for live HLS stream")
                         recoverLiveHLSAfterEOFIfNeeded()
@@ -2470,6 +2985,10 @@ struct MPVContainerView: NSViewControllerRepresentable {
 
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
+    @Binding var getTrackListFunc: (() -> [MPVTrack])?
+    @Binding var setAudioTrackFunc: ((Int) -> Void)?
+    @Binding var setSubtitleTrackFunc: ((Int?) -> Void)?
+    @Binding var getSubtitleTextFunc: (() -> String?)?
 
     func makeNSViewController(context: Context) -> NSViewController {
         let controller: NSViewController & MPVPlayerMacOSController
@@ -2512,6 +3031,10 @@ struct MPVContainerView: NSViewControllerRepresentable {
             self.seekToPosition = { position in
                 controller.seekTo(position: position)
             }
+            self.getTrackListFunc = { controller.getTrackList() }
+            self.setAudioTrackFunc = { controller.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { controller.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { controller.getSubtitleText() }
         }
 
         return controller
@@ -2553,6 +3076,10 @@ protocol MPVPlayerMacOSController: AnyObject {
     func startRecordingMonitor(url: URL)
     func startPositionPolling()
     func cleanup()
+    func getTrackList() -> [MPVTrack]
+    func setAudioTrack(_ trackId: Int)
+    func setSubtitleTrack(_ trackId: Int?)
+    func getSubtitleText() -> String?
 }
 
 final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSController {
@@ -2623,6 +3150,11 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
     func startPositionPolling() {
         player?.startPositionPolling()
     }
+
+    func getTrackList() -> [MPVTrack] { player?.getTrackList() ?? [] }
+    func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { player?.getSubtitleText() }
 
     func cleanup() {
         player?.destroy()
@@ -2715,6 +3247,11 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
 
     func startPositionPolling() { player?.startPositionPolling() }
 
+    func getTrackList() -> [MPVTrack] { player?.getTrackList() ?? [] }
+    func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { player?.getSubtitleText() }
+
     func cleanup() {
         player?.destroy()
         player = nil
@@ -2784,6 +3321,11 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
     func startPositionPolling() {
         glView.startPositionPolling()
     }
+
+    func getTrackList() -> [MPVTrack] { glView.getTrackList() }
+    func setAudioTrack(_ trackId: Int) { glView.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { glView.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { glView.getSubtitleText() }
 
     func cleanup() {
         glView.cleanup()
@@ -2930,6 +3472,11 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         player?.startPositionPolling()
     }
 
+    func getTrackList() -> [MPVTrack] { player?.getTrackList() ?? [] }
+    func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { player?.getSubtitleText() }
+
     func cleanup() {
         needsDrawing = false
         mpvGL = nil
@@ -2993,8 +3540,18 @@ struct MPVContainerView: UIViewRepresentable {
     var onToggleControls: (() -> Void)?
     var onShowControls: (() -> Void)?
     var onDismiss: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     @Binding var cleanupAction: (() -> Void)?
+    @Binding var getTrackListFunc: (() -> [MPVTrack])?
+    @Binding var setAudioTrackFunc: ((Int) -> Void)?
+    @Binding var setSubtitleTrackFunc: ((Int?) -> Void)?
+    @Binding var getSubtitleTextFunc: (() -> String?)?
+    @Binding var showSettingsPanel: Bool
+    @Binding var settingsTab: StreamSettingsTab
+    @Binding var tvFocusedTrackIndex: Int
+    var tvTrackCountProvider: (() -> Int)?
+    var tvSelectTrack: (() -> Void)?
 
     private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
         view.onPositionUpdate = { position, dur in
@@ -3016,6 +3573,8 @@ struct MPVContainerView: UIViewRepresentable {
         }
         view.onSelect = onToggleControls
         view.onMenu = onDismiss
+        // onUpArrow, onLeftArrow, onRightArrow, onDownArrow, onSelectOverride, onMenuOverride
+        // are set in updateUIView so they capture fresh SwiftUI state
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerGLView) {
@@ -3038,6 +3597,8 @@ struct MPVContainerView: UIViewRepresentable {
         }
         view.onSelect = onToggleControls
         view.onMenu = onDismiss
+        // onUpArrow, onLeftArrow, onRightArrow, onDownArrow, onSelectOverride, onMenuOverride
+        // are set in updateUIView so they capture fresh SwiftUI state
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerPixelBufferView) {
@@ -3060,6 +3621,8 @@ struct MPVContainerView: UIViewRepresentable {
         }
         view.onSelect = onToggleControls
         view.onMenu = onDismiss
+        // onUpArrow, onLeftArrow, onRightArrow, onDownArrow, onSelectOverride, onMenuOverride
+        // are set in updateUIView so they capture fresh SwiftUI state
     }
 
     private func setupSeekBindings(for view: MPVPlayerMetalView) {
@@ -3075,6 +3638,10 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.getTrackListFunc = { view.getTrackList() }
+            self.setAudioTrackFunc = { view.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { view.getSubtitleText() }
         }
     }
 
@@ -3091,6 +3658,10 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.getTrackListFunc = { view.getTrackList() }
+            self.setAudioTrackFunc = { view.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { view.getSubtitleText() }
         }
     }
 
@@ -3107,6 +3678,10 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.getTrackListFunc = { view.getTrackList() }
+            self.setAudioTrackFunc = { view.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { view.getSubtitleText() }
         }
     }
 
@@ -3175,14 +3750,17 @@ struct MPVContainerView: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {
         if let pbView = uiView as? MPVPlayerPixelBufferView {
             if isPlaying { pbView.play() } else { pbView.pause() }
+            applySettingsCallbacks(to: pbView)
             return
         }
         if let metalView = uiView as? MPVPlayerMetalView {
             if isPlaying { metalView.play() } else { metalView.pause() }
+            applySettingsCallbacks(to: metalView)
             return
         }
         if let glView = uiView as? MPVPlayerGLView {
             if isPlaying { glView.play() } else { glView.pause() }
+            applySettingsCallbacks(to: glView)
             return
         }
     }
@@ -3194,6 +3772,165 @@ struct MPVContainerView: UIViewRepresentable {
             metalView.cleanup()
         } else {
             (uiView as? MPVPlayerGLView)?.cleanup()
+        }
+    }
+
+    private func applySettingsCallbacks(to view: MPVPlayerMetalView) {
+        let panelBinding = $showSettingsPanel
+        let tabBinding = $settingsTab
+        let focusBinding = $tvFocusedTrackIndex
+        let openSettings = onOpenSettings
+        view.onUpArrow = openSettings
+        view.onMenuOverride = {
+            print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onLeftArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                switch tabBinding.wrappedValue {
+                case .video:
+                    withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
+                case .audio: tabBinding.wrappedValue = .video
+                case .subtitles: tabBinding.wrappedValue = .audio
+                }
+            }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onRightArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                switch tabBinding.wrappedValue {
+                case .video: tabBinding.wrappedValue = .audio
+                case .audio: tabBinding.wrappedValue = .subtitles
+                case .subtitles: break
+                }
+            }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onDownArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            let maxIndex = (self.tvTrackCountProvider?() ?? 0) - 1
+            if maxIndex >= 0 && focusBinding.wrappedValue < maxIndex {
+                focusBinding.wrappedValue += 1
+            }
+            return true
+        }
+        view.onSelectOverride = {
+            guard panelBinding.wrappedValue else { return false }
+            self.tvSelectTrack?()
+            return true
+        }
+    }
+
+    private func applySettingsCallbacks(to view: MPVPlayerPixelBufferView) {
+        let panelBinding = $showSettingsPanel
+        let tabBinding = $settingsTab
+        let focusBinding = $tvFocusedTrackIndex
+        let openSettings = onOpenSettings
+        view.onUpArrow = openSettings
+        view.onMenuOverride = {
+            print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onLeftArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                switch tabBinding.wrappedValue {
+                case .video:
+                    withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
+                case .audio: tabBinding.wrappedValue = .video
+                case .subtitles: tabBinding.wrappedValue = .audio
+                }
+            }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onRightArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                switch tabBinding.wrappedValue {
+                case .video: tabBinding.wrappedValue = .audio
+                case .audio: tabBinding.wrappedValue = .subtitles
+                case .subtitles: break
+                }
+            }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onDownArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            let maxIndex = (self.tvTrackCountProvider?() ?? 0) - 1
+            if maxIndex >= 0 && focusBinding.wrappedValue < maxIndex {
+                focusBinding.wrappedValue += 1
+            }
+            return true
+        }
+        view.onSelectOverride = {
+            guard panelBinding.wrappedValue else { return false }
+            self.tvSelectTrack?()
+            return true
+        }
+    }
+
+    private func applySettingsCallbacks(to view: MPVPlayerGLView) {
+        let panelBinding = $showSettingsPanel
+        let tabBinding = $settingsTab
+        let focusBinding = $tvFocusedTrackIndex
+        let openSettings = onOpenSettings
+        view.onUpArrow = openSettings
+        view.onMenuOverride = {
+            print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onLeftArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                switch tabBinding.wrappedValue {
+                case .video:
+                    withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
+                case .audio: tabBinding.wrappedValue = .video
+                case .subtitles: tabBinding.wrappedValue = .audio
+                }
+            }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onRightArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                switch tabBinding.wrappedValue {
+                case .video: tabBinding.wrappedValue = .audio
+                case .audio: tabBinding.wrappedValue = .subtitles
+                case .subtitles: break
+                }
+            }
+            focusBinding.wrappedValue = -1
+            return true
+        }
+        view.onDownArrow = {
+            guard panelBinding.wrappedValue else { return false }
+            let maxIndex = (self.tvTrackCountProvider?() ?? 0) - 1
+            if maxIndex >= 0 && focusBinding.wrappedValue < maxIndex {
+                focusBinding.wrappedValue += 1
+            }
+            return true
+        }
+        view.onSelectOverride = {
+            guard panelBinding.wrappedValue else { return false }
+            self.tvSelectTrack?()
+            return true
         }
     }
 
@@ -3227,6 +3964,10 @@ struct MPVContainerView: UIViewRepresentable {
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     @Binding var cleanupAction: (() -> Void)?
     @Binding var pixelBufferViewRef: MPVPlayerPixelBufferView?
+    @Binding var getTrackListFunc: (() -> [MPVTrack])?
+    @Binding var setAudioTrackFunc: ((Int) -> Void)?
+    @Binding var setSubtitleTrackFunc: ((Int?) -> Void)?
+    @Binding var getSubtitleTextFunc: (() -> String?)?
 
     private func configureCommonCallbacks(for view: MPVPlayerGLView) {
         view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
@@ -3275,6 +4016,10 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.getTrackListFunc = { view.getTrackList() }
+            self.setAudioTrackFunc = { view.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { view.getSubtitleText() }
         }
     }
 
@@ -3289,6 +4034,10 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.getTrackListFunc = { view.getTrackList() }
+            self.setAudioTrackFunc = { view.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { view.getSubtitleText() }
         }
     }
 
@@ -3303,6 +4052,10 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.getTrackListFunc = { view.getTrackList() }
+            self.setAudioTrackFunc = { view.setAudioTrack($0) }
+            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
+            self.getSubtitleTextFunc = { view.getSubtitleText() }
         }
     }
 
@@ -3419,6 +4172,12 @@ class MPVPlayerMetalView: UIView {
     var onSeekBackward: (() -> Void)?
     var onSelect: (() -> Void)?
     var onMenu: (() -> Void)?
+    var onUpArrow: (() -> Void)?
+    var onLeftArrow: (() -> Bool)?
+    var onRightArrow: (() -> Bool)?
+    var onDownArrow: (() -> Bool)?
+    var onSelectOverride: (() -> Bool)?
+    var onMenuOverride: (() -> Bool)?
     #endif
 
     override class var layerClass: AnyClass { CAMetalLayer.self }
@@ -3529,6 +4288,11 @@ class MPVPlayerMetalView: UIView {
         player?.startPositionPolling()
     }
 
+    func getTrackList() -> [MPVTrack] { player?.getTrackList() ?? [] }
+    func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { player?.getSubtitleText() }
+
     func cleanup() {
         player?.destroy()
         player = nil
@@ -3572,16 +4336,31 @@ class MPVPlayerMetalView: UIView {
                 onPlayPause?()
                 return
             case .leftArrow:
-                startSeeking(direction: -1)
+                if onLeftArrow?() != true {
+                    startSeeking(direction: -1)
+                }
                 return
             case .rightArrow:
-                startSeeking(direction: 1)
+                if onRightArrow?() != true {
+                    startSeeking(direction: 1)
+                }
+                return
+            case .upArrow:
+                onUpArrow?()
+                return
+            case .downArrow:
+                onDownArrow?()
                 return
             case .select:
-                onSelect?()
+                if onSelectOverride?() != true {
+                    onSelect?()
+                }
                 return
             case .menu:
-                onMenu?()
+                print("[tvOS] menu pressed, hasOverride=\(onMenuOverride != nil)")
+                if onMenuOverride?() != true {
+                    onMenu?()
+                }
                 return
             default:
                 break
@@ -3635,7 +4414,12 @@ class MPVPlayerPixelBufferView: UIView {
     var onSeekBackward: (() -> Void)?
     var onSelect: (() -> Void)?
     var onMenu: (() -> Void)?
-
+    var onUpArrow: (() -> Void)?
+    var onLeftArrow: (() -> Bool)?
+    var onRightArrow: (() -> Bool)?
+    var onDownArrow: (() -> Bool)?
+    var onSelectOverride: (() -> Bool)?
+    var onMenuOverride: (() -> Bool)?
     override var canBecomeFocused: Bool { true }
     #endif
 
@@ -3744,6 +4528,11 @@ class MPVPlayerPixelBufferView: UIView {
         session.player?.startPositionPolling()
     }
 
+    func getTrackList() -> [MPVTrack] { session.player?.getTrackList() ?? [] }
+    func setAudioTrack(_ trackId: Int) { session.player?.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { session.player?.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { session.player?.getSubtitleText() }
+
     func cleanup() {
         if session.isPiPActive {
             session.detachFromView()
@@ -3811,16 +4600,31 @@ class MPVPlayerPixelBufferView: UIView {
                 onPlayPause?()
                 return
             case .leftArrow:
-                startSeeking(direction: -1)
+                if onLeftArrow?() != true {
+                    startSeeking(direction: -1)
+                }
                 return
             case .rightArrow:
-                startSeeking(direction: 1)
+                if onRightArrow?() != true {
+                    startSeeking(direction: 1)
+                }
+                return
+            case .upArrow:
+                onUpArrow?()
+                return
+            case .downArrow:
+                onDownArrow?()
                 return
             case .select:
-                onSelect?()
+                if onSelectOverride?() != true {
+                    onSelect?()
+                }
                 return
             case .menu:
-                onMenu?()
+                print("[tvOS] menu pressed, hasOverride=\(onMenuOverride != nil)")
+                if onMenuOverride?() != true {
+                    onMenu?()
+                }
                 return
             default:
                 break
@@ -3874,7 +4678,12 @@ class MPVPlayerGLView: GLKView {
     var onSeekBackward: (() -> Void)?
     var onSelect: (() -> Void)?
     var onMenu: (() -> Void)?
-
+    var onUpArrow: (() -> Void)?
+    var onLeftArrow: (() -> Bool)?
+    var onRightArrow: (() -> Bool)?
+    var onDownArrow: (() -> Bool)?
+    var onSelectOverride: (() -> Bool)?
+    var onMenuOverride: (() -> Bool)?
     override var canBecomeFocused: Bool { true }
     #endif
 
@@ -4015,6 +4824,11 @@ class MPVPlayerGLView: GLKView {
         player?.startPositionPolling()
     }
 
+    func getTrackList() -> [MPVTrack] { player?.getTrackList() ?? [] }
+    func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
+    func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
+    func getSubtitleText() -> String? { player?.getSubtitleText() }
+
     func cleanup() {
         // Stop new frames from being queued
         needsDrawing = false
@@ -4066,16 +4880,31 @@ class MPVPlayerGLView: GLKView {
                 onPlayPause?()
                 return
             case .leftArrow:
-                startSeeking(direction: -1)
+                if onLeftArrow?() != true {
+                    startSeeking(direction: -1)
+                }
                 return
             case .rightArrow:
-                startSeeking(direction: 1)
+                if onRightArrow?() != true {
+                    startSeeking(direction: 1)
+                }
+                return
+            case .upArrow:
+                onUpArrow?()
+                return
+            case .downArrow:
+                onDownArrow?()
                 return
             case .select:
-                onSelect?()
+                if onSelectOverride?() != true {
+                    onSelect?()
+                }
                 return
             case .menu:
-                onMenu?()
+                print("[tvOS] menu pressed, hasOverride=\(onMenuOverride != nil)")
+                if onMenuOverride?() != true {
+                    onMenu?()
+                }
                 return
             default:
                 break
