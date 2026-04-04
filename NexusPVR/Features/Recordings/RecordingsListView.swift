@@ -869,6 +869,14 @@ private struct RecordingsListContentView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
         }
         .buttonStyle(TVRecordingSubtleButtonStyle())
+        .contextMenu {
+            recordingContextMenu(for: recording)
+            Button(role: .destructive) {
+                deleteRecording(recording)
+            } label: {
+                Label(recording.recordingStatus.isScheduled ? "Cancel Recording" : "Delete", systemImage: "trash")
+            }
+        }
     }
 
     @ViewBuilder
@@ -1044,6 +1052,15 @@ private struct RecordingsListContentView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             selectSeriesRecording(recording)
+        }
+        .contextMenu {
+            recordingContextMenu(for: recording)
+            Divider()
+            Button(role: .destructive) {
+                deleteRecording(recording)
+            } label: {
+                Label(recording.recordingStatus.isScheduled ? "Cancel Recording" : "Delete", systemImage: "trash")
+            }
         }
     }
     #endif
