@@ -60,6 +60,7 @@ struct SettingsView: View {
                 debugStreamSection
                 #endif
                 eventLogLinkSection
+                versionSection
             }
             .navigationTitle("Settings")
             #if os(macOS)
@@ -244,6 +245,12 @@ struct SettingsView: View {
                         }
                     )
                     .focusSection()
+
+                    Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, Theme.spacingMD)
 
                 }
                 .padding(.vertical, Theme.spacingXL)
@@ -829,6 +836,18 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.textTertiary)
                     }
                 }
+            }
+        }
+    }
+
+    private var versionSection: some View {
+        Section {
+            HStack {
+                Spacer()
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                Spacer()
             }
         }
     }
