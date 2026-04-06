@@ -1,5 +1,9 @@
 .DS_Store
 
+# Secret config (contains bundle ID prefix and team ID)
+Configs/Secret.xcconfig
+ExportOptions.plist
+
 # Xcode
 #
 # gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore

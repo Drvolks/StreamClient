@@ -81,6 +81,8 @@
 		6EA347F52F48EF9C00E0A324 /* TVServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = TVServices.framework; path = Library/Frameworks/TVServices.framework; sourceTree = DEVELOPER_DIR; };
 		6EA348072F48EFB600E0A324 /* DispatcherPVR TopShelf.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "DispatcherPVR TopShelf.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D1AAAA012F31559900D2B8DF /* StreamClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StreamClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CCCC00012F60000000CCCC01 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		CCCC00022F60000000CCCC02 /* Secret.xcconfig.template */ = {isa = PBXFileReference; lastKnownFileType = text; path = Secret.xcconfig.template; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -285,6 +287,7 @@
 		6E7415832F315368001FE083 = {
 			isa = PBXGroup;
 			children = (
+				CCCC00032F60000000CCCC03 /* Configs */,
 				6E74158E2F315368001FE083 /* NexusPVR */,
 				D1AAAA022F31559900D2B8DF /* DispatcherPVR */,
 				6E74159E2F315369001FE083 /* NexusPVRTests */,
@@ -315,6 +318,15 @@
 				6EA347F52F48EF9C00E0A324 /* TVServices.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		CCCC00032F60000000CCCC03 /* Configs */ = {
+			isa = PBXGroup;
+			children = (
+				CCCC00012F60000000CCCC01 /* Base.xcconfig */,
+				CCCC00022F60000000CCCC02 /* Secret.xcconfig.template */,
+			);
+			path = Configs;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -644,6 +656,7 @@
 /* Begin XCBuildConfiguration section */
 		6E7415AD2F315369001FE083 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CCCC00012F60000000CCCC01 /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -678,7 +691,6 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -708,6 +720,7 @@
 		};
 		6E7415AE2F315369001FE083 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CCCC00012F60000000CCCC01 /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -742,7 +755,6 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -766,6 +778,7 @@
 		6E7415B02F315369001FE083 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).NexusPVR";
 				APP_URL_SCHEME = nexuspvr;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = tv;
@@ -776,7 +789,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -819,7 +831,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVR";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = "StreamClient for NextPVR";
 				REGISTER_APP_GROUPS = YES;
@@ -843,6 +855,7 @@
 		6E7415B12F315369001FE083 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).NexusPVR";
 				APP_URL_SCHEME = nexuspvr;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = tv;
@@ -853,7 +866,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -896,7 +908,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVR";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = "StreamClient for NextPVR";
 				REGISTER_APP_GROUPS = YES;
@@ -907,6 +919,7 @@
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -924,12 +937,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVRTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVRTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -951,12 +963,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVRTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVRTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -977,12 +988,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVRUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVRUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1004,12 +1014,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVRUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVRUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1028,10 +1037,10 @@
 		6EA348002F48EF9D00E0A324 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).NexusPVR";
 				CODE_SIGN_ENTITLEMENTS = "NexusPVR TopShelf/NexusPVR TopShelf.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1044,7 +1053,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVR.TopShelfExtension";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				SKIP_INSTALL = YES;
@@ -1064,10 +1073,10 @@
 		6EA348012F48EF9D00E0A324 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).NexusPVR";
 				CODE_SIGN_ENTITLEMENTS = "NexusPVR TopShelf/NexusPVR TopShelf.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1080,7 +1089,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.NexusPVR.TopShelfExtension";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				SKIP_INSTALL = YES;
@@ -1101,10 +1110,10 @@
 		6EA348112F48EFB600E0A324 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				CODE_SIGN_ENTITLEMENTS = "DispatcherPVR TopShelf/DispatcherPVR TopShelf.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1117,7 +1126,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.DispatcherPVR.TopShelfExtension";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				SKIP_INSTALL = YES;
@@ -1137,10 +1146,10 @@
 		6EA348122F48EFB600E0A324 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				CODE_SIGN_ENTITLEMENTS = "DispatcherPVR TopShelf/DispatcherPVR TopShelf.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1153,7 +1162,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.DispatcherPVR.TopShelfExtension";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				SKIP_INSTALL = YES;
@@ -1174,6 +1183,7 @@
 		D1AAAA072F31559900D2B8DF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				APP_URL_SCHEME = dispatcharr;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = tv;
@@ -1184,7 +1194,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -1227,7 +1236,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.DispatcherPVR";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = StreamClient;
 				REGISTER_APP_GROUPS = YES;
@@ -1252,6 +1261,7 @@
 		D1AAAA082F31559900D2B8DF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_GROUP_ID = "group.$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				APP_URL_SCHEME = dispatcharr;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=appletvos*]" = tv;
@@ -1262,7 +1272,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 55;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
@@ -1305,7 +1314,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.2;
-				PRODUCT_BUNDLE_IDENTIFIER = "BUNDLE_ID_PREFIX.DispatcherPVR";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = StreamClient;
 				REGISTER_APP_GROUPS = YES;

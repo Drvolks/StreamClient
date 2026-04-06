@@ -83,11 +83,7 @@ nonisolated extension ServerConfig {
     private static let storageKey = "ServerConfig"
     private static let ubiquitousStore = NSUbiquitousKeyValueStore.default
 
-    #if DISPATCHERPVR
-    static let appGroupSuite = "group.BUNDLE_ID_PREFIX.DispatcherPVR"
-    #else
-    static let appGroupSuite = "group.BUNDLE_ID_PREFIX.NexusPVR"
-    #endif
+    static let appGroupSuite: String = Bundle.main.object(forInfoDictionaryKey: "AppGroupID") as? String ?? ""
 
     // Legacy keys for migration
     private static let hostKey = "nextpvr_host"
