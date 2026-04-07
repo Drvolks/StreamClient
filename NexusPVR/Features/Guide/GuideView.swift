@@ -632,6 +632,12 @@ struct GuideView: View {
                     #endif
                 }
                 .frame(minHeight: scrollViewHeight, alignment: .top)
+                #if os(iOS)
+                .background(ScrollViewDirectionalLock())
+                #endif
+                #if os(macOS)
+                .modifier(MacScrollDirectionalLockModifier())
+                #endif
             }
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 geo.containerSize.height
@@ -1778,6 +1784,93 @@ private struct TVImmediateSearchField: UIViewRepresentable {
             uiView.resignFirstResponder()
         }
     }
+}
+#endif
+
+
+#if os(macOS)
+import AppKit
+
+/// Installs an NSEvent local monitor while the guide is visible that locks
+/// scroll-wheel gestures to whichever axis dominates the first event of a
+/// gesture. Off-axis events are dropped (returned as nil) — AppKit doesn't
+/// allow mutating an NSEvent's deltas, so cross-axis frames are simply
+/// swallowed. The lock resets at every gesture begin / end.
+private struct MacScrollDirectionalLockModifier: ViewModifier {
+    @State private var monitor: Any?
+    @State private var lockedAxis: Axis? = nil
+
+    private enum Axis { case horizontal, vertical }
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                    switch event.phase {
+                    case .began, .mayBegin:
+                        lockedAxis = nil
+                    case .ended, .cancelled:
+                        lockedAxis = nil
+                        return event
+                    default:
+                        break
+                    }
+
+                    let dx = abs(event.scrollingDeltaX)
+                    let dy = abs(event.scrollingDeltaY)
+
+                    if lockedAxis == nil {
+                        // Need a meaningful delta before committing to an axis
+                        if max(dx, dy) < 0.5 { return event }
+                        lockedAxis = dx > dy ? .horizontal : .vertical
+                        return event
+                    }
+
+                    switch lockedAxis! {
+                    case .horizontal:
+                        // Drop events whose dominant axis is vertical
+                        return dy > dx ? nil : event
+                    case .vertical:
+                        return dx > dy ? nil : event
+                    }
+                }
+            }
+            .onDisappear {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
+                    self.monitor = nil
+                }
+                lockedAxis = nil
+            }
+    }
+}
+#endif
+
+#if os(iOS)
+import UIKit
+
+/// Walks up the SwiftUI view hierarchy to find the enclosing UIScrollView and
+/// enables `isDirectionalLockEnabled`, so panning locks to whichever axis the
+/// gesture started on (no diagonal scrolling).
+private struct ScrollViewDirectionalLock: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            var parent: UIView? = view.superview
+            while let current = parent {
+                if let scrollView = current as? UIScrollView {
+                    scrollView.isDirectionalLockEnabled = true
+                    return
+                }
+                parent = current.superview
+            }
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 #endif
 
