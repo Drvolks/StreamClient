@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var isCheckingCloud = true
     @State private var startupTask: Task<Void, Never>?
     @State private var startupTaskConfig: ServerConfig?
+    @State private var authErrorMessage: String?
     #if os(tvOS)
     @FocusState private var focusedServerId: String?
     #endif
@@ -106,6 +107,30 @@ struct ContentView: View {
             }
         }
         #endif
+        .alert("Sign-in Failed", isPresented: Binding(
+            get: { authErrorMessage != nil },
+            set: { if !$0 { authErrorMessage = nil } }
+        ), presenting: authErrorMessage) { _ in
+            Button("Update Server Settings") {
+                authErrorMessage = nil
+                sheetConfig = SetupSheetConfig(prefill: client.config)
+            }
+            Button("Dismiss", role: .cancel) {
+                authErrorMessage = nil
+            }
+        } message: { message in
+            Text(message)
+        }
+        .onChange(of: client.config) { _ in
+            // Server config changed (e.g. user updated credentials after a 401).
+            // Drop the stale EPG and kick off a fresh bootstrap.
+            guard client.isConfigured else { return }
+            epgCache.invalidate()
+            startupTask?.cancel()
+            startupTask = nil
+            startupTaskConfig = nil
+            queueConfiguredStartupIfNeeded()
+        }
         .onChange(of: client.isConfigured) { isConfigured in
             Task {
                 if isConfigured {
@@ -182,10 +207,40 @@ struct ContentView: View {
                 try await client.authenticate()
                 return
             } catch {
+                // Don't retry credential failures — the password/PIN won't fix itself.
+                if Self.isAuthCredentialFailure(error) {
+                    await MainActor.run {
+                        guard client.config == expectedConfig else { return }
+                        #if DISPATCHERPVR
+                        authErrorMessage = "Your saved username, password, or API key was rejected by the server. Update your server settings to sign in again."
+                        #else
+                        authErrorMessage = "Your saved PIN was rejected by the server. Update your server settings to sign in again."
+                        #endif
+                    }
+                    return
+                }
                 guard attempt < retryDelays.count else { return }
                 try? await Task.sleep(for: .seconds(retryDelays[attempt - 1]))
             }
         }
+    }
+
+    private static func isAuthCredentialFailure(_ error: Error) -> Bool {
+        if let pvr = error as? PVRClientError {
+            switch pvr {
+            case .authenticationFailed, .sessionExpired: return true
+            default: return false
+            }
+        }
+        #if !DISPATCHERPVR
+        if let next = error as? NextPVRError {
+            switch next {
+            case .authenticationFailed, .sessionExpired: return true
+            default: return false
+            }
+        }
+        #endif
+        return false
     }
 
     private var setupPromptView: some View {
