@@ -33,6 +33,7 @@ private struct RecordingsListContentView: View {
     @State private var inProgressRecording: Recording?
     @State private var resumeRecording: Recording?
     @State private var isCancellingSeries = false
+    @State private var recurringRecordings: [RecurringRecording] = []
     @State private var filterSelection: RecordingsFilter = .completed
     @State private var suppressNextFilterSelectionChange = false
     private static let seriesDateFormatter: DateFormatter = {
@@ -76,8 +77,15 @@ private struct RecordingsListContentView: View {
     }
 
     private var selectedSeriesRecurringId: Int? {
-        guard appState.hasSelectedRecordingsSeries,
-              let summary = viewModel.seriesSummary(named: appState.selectedRecordingsSeriesName) else { return nil }
+        guard appState.hasSelectedRecordingsSeries else { return nil }
+        let name = appState.selectedRecordingsSeriesName
+        // Authoritative source on NextPVR: the recording.recurring.list endpoint.
+        // Match by series name (case-insensitive) so the Cancel Series button is
+        // available even when no future episode is currently in the EPG.
+        if let match = recurringRecordings.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            return match.id
+        }
+        guard let summary = viewModel.seriesSummary(named: name) else { return nil }
         return seriesRecurringId(for: summary)
     }
 
@@ -135,6 +143,25 @@ private struct RecordingsListContentView: View {
                    let recurringId = selectedSeriesRecurringId,
                    appState.hasSelectedRecordingsSeries {
                     ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .destructive) {
+                            cancelSeries(recurringId: recurringId)
+                        } label: {
+                            if isCancellingSeries {
+                                ProgressView()
+                            } else {
+                                Text("Cancel Series")
+                            }
+                        }
+                        .disabled(isCancellingSeries)
+                    }
+                }
+            }
+            #elseif os(macOS)
+            .toolbar {
+                if canManageRecordings,
+                   let recurringId = selectedSeriesRecurringId,
+                   appState.hasSelectedRecordingsSeries {
+                    ToolbarItem(placement: .primaryAction) {
                         Button(role: .destructive) {
                             cancelSeries(recurringId: recurringId)
                         } label: {
@@ -349,8 +376,18 @@ private struct RecordingsListContentView: View {
     private func reloadRecordings() async {
         appState.recordingsSeriesIsLoading = true
         await viewModel.loadRecordings()
+        await reloadRecurringRecordings()
         syncAppStateFromViewModel()
         appState.recordingsSeriesIsLoading = false
+    }
+
+    private func reloadRecurringRecordings() async {
+        // The recurring list is the authoritative source for whether a series
+        // has an active recording rule on NextPVR — needed so the Cancel Series
+        // button can be shown even when no future episode is in the EPG.
+        if let recurrings = try? await client.getRecurringRecordings() {
+            recurringRecordings = recurrings
+        }
     }
 
     private func selectSeriesRecording(_ recording: Recording) {
@@ -508,6 +545,10 @@ private struct RecordingsListContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                 }
                 .buttonStyle(TVRecordingSubtleButtonStyle())
+
+                if canManageRecordings, let recurringId = selectedSeriesRecurringId {
+                    cancelSeriesButtonTV(recurringId: recurringId)
+                }
 
                 if let summary {
                     let inlineActiveCount = min(3, summary.active.count)
