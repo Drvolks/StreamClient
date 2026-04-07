@@ -55,6 +55,13 @@ struct ProgramDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.spacingMD) {
+                    #if os(macOS)
+                    HStack {
+                        Spacer()
+                        Button("Done") { dismiss() }
+                            .keyboardShortcut(.cancelAction)
+                    }
+                    #endif
                     // Content area with sport icon behind
                     ZStack(alignment: .trailing) {
                         // Sport icon background
@@ -80,14 +87,19 @@ struct ProgramDetailView: View {
                 .padding(.bottom, Theme.spacingLG)
             }
             .background(Theme.background)
+            #if os(macOS)
+            .fixedSize(horizontal: false, vertical: true)
+            #endif
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            #if !os(macOS)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
             }
+            #endif
             .alert("Error", isPresented: .constant(scheduleError != nil)) {
                 Button("OK") { scheduleError = nil }
             } message: {
@@ -97,7 +109,8 @@ struct ProgramDetailView: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 500, minHeight: 700)
+        .frame(minWidth: 500, idealWidth: 560, maxWidth: 700)
+        .fixedSize(horizontal: false, vertical: true)
         #endif
         #if os(iOS)
         .presentationDetents([.large])

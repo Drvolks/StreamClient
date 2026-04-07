@@ -1338,6 +1338,21 @@ enum TVSidebarItem: Hashable {
 // MARK: - macOS Navigation
 
 #if os(macOS)
+private struct MacOSDetailTopInsetModifier: ViewModifier {
+    let tab: Tab
+    func body(content: Content) -> some View {
+        if tab == .guide {
+            content
+        } else {
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 12)
+                content
+            }
+            .ignoresSafeArea(.container, edges: .top)
+        }
+    }
+}
+
 struct MacOSNavigation: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
@@ -1350,17 +1365,6 @@ struct MacOSNavigation: View {
     @State private var matchingGroups: [ChannelGroup] = []
     @State private var searchDebounceTask: Task<Void, Never>?
     @State private var lastSearchedText = ""
-
-    private var selectedTabBinding: Binding<Tab> {
-        Binding(
-            get: { appState.selectedTab },
-            set: { newValue in
-                Task { @MainActor in
-                    appState.selectedTab = newValue
-                }
-            }
-        )
-    }
 
     var body: some View {
         Group {
@@ -1376,45 +1380,15 @@ struct MacOSNavigation: View {
             } else {
                 // Show regular navigation with sidebar
                 NavigationSplitView {
-                    List(Tab.macOSTabs(userLevel: appState.userLevel), selection: selectedTabBinding) { tab in
-                        HStack {
-                            Label(tab.label, systemImage: tab.icon)
-                            if tab == .recordings && appState.recordingsHasActive {
-                                Spacer()
-                                Circle()
-                                    .fill(Theme.recording)
-                                    .frame(width: 8, height: 8)
-                            }
-                            #if DISPATCHERPVR
-                            if tab == .stats {
-                                Spacer()
-                                if appState.hasM3UErrors {
-                                    Circle()
-                                        .fill(Theme.error)
-                                        .frame(width: 8, height: 8)
-                                }
-                                if appState.activeStreamCount > 0 {
-                                    Text("\(appState.activeStreamCount)")
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Theme.accent)
-                                        .clipShape(Capsule())
-                                }
-                            }
-                            #endif
-                        }
-                        .tag(tab)
-                    }
-                    .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+                    macSidebar
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 240)
                 } detail: {
                     ZStack(alignment: .bottom) {
                         // Detail content
                         Group {
                             switch appState.selectedTab {
                             case .guide:
-                                GuideView()
+                                NavigationStack { GuideView() }
                             case .topics:
                                 TopicsView()
                             case .calendar:
@@ -1432,6 +1406,7 @@ struct MacOSNavigation: View {
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .modifier(MacOSDetailTopInsetModifier(tab: appState.selectedTab))
 
                         // Dismiss layer when dropdown showing
                         if showSearchDropdown {
@@ -1499,7 +1474,233 @@ struct MacOSNavigation: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 showSearchDropdown = false
             }
+            if appState.selectedTab != .topics {
+                appState.showingKeywordsEditor = false
+            }
         }
+        .onAppear {
+            appState.topicKeywords = UserPreferences.load().keywords
+            Task { await computeTopicMatchCounts() }
+        }
+        .onChange(of: appState.showingKeywordsEditor) { _ in
+            if !appState.showingKeywordsEditor {
+                appState.topicKeywords = UserPreferences.load().keywords
+                Task { await computeTopicMatchCounts() }
+            }
+        }
+        .onChange(of: epgCache.isFullyLoaded) { _ in
+            if epgCache.isFullyLoaded {
+                Task { await computeTopicMatchCounts() }
+            }
+        }
+    }
+
+    // MARK: - Topic Match Counts
+
+    private func computeTopicMatchCounts() async {
+        let keywords = appState.topicKeywords
+        guard !keywords.isEmpty, epgCache.isFullyLoaded else { return }
+        let matches = await epgCache.matchingPrograms(keywords: keywords)
+        var counts: [String: Int] = [:]
+        for match in matches where match.matchedKeyword != MatchingProgram.scheduledKeyword {
+            counts[match.matchedKeyword, default: 0] += 1
+        }
+        appState.topicKeywordMatchCounts = counts
+    }
+
+    // MARK: - macOS Sidebar
+
+    private var macSidebar: some View {
+        List {
+            ForEach(Tab.macOSTabs(userLevel: appState.userLevel)) { tab in
+                if tab == .recordings {
+                    Section {
+                        if appState.recordingsHasActive {
+                            macSidebarSubRow(label: "Active (\(appState.activeRecordingCount))", filter: .recording)
+                        }
+                        macSidebarSubRow(label: "Completed", filter: .completed)
+                        macSidebarSubRow(label: "Scheduled", filter: .scheduled)
+                        macSidebarSeriesMoreRow()
+                    } header: {
+                        macSidebarHeader(icon: tab.icon, label: tab.label)
+                    }
+                } else if tab == .topics {
+                    Section {
+                        ForEach(appState.topicKeywords, id: \.self) { keyword in
+                            macSidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
+                        }
+                        macSidebarTopicManageRow()
+                    } header: {
+                        macSidebarHeader(icon: tab.icon, label: tab.label)
+                    }
+                } else {
+                    macSidebarRow(tab: tab)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    private func macSidebarHeader(icon: String, label: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 20)
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+        }
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.vertical, 2)
+    }
+
+    private func macSidebarRow(tab: Tab) -> some View {
+        let isSelected = appState.selectedTab == tab
+        return Button {
+            appState.selectedTab = tab
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 14))
+                    .frame(width: 20)
+                Text(tab.label)
+                    .font(.body)
+                Spacer()
+                if tab == .recordings && appState.recordingsHasActive {
+                    Circle().fill(Theme.recording).frame(width: 8, height: 8)
+                }
+                #if DISPATCHERPVR
+                if tab == .stats {
+                    if appState.hasM3UErrors {
+                        Circle().fill(Theme.error).frame(width: 8, height: 8)
+                    }
+                    if appState.activeStreamCount > 0 {
+                        Text("\(appState.activeStreamCount)")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Theme.accent)
+                            .clipShape(Capsule())
+                    }
+                }
+                #endif
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func macSidebarSubRow(label: String, filter: RecordingsFilter) -> some View {
+        let isSelected = appState.selectedTab == .recordings &&
+            !appState.hasSelectedRecordingsSeries &&
+            !appState.showingRecordingsSeriesList &&
+            appState.recordingsFilter == filter
+        return Button {
+            appState.setRecordingsFilter(filter, userInitiated: true)
+            appState.selectedTab = .recordings
+        } label: {
+            HStack {
+                Text(label)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("recordings-filter-\(filter.rawValue)")
+    }
+
+    private func macSidebarSeriesMoreRow() -> some View {
+        let isSelected = appState.selectedTab == .recordings &&
+            (appState.showingRecordingsSeriesList || appState.hasSelectedRecordingsSeries)
+        return Button {
+            appState.showRecordingsSeriesMenu(userInitiated: true)
+            appState.selectedTab = .recordings
+        } label: {
+            HStack {
+                Text("Series")
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("recordings-series-menu")
+    }
+
+    private func macSidebarTopicManageRow() -> some View {
+        let isSelected = appState.selectedTab == .topics && appState.showingKeywordsEditor
+        return Button {
+            appState.showingKeywordsEditor = true
+            appState.selectedTab = .topics
+        } label: {
+            HStack {
+                Text("Manage")
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("topic-manage")
+    }
+
+    private func macSidebarTopicSubRow(keyword: String, count: Int?) -> some View {
+        let isSelected = appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
+        return Button {
+            appState.showingKeywordsEditor = false
+            appState.selectedTopicKeyword = keyword
+            appState.selectedTab = .topics
+        } label: {
+            HStack {
+                Text(keyword)
+                    .font(.subheadline)
+                Spacer()
+                if let count {
+                    Text("(\(count))")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("topic-keyword-\(keyword)")
     }
 
     // MARK: - macOS Search Bar

@@ -66,9 +66,6 @@ struct GuideView: View {
         contentView
             .accessibilityIdentifier("guide-view")
             .background(.ultraThinMaterial)
-            #if os(macOS)
-            .toolbar(.hidden)
-            #endif
             .sheet(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
                 programDetailSheet(detail)
             }
@@ -173,6 +170,7 @@ struct GuideView: View {
         #if os(macOS)
         .overlay(alignment: .top) {
             macOSGuideNavBar
+                .offset(y: -50)
         }
         #endif
         #if os(iOS) && DISPATCHERPVR
@@ -383,7 +381,7 @@ struct GuideView: View {
         // Top bar is now a safeAreaInset in IOSNavigation, no extra offset needed
         let base: CGFloat = 0
         #else
-        let base: CGFloat = 50
+        let base: CGFloat = 0
         #endif
         #if DISPATCHERPVR
         if viewModel.showFilters && hasFilterData {

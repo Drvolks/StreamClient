@@ -69,6 +69,8 @@ struct TopicsView: View {
             NavigationView {
                 topicsContent
             }
+            #elseif os(macOS)
+            topicsContent
             #else
             NavigationStack {
                 topicsContent
@@ -170,34 +172,7 @@ struct TopicsView: View {
     @ViewBuilder
     private var topicsContent: some View {
         VStack(spacing: 0) {
-            #if os(macOS)
-            if !viewModel.keywords.isEmpty {
-                HStack {
-                    Picker("Topic", selection: $selectedKeyword) {
-                        ForEach(viewModel.keywords, id: \.self) { keyword in
-                            Text(keyword).tag(keyword)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .accessibilityIdentifier("keyword-tabs")
-                    .onChange(of: selectedKeyword) { _ in
-                        Task { appState.selectedTopicKeyword = selectedKeyword }
-                    }
-
-                    Spacer()
-                    Button {
-                        appState.showingKeywordsEditor = true
-                    } label: {
-                        Image(systemName: "pencil")
-                    }
-                    .accessibilityIdentifier("edit-keywords-button")
-                }
-                .padding(.horizontal)
-                .padding(.vertical, Theme.spacingSM)
-                .background(Theme.surface)
-            }
-            #endif
+            // macOS topic selection is driven by the sidebar sub-rows.
 
             // Content
             Group {

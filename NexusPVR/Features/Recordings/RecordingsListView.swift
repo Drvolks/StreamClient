@@ -90,37 +90,17 @@ private struct RecordingsListContentView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        #if os(macOS)
+        recordingsBody
+        #else
+        NavigationStack { recordingsBody }
+        #endif
+    }
+
+    @ViewBuilder
+    private var recordingsBody: some View {
             VStack(spacing: 0) {
-                // Tab picker (tvOS and macOS only — iOS uses floating nav bar picker)
-                #if os(macOS)
-                Picker("Filter", selection: $filterSelection) {
-                    if viewModel.hasActiveRecordings {
-                        Text("Recording").tag(RecordingsFilter.recording)
-                    }
-                    Text("Completed").tag(RecordingsFilter.completed)
-                    Text("Scheduled").tag(RecordingsFilter.scheduled)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("recordings-filter")
-                .padding(.horizontal)
-                .padding(.vertical, Theme.spacingSM)
-                .background(Theme.background)
-                .onChange(of: filterSelection) {
-                    if suppressNextFilterSelectionChange {
-                        suppressNextFilterSelectionChange = false
-                        return
-                    }
-                    appState.setRecordingsFilter(filterSelection, userInitiated: true)
-                    Task { viewModel.filter = filterSelection }
-                }
-                .onChange(of: viewModel.filter) {
-                    if filterSelection != viewModel.filter {
-                        suppressNextFilterSelectionChange = true
-                        filterSelection = viewModel.filter
-                    }
-                }
-                #endif
+                // Filter selection on macOS is driven by the sidebar sub-rows.
 
                 // Content
                 Group {
@@ -219,7 +199,6 @@ private struct RecordingsListContentView: View {
                 requestSidebarFocus()
             }
             #endif
-        }
         #if os(tvOS)
         .background(.ultraThinMaterial)
         #else
@@ -594,6 +573,7 @@ private struct RecordingsListContentView: View {
                 }
                 .font(.headline)
             }
+            .buttonStyle(.plain)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
 
@@ -1145,25 +1125,24 @@ private struct RecordingsListContentView: View {
             await reloadRecordings()
         }
         #else
-        List {
-            ForEach(vm.recordingsSeriesSummaries) { summary in
-                Button {
-                    appState.selectRecordingsSeries(named: summary.name, userInitiated: true)
-                } label: {
-                    HStack(spacing: Theme.spacingSM) {
-                        seriesListArtwork(summary: summary, width: 42, height: 64)
-                        Text(summary.name)
-                            .foregroundStyle(Theme.textPrimary)
-                        Spacer()
-                        Text("(\(summary.unwatchedCount))")
-                            .foregroundStyle(Theme.textSecondary)
+        let columns = [
+            GridItem(.adaptive(minimum: 320, maximum: 480), spacing: Theme.spacingMD)
+        ]
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
+                ForEach(vm.recordingsSeriesSummaries) { summary in
+                    Button {
+                        appState.selectRecordingsSeries(named: summary.name, userInitiated: true)
+                    } label: {
+                        seriesGridCard(summary: summary)
                     }
-                    .font(.headline)
+                    .buttonStyle(.plain)
                 }
-                .listRowBackground(Theme.surface)
             }
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.top, Theme.spacingMD)
+            .padding(.bottom, Theme.spacingLG)
         }
-        .listStyle(.plain)
         .refreshable {
             await reloadRecordings()
         }
