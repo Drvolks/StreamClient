@@ -304,6 +304,17 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 errorDetail: "Starting NextPVR authentication against \(baseURL)"
             ))
 
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "INFO",
+                path: "/session",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Using server URL \(baseURL)"
+            ))
+
             // Step 1: Initiate session
             let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=\(deviceName)&format=json")!
             NetworkEventLog.shared.log(NetworkEvent(

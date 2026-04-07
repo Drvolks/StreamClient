@@ -302,6 +302,17 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 errorDetail: "Starting Dispatcharr API key authentication against \(baseURL)"
             ))
 
+            NetworkEventLog.shared.log(NetworkEvent(
+                timestamp: Date(),
+                method: "INFO",
+                path: "/dispatcharr/api-key",
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: "Using server URL \(baseURL)"
+            ))
+
             // Probe /api/accounts/users/me/ — accessible to all authenticated users regardless of role
             guard let url = URL(string: "\(baseURL)/api/accounts/users/me/") else {
                 NetworkEventLog.shared.log(NetworkEvent(
@@ -416,6 +427,17 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             durationMs: 0,
             responseSize: 0,
             errorDetail: "Starting Dispatcharr JWT authentication against \(baseURL)"
+        ))
+
+        NetworkEventLog.shared.log(NetworkEvent(
+            timestamp: Date(),
+            method: "INFO",
+            path: "/dispatcharr/jwt",
+            statusCode: nil,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "Using server URL \(baseURL)"
         ))
 
         guard let url = URL(string: "\(baseURL)/api/accounts/token/") else {

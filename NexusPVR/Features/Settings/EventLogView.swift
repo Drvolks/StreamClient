@@ -8,10 +8,14 @@
 import SwiftUI
 
 struct EventLogView: View {
-    @ObservedObject private var eventLog = NetworkEventLog.shared
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showingCopied = false
+    @State private var snapshot: [NetworkEvent] = []
+
+    private func reload() {
+        snapshot = NetworkEventLog.shared.events
+    }
 
     var body: some View {
         #if os(tvOS)
@@ -25,15 +29,16 @@ struct EventLogView: View {
     #if !os(tvOS)
     private var listContent: some View {
         List {
-            if eventLog.events.isEmpty {
+            if snapshot.isEmpty {
                 Text("No network events yet")
                     .foregroundStyle(Theme.textTertiary)
             } else {
-                ForEach(eventLog.events.reversed()) { event in
+                ForEach(snapshot.reversed()) { event in
                     eventRow(event)
                 }
             }
         }
+        .onAppear { reload() }
         #if os(macOS)
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -45,7 +50,7 @@ struct EventLogView: View {
         #endif
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
-                if !eventLog.events.isEmpty {
+                if !snapshot.isEmpty {
                     Button {
                         copyLog()
                     } label: {
@@ -53,7 +58,8 @@ struct EventLogView: View {
                     }
 
                     Button(role: .destructive) {
-                        eventLog.clear()
+                        NetworkEventLog.shared.clear()
+                        reload()
                     } label: {
                         Label("Clear", systemImage: "trash")
                     }
@@ -72,14 +78,15 @@ struct EventLogView: View {
                     icon: "list.bullet.rectangle"
                 ) {
                     VStack(spacing: Theme.spacingSM) {
-                        if eventLog.events.isEmpty {
+                        if snapshot.isEmpty {
                             Text("No network events yet")
                                 .foregroundStyle(Theme.textTertiary)
                         } else {
                             HStack {
                                 Spacer()
                                 Button {
-                                    eventLog.clear()
+                                    NetworkEventLog.shared.clear()
+                                    reload()
                                 } label: {
                                     Text("Clear")
                                         .font(.system(size: 20, weight: .semibold))
@@ -92,7 +99,7 @@ struct EventLogView: View {
                                 .buttonStyle(TVEventLogActionButtonStyle())
                             }
 
-                            ForEach(eventLog.events.reversed()) { event in
+                            ForEach(snapshot.reversed()) { event in
                                 eventRow(event)
                             }
                         }
@@ -105,6 +112,7 @@ struct EventLogView: View {
         }
         .onAppear {
             appState.tvosBlocksSidebarExitCommand = true
+            reload()
         }
         .onDisappear {
             appState.tvosBlocksSidebarExitCommand = false
@@ -149,7 +157,7 @@ struct EventLogView: View {
             }
             if let detail = event.errorDetail {
                 Text(detail)
-                    .foregroundStyle(Theme.error)
+                    .foregroundStyle(event.isSuccess ? Theme.textSecondary : Theme.error)
                     .font(.caption2)
                     .lineLimit(3)
             }
@@ -158,7 +166,7 @@ struct EventLogView: View {
 
     #if !os(tvOS)
     private func copyLog() {
-        let text = eventLog.formattedLog
+        let text = NetworkEventLog.shared.formattedLog
         #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

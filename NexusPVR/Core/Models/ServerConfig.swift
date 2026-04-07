@@ -20,13 +20,87 @@ nonisolated struct ServerConfig: Codable, Equatable {
         port ?? (useHTTPS ? 443 : 80)
     }
 
-    var baseURL: String {
-        let scheme = useHTTPS ? "https" : "http"
-        let defaultPort = useHTTPS ? 443 : 80
-        if effectivePort == defaultPort {
-            return "\(scheme)://\(host)"
+    /// True when the user typed an explicit http:// or https:// prefix in the host field.
+    var hasExplicitScheme: Bool {
+        let lower = host.lowercased()
+        return lower.hasPrefix("http://") || lower.hasPrefix("https://")
+    }
+
+    /// True when the host field contains an explicit `:port` (with or without a scheme prefix).
+    var hasExplicitPort: Bool {
+        var remainder = host
+        let lower = remainder.lowercased()
+        if lower.hasPrefix("http://") {
+            remainder = String(remainder.dropFirst("http://".count))
+        } else if lower.hasPrefix("https://") {
+            remainder = String(remainder.dropFirst("https://".count))
         }
-        return "\(scheme)://\(host):\(effectivePort)"
+        // Strip any path component.
+        if let slash = remainder.firstIndex(of: "/") {
+            remainder = String(remainder[..<slash])
+        }
+        guard let colon = remainder.firstIndex(of: ":") else { return false }
+        let portPart = remainder[remainder.index(after: colon)...]
+        return !portPart.isEmpty && portPart.allSatisfy { $0.isNumber }
+    }
+
+    /// Returns the explicit port embedded in the `host` field (e.g. "myserver:9191"), if any.
+    var explicitHostPort: Int? {
+        var remainder = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = remainder.lowercased()
+        if lower.hasPrefix("http://") {
+            remainder = String(remainder.dropFirst("http://".count))
+        } else if lower.hasPrefix("https://") {
+            remainder = String(remainder.dropFirst("https://".count))
+        }
+        if let slash = remainder.firstIndex(of: "/") {
+            remainder = String(remainder[..<slash])
+        }
+        guard let colon = remainder.firstIndex(of: ":") else { return nil }
+        let portPart = remainder[remainder.index(after: colon)...]
+        return Int(portPart)
+    }
+
+    var baseURL: String {
+        // Parse the host string into scheme / hostname / port / path so we never
+        // double-prefix or double-port when the user types things like
+        // "https://example.com" or "192.168.1.5:9191".
+        var working = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        while working.hasSuffix("/") { working.removeLast() }
+
+        let lower = working.lowercased()
+        var explicitScheme: String? = nil
+        if lower.hasPrefix("https://") {
+            explicitScheme = "https"
+            working = String(working.dropFirst("https://".count))
+        } else if lower.hasPrefix("http://") {
+            explicitScheme = "http"
+            working = String(working.dropFirst("http://".count))
+        }
+
+        var path = ""
+        if let slash = working.firstIndex(of: "/") {
+            path = String(working[slash...])
+            working = String(working[..<slash])
+        }
+
+        var embeddedPort: Int? = nil
+        if let colon = working.firstIndex(of: ":") {
+            let portStr = working[working.index(after: colon)...]
+            if let p = Int(portStr) {
+                embeddedPort = p
+                working = String(working[..<colon])
+            }
+        }
+
+        let scheme = explicitScheme ?? (useHTTPS ? "https" : "http")
+        let defaultPort = scheme == "https" ? 443 : 80
+        let finalPort = embeddedPort ?? port ?? defaultPort
+
+        if finalPort == defaultPort {
+            return "\(scheme)://\(working)\(path)"
+        }
+        return "\(scheme)://\(working):\(finalPort)\(path)"
     }
 
     /// Display string for the server address (e.g. "192.168.1.100" or "192.168.1.100:8866")

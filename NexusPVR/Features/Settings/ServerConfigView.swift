@@ -156,6 +156,7 @@ struct ServerConfigView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                                 }
                                 .buttonStyle(.card)
+                                .disabled(config.hasExplicitScheme)
                             }
 
                             if isProbingHost {
@@ -170,6 +171,8 @@ struct ServerConfigView: View {
                             } else {
                                 TextField("Port (default: \(defaultPortPlaceholder))", text: $portString)
                                     .keyboardType(.numberPad)
+                                    .disabled(config.hasExplicitPort)
+                                    .foregroundStyle(config.hasExplicitPort ? Theme.textTertiary : Theme.textPrimary)
                                     .onChange(of: portString) { newValue in
                                         config.port = Int(newValue)
                                     }
@@ -307,6 +310,7 @@ struct ServerConfigView: View {
                                 Toggle("Use HTTPS", isOn: $config.useHTTPS)
                                     .toggleStyle(.switch)
                                     .tint(Theme.accent)
+                                    .disabled(config.hasExplicitScheme)
                                 Spacer()
                             }
 
@@ -323,6 +327,8 @@ struct ServerConfigView: View {
                                     TextField(defaultPortPlaceholder, text: $portString)
                                         .textFieldStyle(.roundedBorder)
                                         .frame(width: 80)
+                                        .disabled(config.hasExplicitPort)
+                                        .foregroundStyle(config.hasExplicitPort ? Theme.textTertiary : Theme.textPrimary)
                                         .onChange(of: portString) { newValue in
                                             config.port = Int(newValue)
                                         }
@@ -452,6 +458,7 @@ struct ServerConfigView: View {
             }
 
             Toggle("Use HTTPS", isOn: $config.useHTTPS)
+                .disabled(config.hasExplicitScheme)
 
             LabeledContent("Port") {
                 if isProbingHost {
@@ -461,6 +468,8 @@ struct ServerConfigView: View {
                     TextField(defaultPortPlaceholder, text: $portString)
                         .multilineTextAlignment(.trailing)
                         .keyboardType(.numberPad)
+                        .disabled(config.hasExplicitPort)
+                        .foregroundStyle(config.hasExplicitPort ? Theme.textTertiary : Theme.textPrimary)
                         .onChange(of: portString) { newValue in
                             config.port = Int(newValue)
                         }
@@ -547,6 +556,25 @@ struct ServerConfigView: View {
 
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty, trimmedHost.lowercased() != "demo" else { return }
+        // If the user typed an explicit http:// or https:// prefix, trust it
+        // and skip probing entirely.
+        if config.hasExplicitScheme {
+            let explicitHTTPS = trimmedHost.lowercased().hasPrefix("https://")
+            if config.useHTTPS != explicitHTTPS {
+                config.useHTTPS = explicitHTTPS
+            }
+        }
+        if let embedded = config.explicitHostPort {
+            if config.port != embedded {
+                config.port = embedded
+            }
+            if portString != String(embedded) {
+                portString = String(embedded)
+            }
+        }
+        if config.hasExplicitScheme || config.hasExplicitPort {
+            return
+        }
 
         let probeGeneration = hostProbeGeneration
         let preferredHTTPS = config.useHTTPS
