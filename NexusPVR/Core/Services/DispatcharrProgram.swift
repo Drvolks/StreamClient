@@ -83,14 +83,52 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
         )
     }
 
-    func toProgram(channelId: Int? = nil) -> Program? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let fallbackFormatter = ISO8601DateFormatter()
+    private static let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoPlain = ISO8601DateFormatter()
 
-        guard let startDate = formatter.date(from: startTime) ?? fallbackFormatter.date(from: startTime),
-              let endDate = formatter.date(from: endTime) ?? fallbackFormatter.date(from: endTime),
-              endDate > startDate else {
+    /// Fast path parser for the common Dispatcharr shape "yyyy-MM-ddTHH:mm:ssZ" / with fractional seconds.
+    /// Avoids ISO8601DateFormatter for the typical case (~10x faster across hundreds of thousands of programs).
+    private static func fastParseISO(_ s: String) -> Date? {
+        let chars = Array(s.utf8)
+        // Need at least "yyyy-MM-ddTHH:mm:ssZ" (20 chars)
+        guard chars.count >= 20 else { return nil }
+        @inline(__always) func d(_ i: Int) -> Int { Int(chars[i]) - 48 }
+        @inline(__always) func twoDigits(_ i: Int) -> Int? {
+            let a = d(i), b = d(i + 1)
+            guard (0...9).contains(a), (0...9).contains(b) else { return nil }
+            return a * 10 + b
+        }
+        guard chars[4] == 0x2D, chars[7] == 0x2D, chars[10] == 0x54,
+              chars[13] == 0x3A, chars[16] == 0x3A else { return nil }
+        let y = (d(0) * 1000) + (d(1) * 100) + (d(2) * 10) + d(3)
+        guard let mo = twoDigits(5), let da = twoDigits(8),
+              let h = twoDigits(11), let mi = twoDigits(14), let se = twoDigits(17) else {
+            return nil
+        }
+        // Days from civil (Howard Hinnant)
+        let yy = mo <= 2 ? y - 1 : y
+        let era = (yy >= 0 ? yy : yy - 399) / 400
+        let yoe = yy - era * 400
+        let mp = mo + (mo > 2 ? -3 : 9)
+        let doy = (153 * mp + 2) / 5 + da - 1
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        let days = era * 146097 + doe - 719468
+        let secs = TimeInterval(days) * 86400 + TimeInterval(h * 3600 + mi * 60 + se)
+        return Date(timeIntervalSince1970: secs)
+    }
+
+    func toProgram(channelId: Int? = nil) -> Program? {
+        let startDate = Self.fastParseISO(startTime)
+            ?? Self.isoFractional.date(from: startTime)
+            ?? Self.isoPlain.date(from: startTime)
+        let endDate = Self.fastParseISO(endTime)
+            ?? Self.isoFractional.date(from: endTime)
+            ?? Self.isoPlain.date(from: endTime)
+        guard let startDate, let endDate, endDate > startDate else {
             return nil
         }
 

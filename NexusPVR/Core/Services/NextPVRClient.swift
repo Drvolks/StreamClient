@@ -489,28 +489,81 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         return response.listings ?? []
     }
 
-    func getAllListings(for channels: [Channel]) async throws -> [Int: [Program]] {
-        guard !config.isDemoMode else { return DemoDataProvider.allListings(for: channels) }
-        var result = [Int: [Program]]()
+    /// Fetch listings for a single channel constrained to [start, end] (unix seconds).
+    private func getListings(channelId: Int, start: Int, end: Int) async throws -> [Program] {
+        guard !config.isDemoMode else { return DemoDataProvider.listings(for: channelId) }
+        let response: ProgramListingsResponse = try await request("channel.listings", params: [
+            "channel_id": String(channelId),
+            "start": String(start),
+            "end": String(end)
+        ])
+        return response.listings ?? []
+    }
 
-        // Ensure we're authenticated before starting batch requests
+    func getAllListings(for channels: [Channel]) async throws -> [Int: [Program]] {
+        try await fetchListingsConcurrently(for: channels, window: nil)
+    }
+
+    /// Fast first-paint: today + tomorrow only, fetched concurrently.
+    func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
+        let now = Int(Date().timeIntervalSince1970)
+        // Cover roughly the visible guide window: 1h ago → 48h ahead.
+        let start = now - 3600
+        let end = now + 48 * 3600
+        return try await fetchListingsConcurrently(for: channels, window: (start, end))
+    }
+
+    private func fetchListingsConcurrently(for channels: [Channel], window: (start: Int, end: Int)?) async throws -> [Int: [Program]] {
+        guard !config.isDemoMode else { return DemoDataProvider.allListings(for: channels) }
+
+        // Ensure we're authenticated once before kicking off concurrent requests.
+        // After the SID is established, NextPVR safely handles concurrent calls on the same session.
         if !isAuthenticated {
             try await authenticate()
         }
 
-        // Fetch in batches to avoid overwhelming the server
-        // Use sequential requests within batches to avoid race conditions with session state
-        let batchSize = 10
-        for batchStart in stride(from: 0, to: channels.count, by: batchSize) {
-            let batchEnd = min(batchStart + batchSize, channels.count)
-            let batch = Array(channels[batchStart..<batchEnd])
+        let concurrency = 10
+        var result = [Int: [Program]]()
+        result.reserveCapacity(channels.count)
 
-            for channel in batch {
-                do {
-                    let listings = try await getListings(channelId: channel.id)
-                    result[channel.id] = listings
-                } catch {
-                    result[channel.id] = []
+        var index = 0
+        try await withThrowingTaskGroup(of: (Int, [Program]).self) { group in
+            // Prime the pipeline.
+            while index < channels.count && index < concurrency {
+                let channel = channels[index]
+                group.addTask { [self] in
+                    do {
+                        let progs: [Program]
+                        if let window {
+                            progs = try await self.getListings(channelId: channel.id, start: window.start, end: window.end)
+                        } else {
+                            progs = try await self.getListings(channelId: channel.id)
+                        }
+                        return (channel.id, progs)
+                    } catch {
+                        return (channel.id, [])
+                    }
+                }
+                index += 1
+            }
+            while let next = try await group.next() {
+                result[next.0] = next.1
+                if index < channels.count {
+                    let channel = channels[index]
+                    index += 1
+                    group.addTask { [self] in
+                        do {
+                            let progs: [Program]
+                            if let window {
+                                progs = try await self.getListings(channelId: channel.id, start: window.start, end: window.end)
+                            } else {
+                                progs = try await self.getListings(channelId: channel.id)
+                            }
+                            return (channel.id, progs)
+                        } catch {
+                            return (channel.id, [])
+                        }
+                    }
                 }
             }
         }

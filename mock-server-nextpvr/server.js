@@ -22,7 +22,9 @@ const { URL } = require("url");
 // ---------------------------------------------------------------------------
 
 const args = parseArgs();
-const NUM_CHANNELS = args.channels || 1000;
+const NUM_CHANNELS = args.channels || 2000;
+const EPG_DAYS_BEFORE = args.daysBefore != null ? args.daysBefore : 1;
+const EPG_DAYS_AFTER = args.daysAfter != null ? args.daysAfter : 13;
 const PORT = args.port || 8866;
 
 // ---------------------------------------------------------------------------
@@ -113,8 +115,8 @@ function generateEPG(channels) {
   const now = new Date();
   const dayMs = 24 * 60 * 60 * 1000;
   const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const windowStart = new Date(todayMidnight.getTime() - dayMs);
-  const windowEnd = new Date(todayMidnight.getTime() + 7 * dayMs);
+  const windowStart = new Date(todayMidnight.getTime() - EPG_DAYS_BEFORE * dayMs);
+  const windowEnd = new Date(todayMidnight.getTime() + (EPG_DAYS_AFTER + 1) * dayMs);
   const programsByChannel = {};
   let programId = 1;
 
@@ -402,7 +404,14 @@ function handleRequest(req, res) {
   // -- Channel listings (EPG per channel) --
   if (method === "channel.listings") {
     const channelId = parseInt(url.searchParams.get("channel_id") || "0", 10);
-    const programs = PROGRAMS_BY_CHANNEL[channelId] || [];
+    const startParam = url.searchParams.get("start");
+    const endParam = url.searchParams.get("end");
+    let programs = PROGRAMS_BY_CHANNEL[channelId] || [];
+    if (startParam || endParam) {
+      const startTs = startParam ? parseInt(startParam, 10) : -Infinity;
+      const endTs = endParam ? parseInt(endParam, 10) : Infinity;
+      programs = programs.filter((p) => p.end > startTs && p.start < endTs);
+    }
     return json(res, { listings: programs });
   }
 
@@ -518,6 +527,10 @@ function parseArgs() {
       result.channels = parseInt(argv[++i], 10);
     } else if (argv[i] === "--port" && argv[i + 1]) {
       result.port = parseInt(argv[++i], 10);
+    } else if (argv[i] === "--days-before" && argv[i + 1]) {
+      result.daysBefore = parseInt(argv[++i], 10);
+    } else if (argv[i] === "--days-after" && argv[i + 1]) {
+      result.daysAfter = parseInt(argv[++i], 10);
     }
   }
   return result;

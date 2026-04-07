@@ -21,9 +21,11 @@ const { URL } = require("url");
 // ---------------------------------------------------------------------------
 
 const args = parseArgs();
-const NUM_CHANNELS = args.channels || 1000;
+const NUM_CHANNELS = args.channels || 2000;
+const EPG_DAYS_BEFORE = args.daysBefore != null ? args.daysBefore : 1;
+const EPG_DAYS_AFTER = args.daysAfter != null ? args.daysAfter : 13;
 const PORT = args.port || 9191;
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 1000;
 
 // ---------------------------------------------------------------------------
 // Data pools
@@ -130,8 +132,8 @@ function generateEPG(channels) {
   const dayMs = 24 * 60 * 60 * 1000;
   // Start at midnight yesterday, end at midnight tomorrow
   const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const windowStart = new Date(todayMidnight.getTime() - dayMs);
-  const windowEnd = new Date(todayMidnight.getTime() + 2 * dayMs);
+  const windowStart = new Date(todayMidnight.getTime() - EPG_DAYS_BEFORE * dayMs);
+  const windowEnd = new Date(todayMidnight.getTime() + (EPG_DAYS_AFTER + 1) * dayMs);
   const programs = [];
   let programId = 1;
 
@@ -621,6 +623,10 @@ function parseArgs() {
       result.channels = parseInt(argv[++i], 10);
     } else if (argv[i] === "--port" && argv[i + 1]) {
       result.port = parseInt(argv[++i], 10);
+    } else if (argv[i] === "--days-before" && argv[i + 1]) {
+      result.daysBefore = parseInt(argv[++i], 10);
+    } else if (argv[i] === "--days-after" && argv[i + 1]) {
+      result.daysAfter = parseInt(argv[++i], 10);
     } else if (argv[i] === "--no-edge-cases") {
       result.noEdgeCases = true;
     }

@@ -955,6 +955,50 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return programs
     }
 
+    /// Fast first-paint EPG fetch via /api/epg/grid/ — returns programs in the
+    /// real Dispatcharr grid window (now-1h to now+24h). Falls back to the full
+    /// listings on the XMLTV path since /output/epg has no time filter.
+    func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
+        guard !config.isDemoMode else { return DemoDataProvider.allListings(for: channels) }
+        if useOutputEndpoints {
+            return try await getAllListingsFromEPG(channels: channels)
+        }
+        if !isAuthenticated {
+            try await authenticate()
+        }
+        guard let url = URL(string: "\(baseURL)/api/epg/grid/") else {
+            throw PVRClientError.invalidResponse
+        }
+        let start = CFAbsoluteTimeGetCurrent()
+        let data = try await authenticatedRequestData(url)
+        let tvgMap = tvgIdToChannelId
+        let result: [Int: [Program]] = try await Task.detached(priority: .userInitiated) {
+            let wrapper = try JSONDecoder().decode(EPGGridResponse.self, from: data)
+            var mapped = [Int: [Program]]()
+            for program in wrapper.data {
+                let resolvedId: Int?
+                if let directId = program.channel {
+                    resolvedId = directId
+                } else if let tvgId = program.tvgId, !tvgId.isEmpty {
+                    resolvedId = tvgMap[tvgId]
+                } else {
+                    resolvedId = nil
+                }
+                guard let cid = resolvedId else { continue }
+                guard let p = program.toProgram(channelId: cid) else { continue }
+                mapped[cid, default: []].append(p)
+            }
+            // Sort each channel's programs by start time so cache.programs(for:on:) sees ordered data.
+            for (k, v) in mapped {
+                mapped[k] = v.sorted { $0.start < $1.start }
+            }
+            return mapped
+        }.value
+        let count = result.values.reduce(0) { $0 + $1.count }
+        print("[Dispatcharr] Grid: \(count) programs across \(result.count) channels in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000))ms")
+        return result
+    }
+
     func getAllListings(for channels: [Channel]) async throws -> [Int: [Program]] {
         guard !config.isDemoMode else { return DemoDataProvider.allListings(for: channels) }
         if useOutputEndpoints {
@@ -1687,102 +1731,104 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             uniquingKeysWith: { first, _ in first }
         )
 
-        let delegate = XMLTVParserDelegate(channelNumberToId: channelNumberToId)
-        let parser = XMLParser(data: data)
-        parser.delegate = delegate
-        parser.parse()
+        // Parsing is CPU-heavy (multi-MB XML, hundreds of thousands of allocations).
+        // Run on a background executor so the main actor stays responsive.
+        let programs = await Task.detached(priority: .userInitiated) { () -> [Int: [Program]] in
+            let delegate = XMLTVParserDelegate(channelNumberToId: channelNumberToId)
+            let parser = XMLParser(data: data)
+            parser.delegate = delegate
+            parser.parse()
+            return delegate.programs
+        }.value
 
-        print("[Dispatcharr] Parsed \(delegate.programs.values.reduce(0) { $0 + $1.count }) programs from XMLTV in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000))ms")
-        return delegate.programs
+        print("[Dispatcharr] Parsed \(programs.values.reduce(0) { $0 + $1.count }) programs from XMLTV in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000))ms")
+        return programs
     }
 }
 
 // MARK: - XMLTV Parser
 
-private class XMLTVParserDelegate: NSObject, XMLParserDelegate {
+private final class XMLTVParserDelegate: NSObject, XMLParserDelegate {
     var programs: [Int: [Program]] = [:]
     private let channelNumberToId: [String: Int]
 
-    private var currentElement = ""
+    private var currentElement: Field = .none
     private var currentChannelAttr = ""
     private var currentStartAttr = ""
     private var currentStopAttr = ""
-    private var currentTitle = ""
-    private var currentSubTitle = ""
-    private var currentDesc = ""
-    private var currentCategory = ""
-    private var currentEpisodeNum = ""
+    // Use buffer arrays + joined() to avoid O(n²) String += chunks for long descs.
+    private var titleBuf: [String] = []
+    private var subTitleBuf: [String] = []
+    private var descBuf: [String] = []
+    private var categoryBuf: [String] = []
+    private var episodeNumBuf: [String] = []
     private var currentEpisodeNumSystem = ""
     private var parsedSeason: Int?
     private var parsedEpisode: Int?
     private var inProgramme = false
 
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyyMMddHHmmss Z"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
+    private enum Field { case none, title, subTitle, desc, category, episodeNum, other }
 
     init(channelNumberToId: [String: Int]) {
         self.channelNumberToId = channelNumberToId
     }
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
-        currentElement = elementName
-
-        if elementName == "programme" {
+        switch elementName {
+        case "title": currentElement = .title
+        case "sub-title": currentElement = .subTitle
+        case "desc": currentElement = .desc
+        case "category": currentElement = .category
+        case "episode-num":
+            currentElement = .episodeNum
+            currentEpisodeNumSystem = attributeDict["system"] ?? ""
+            episodeNumBuf.removeAll(keepingCapacity: true)
+        case "programme":
+            currentElement = .other
             inProgramme = true
             currentChannelAttr = attributeDict["channel"] ?? ""
             currentStartAttr = attributeDict["start"] ?? ""
             currentStopAttr = attributeDict["stop"] ?? ""
-            currentTitle = ""
-            currentSubTitle = ""
-            currentDesc = ""
-            currentCategory = ""
-            currentEpisodeNum = ""
-            currentEpisodeNumSystem = ""
+            titleBuf.removeAll(keepingCapacity: true)
+            subTitleBuf.removeAll(keepingCapacity: true)
+            descBuf.removeAll(keepingCapacity: true)
+            categoryBuf.removeAll(keepingCapacity: true)
             parsedSeason = nil
             parsedEpisode = nil
-        }
-
-        if elementName == "episode-num" {
-            currentEpisodeNumSystem = attributeDict["system"] ?? ""
-            currentEpisodeNum = ""
+        default:
+            currentElement = .other
         }
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
         guard inProgramme else { return }
         switch currentElement {
-        case "title": currentTitle += string
-        case "sub-title": currentSubTitle += string
-        case "desc": currentDesc += string
-        case "category": currentCategory += string
-        case "episode-num": currentEpisodeNum += string
+        case .title: titleBuf.append(string)
+        case .subTitle: subTitleBuf.append(string)
+        case .desc: descBuf.append(string)
+        case .category: categoryBuf.append(string)
+        case .episodeNum: episodeNumBuf.append(string)
         default: break
         }
     }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         if elementName == "episode-num" && inProgramme {
-            let num = currentEpisodeNum.trimmingCharacters(in: .whitespacesAndNewlines)
+            let num = episodeNumBuf.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             if currentEpisodeNumSystem == "xmltv_ns" {
-                // Format: "season.episode.part" (0-indexed)
                 let parts = num.split(separator: ".")
                 if parts.count >= 2,
                    let s = Int(parts[0]), let e = Int(parts[1]) {
-                    parsedSeason = s + 1  // Convert from 0-indexed
+                    parsedSeason = s + 1
                     parsedEpisode = e + 1
                 }
             } else if currentEpisodeNumSystem == "onscreen" {
-                // Format: "S01E05" or similar
                 if let info = SeriesInfo.parse(name: num) {
                     parsedSeason = info.season
                     parsedEpisode = info.episode
                 }
             }
-            currentElement = ""
+            currentElement = .other
             return
         }
 
@@ -1790,24 +1836,31 @@ private class XMLTVParserDelegate: NSObject, XMLParserDelegate {
             inProgramme = false
 
             guard let channelId = channelNumberToId[currentChannelAttr],
-                  let startDate = Self.dateFormatter.date(from: currentStartAttr),
-                  let stopDate = Self.dateFormatter.date(from: currentStopAttr),
-                  stopDate > startDate else {
+                  let startEpoch = Self.parseXMLTVDate(currentStartAttr),
+                  let stopEpoch = Self.parseXMLTVDate(currentStopAttr),
+                  stopEpoch > startEpoch else {
                 return
             }
 
-            let idString = "\(currentChannelAttr)-\(currentStartAttr)"
-            let programId = abs(idString.hashValue)
+            // Hash directly without intermediate string allocation.
+            var hasher = Hasher()
+            hasher.combine(currentChannelAttr)
+            hasher.combine(currentStartAttr)
+            let programId = abs(hasher.finalize())
 
-            let genres: [String]? = currentCategory.isEmpty ? nil : [currentCategory]
+            let category = categoryBuf.joined()
+            let genres: [String]? = category.isEmpty ? nil : [category]
+            let title = titleBuf.joined()
+            let subTitle = subTitleBuf.joined()
+            let desc = descBuf.joined()
 
             let program = Program(
                 id: programId,
-                name: currentTitle,
-                subtitle: currentSubTitle.isEmpty ? nil : currentSubTitle,
-                desc: currentDesc.isEmpty ? nil : currentDesc,
-                start: Int(startDate.timeIntervalSince1970),
-                end: Int(stopDate.timeIntervalSince1970),
+                name: title,
+                subtitle: subTitle.isEmpty ? nil : subTitle,
+                desc: desc.isEmpty ? nil : desc,
+                start: startEpoch,
+                end: stopEpoch,
                 genres: genres,
                 channelId: channelId,
                 season: parsedSeason,
@@ -1818,8 +1871,47 @@ private class XMLTVParserDelegate: NSObject, XMLParserDelegate {
         }
 
         if elementName != "programme" && elementName != "episode-num" {
-            currentElement = ""
+            currentElement = .other
         }
+    }
+
+    /// Parse "yyyyMMddHHmmss ±ZZZZ" or "yyyyMMddHHmmss" → unix epoch seconds.
+    /// ~10–30× faster than DateFormatter for hundreds of thousands of programs.
+    private static func parseXMLTVDate(_ s: String) -> Int? {
+        let bytes = Array(s.utf8)
+        guard bytes.count >= 14 else { return nil }
+        @inline(__always) func d(_ i: Int) -> Int { Int(bytes[i]) - 48 }
+        @inline(__always) func two(_ i: Int) -> Int? {
+            let a = d(i), b = d(i + 1)
+            guard (0...9).contains(a), (0...9).contains(b) else { return nil }
+            return a * 10 + b
+        }
+        let y = d(0) * 1000 + d(1) * 100 + d(2) * 10 + d(3)
+        guard (0...9999).contains(y) else { return nil }
+        guard let mo = two(4), let da = two(6),
+              let h = two(8), let mi = two(10), let se = two(12) else { return nil }
+
+        // Days from civil (Howard Hinnant)
+        let yy = mo <= 2 ? y - 1 : y
+        let era = (yy >= 0 ? yy : yy - 399) / 400
+        let yoe = yy - era * 400
+        let mp = mo + (mo > 2 ? -3 : 9)
+        let doy = (153 * mp + 2) / 5 + da - 1
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        let days = era * 146097 + doe - 719468
+        var epoch = days * 86400 + h * 3600 + mi * 60 + se
+
+        // Optional " ±HHMM" timezone offset.
+        if bytes.count >= 20, bytes[14] == 0x20 {
+            let sign = bytes[15]
+            if sign == 0x2B || sign == 0x2D {
+                if let oh = two(16), let om = two(18) {
+                    let offset = oh * 3600 + om * 60
+                    epoch -= sign == 0x2B ? offset : -offset
+                }
+            }
+        }
+        return epoch
     }
 }
 
@@ -1881,6 +1973,10 @@ private nonisolated struct DispatcharrAPIErrorResponse: Decodable {
         if let firstError = errors?.values.first?.first, !firstError.isEmpty { return firstError }
         return nil
     }
+}
+
+private nonisolated struct EPGGridResponse: Decodable, Sendable {
+    let data: [DispatcharrProgram]
 }
 
 private nonisolated struct DispatcharrEPGData: Decodable, Sendable {

@@ -81,19 +81,49 @@ final class EPGCache: ObservableObject {
             isLoading = false
             print("[EPGCache] Grid ready (\(visibleChannels.count) channels): \(ms(since: totalStart))ms")
 
-            // Load EPG in a separate task so loadData() returns immediately
+            // Two-phase EPG load:
+            //   1. Foreground (awaited): fetch the small "fast window" so the
+            //      guide is interactive ASAP (Dispatcharr /api/epg/grid/, or
+            //      NextPVR per-channel with start/end window).
+            //   2. Background (detached): fetch the full multi-day EPG and
+            //      merge into the cache so date navigation works without refetch.
             let channelsForEPG = sorted
+            do {
+                let fastStart = CFAbsoluteTimeGetCurrent()
+                let fastListings = try await client.getFastListings(for: channelsForEPG)
+                self.epg = fastListings
+                let fastCount = fastListings.values.reduce(0) { $0 + $1.count }
+                print("[EPGCache] Fast EPG: \(fastCount) programs across \(fastListings.count) channels in \(ms(since: fastStart))ms")
+            } catch {
+                print("[EPGCache] Fast EPG failed (\(error.localizedDescription)), falling back to full load")
+            }
+
             backgroundLoadTask = Task { [weak self] in
                 let epgStart = CFAbsoluteTimeGetCurrent()
                 do {
                     let listings = try await client.getAllListings(for: channelsForEPG)
                     guard let self, !Task.isCancelled else { return }
                     defer { self.isLoadInProgress = false }
-                    self.epg = listings
+                    // Merge into existing fast-window data, deduping per program id.
+                    var merged = self.epg
+                    for (channelId, programs) in listings {
+                        if var existing = merged[channelId], !existing.isEmpty {
+                            let existingIds = Set(existing.map(\.id))
+                            for p in programs where !existingIds.contains(p.id) {
+                                existing.append(p)
+                            }
+                            existing.sort { $0.start < $1.start }
+                            merged[channelId] = existing
+                        } else {
+                            merged[channelId] = programs
+                        }
+                    }
+                    self.epg = merged
                     // Compute loaded days off main actor
+                    let snapshot = merged
                     let days = await Task.detached(priority: .utility) {
                         var daySet = Set<String>()
-                        for programs in listings.values {
+                        for programs in snapshot.values {
                             for program in programs {
                                 daySet.insert(Self.dayFormatter.string(from: program.startDate))
                             }
@@ -101,9 +131,9 @@ final class EPGCache: ObservableObject {
                         return daySet
                     }.value
                     self.loadedDays = days
-                    let programCount = listings.values.reduce(0) { $0 + $1.count }
+                    let programCount = merged.values.reduce(0) { $0 + $1.count }
                     self.isFullyLoaded = true
-                    print("[EPGCache] EPG: \(programCount) programs across \(listings.count) channels in \(self.ms(since: epgStart))ms")
+                    print("[EPGCache] EPG (full): \(programCount) programs across \(merged.count) channels in \(self.ms(since: epgStart))ms")
                     print("[EPGCache] Total load: \(self.ms(since: totalStart))ms")
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -121,11 +151,19 @@ final class EPGCache: ObservableObject {
         }
     }
 
-    /// Ensure EPG data for a specific day is loaded
+    /// Ensure EPG data for a specific day is loaded.
+    /// If the background full-EPG task is still running, await it instead of issuing a redundant fetch.
     func ensureDay(_ date: Date, using client: PVRClient) async {
         let key = Self.dayFormatter.string(from: date)
-        guard !loadedDays.contains(key) else { return }
+        if loadedDays.contains(key) { return }
 
+        // Wait for the in-flight background load if present.
+        if let task = backgroundLoadTask {
+            await task.value
+            if loadedDays.contains(key) { return }
+        }
+
+        // Fallback: explicit fetch (e.g. background task failed or was cancelled).
         let start = CFAbsoluteTimeGetCurrent()
         do {
             let listings = try await client.getAllListings(for: channels)
