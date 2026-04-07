@@ -537,13 +537,17 @@ private struct RecordingsListContentView: View {
                         }
                     }
                     if !remainingCompleted.isEmpty {
-                        sectionHeaderTV("Completed")
+                        if inlineCompletedCount == 0 {
+                            sectionHeaderTV("Completed")
+                        }
                         ForEach(remainingCompleted) { recording in
                             tvOSSeriesRecordingRow(recording, channelIdByName: channelIdByName)
                         }
                     }
                     if !remainingScheduled.isEmpty {
-                        sectionHeaderTV("Scheduled")
+                        if inlineScheduledCount == 0 {
+                            sectionHeaderTV("Scheduled")
+                        }
                         ForEach(remainingScheduled) { recording in
                             tvOSSeriesRecordingRow(recording, channelIdByName: channelIdByName)
                         }
@@ -607,13 +611,17 @@ private struct RecordingsListContentView: View {
                         }
                     }
                     if !remainingCompleted.isEmpty {
-                        sectionHeaderIOS("Completed")
+                        if inlineCompletedCount == 0 {
+                            sectionHeaderIOS("Completed")
+                        }
                         ForEach(remainingCompleted) { recording in
                             seriesRecordingRow(recording)
                         }
                     }
                     if !remainingScheduled.isEmpty {
-                        sectionHeaderIOS("Scheduled")
+                        if inlineScheduledCount == 0 {
+                            sectionHeaderIOS("Scheduled")
+                        }
                         ForEach(remainingScheduled) { recording in
                             seriesRecordingRow(recording)
                         }
