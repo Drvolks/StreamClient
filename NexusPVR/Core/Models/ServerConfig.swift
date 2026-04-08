@@ -97,10 +97,15 @@ nonisolated struct ServerConfig: Codable, Equatable {
         let defaultPort = scheme == "https" ? 443 : 80
         let finalPort = embeddedPort ?? port ?? defaultPort
 
+        // Percent-encode hostname and path so stray spaces or other invalid
+        // URL characters don't make URL(string:) return nil downstream.
+        let encodedHost = working.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? working
+        let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+
         if finalPort == defaultPort {
-            return "\(scheme)://\(working)\(path)"
+            return "\(scheme)://\(encodedHost)\(encodedPath)"
         }
-        return "\(scheme)://\(working):\(finalPort)\(path)"
+        return "\(scheme)://\(encodedHost):\(finalPort)\(encodedPath)"
     }
 
     /// Display string for the server address (e.g. "192.168.1.100" or "192.168.1.100:8866")
@@ -109,6 +114,24 @@ nonisolated struct ServerConfig: Codable, Equatable {
             return "\(host):\(port)"
         }
         return host
+    }
+
+    /// Editable, user-facing URL string. If `host` already contains a scheme,
+    /// it's returned as-is; otherwise the legacy scheme/port fields are folded
+    /// into a single string so the settings UI can present one text field.
+    var editableURL: String {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            return trimmed
+        }
+        let scheme = useHTTPS ? "https" : "http"
+        let defaultPort = useHTTPS ? 443 : 80
+        if let port, port != defaultPort {
+            return "\(scheme)://\(trimmed):\(port)"
+        }
+        return "\(scheme)://\(trimmed)"
     }
 
     static var `default`: ServerConfig {

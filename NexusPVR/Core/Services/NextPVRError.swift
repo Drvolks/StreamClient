@@ -24,6 +24,9 @@ enum NextPVRError: Error, LocalizedError {
         case .sessionExpired:
             return "Session expired. Please reconnect."
         case .networkError(let error):
+            if error is DecodingError {
+                return "The server URL appears to be incorrect. Check the address, port, and path."
+            }
             return "Network error: \(error.localizedDescription)"
         case .invalidResponse:
             return "Invalid response from server"

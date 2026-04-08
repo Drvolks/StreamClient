@@ -12,27 +12,28 @@ struct ServerConfigView: View {
     @EnvironmentObject private var client: PVRClient
 
     @State private var config: ServerConfig
+    @State private var urlString: String
     @State private var isConnecting = false
     @State private var connectionError: String?
     #if DISPATCHERPVR
     @State private var useApiKey: Bool
     #endif
-    @State private var portString: String
-    @State private var hostProbeTask: Task<Void, Never>?
-    @State private var isProbingHost = false
-    @State private var hostProbeGeneration = 0
 
     init(prefillConfig: ServerConfig? = nil) {
         let c = prefillConfig ?? ServerConfig.load()
         _config = State(initialValue: c)
+        _urlString = State(initialValue: c.editableURL)
         #if DISPATCHERPVR
         _useApiKey = State(initialValue: !c.apiKey.isEmpty)
         #endif
-        _portString = State(initialValue: c.port.map(String.init) ?? String(c.useHTTPS ? 443 : Brand.defaultPort))
     }
 
-    private var defaultPortPlaceholder: String {
-        String(config.useHTTPS ? 443 : Brand.defaultPort)
+    private var serverURLHint: String {
+        "Format: http://host:port/path  ·  default port: \(Brand.defaultPort)"
+    }
+
+    private var urlPlaceholder: String {
+        "http://192.168.1.100:\(Brand.defaultPort)"
     }
 
     var body: some View {
@@ -79,7 +80,7 @@ struct ServerConfigView: View {
                                 Button("Save") {
                                     saveAndConnect()
                                 }
-                                .disabled(!config.isConfigured)
+                                .disabled(!canSave)
                             }
                         }
                     }
@@ -94,20 +95,6 @@ struct ServerConfigView: View {
                     }
             }
             #endif
-        }
-        .task {
-            if !config.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                scheduleHostProbe(for: config.host)
-            }
-        }
-        .onChange(of: config.host) { newHost in
-            scheduleHostProbe(for: newHost)
-        }
-        .onChange(of: config.useHTTPS) { _ in
-            scheduleHostProbe(for: config.host)
-        }
-        .onDisappear {
-            hostProbeTask?.cancel()
         }
     }
 
@@ -136,47 +123,13 @@ struct ServerConfigView: View {
                             .font(.headline)
                             .foregroundStyle(Theme.textSecondary)
 
-                        VStack(spacing: Theme.spacingMD) {
-                            TextField("Host (e.g. 192.168.1.100)", text: $config.host)
-                                                                .autocorrectionDisabled()
+                        VStack(alignment: .leading, spacing: Theme.spacingSM) {
+                            TextField(urlPlaceholder, text: $urlString)
+                                .autocorrectionDisabled()
 
-                            HStack {
-                                Text("Use HTTPS")
-                                    .foregroundStyle(Theme.textPrimary)
-                                Spacer()
-                                Button {
-                                    config.useHTTPS.toggle()
-                                } label: {
-                                    Text(config.useHTTPS ? "On" : "Off")
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, Theme.spacingLG)
-                                        .padding(.vertical, Theme.spacingSM)
-                                        .background(config.useHTTPS ? Theme.accent : Theme.textTertiary)
-                                        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
-                                }
-                                .buttonStyle(.card)
-                                .disabled(config.hasExplicitScheme)
-                            }
-
-                            if isProbingHost {
-                                HStack {
-                                    ProgressView()
-                                        .tint(Theme.accent)
-                                    Spacer()
-                                    Text("Finding port...")
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            } else {
-                                TextField("Port (default: \(defaultPortPlaceholder))", text: $portString)
-                                    .keyboardType(.numberPad)
-                                    .disabled(config.hasExplicitPort)
-                                    .foregroundStyle(config.hasExplicitPort ? Theme.textTertiary : Theme.textPrimary)
-                                    .onChange(of: portString) { newValue in
-                                        config.port = Int(newValue)
-                                    }
-                            }
+                            Text(serverURLHint)
+                                .font(.caption)
+                                .foregroundStyle(Theme.textTertiary)
                         }
                     }
                     .padding()
@@ -250,12 +203,12 @@ struct ServerConfigView: View {
                         Text("Save")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(config.isConfigured && !isConnecting ? Theme.accent : Theme.textTertiary)
+                            .background(canSave && !isConnecting ? Theme.accent : Theme.textTertiary)
                             .foregroundStyle(.white)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                     }
                     .buttonStyle(.card)
-                    .disabled(!config.isConfigured || isConnecting)
+                    .disabled(!canSave || isConnecting)
                 }
             }
             .padding(.horizontal)
@@ -294,45 +247,21 @@ struct ServerConfigView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.textSecondary)
 
-                        VStack(spacing: Theme.spacingSM) {
+                        VStack(alignment: .leading, spacing: Theme.spacingSM) {
                             HStack {
-                                Text("Host")
+                                Text("URL")
                                     .font(.system(size: 13))
                                     .foregroundStyle(Theme.textSecondary)
                                     .frame(width: 60, alignment: .trailing)
-                                TextField("192.168.1.100", text: $config.host)
-                                                                        .textFieldStyle(.roundedBorder)
+                                TextField(urlPlaceholder, text: $urlString)
+                                    .textFieldStyle(.roundedBorder)
                             }
-
                             HStack {
                                 Text("")
                                     .frame(width: 60)
-                                Toggle("Use HTTPS", isOn: $config.useHTTPS)
-                                    .toggleStyle(.switch)
-                                    .tint(Theme.accent)
-                                    .disabled(config.hasExplicitScheme)
-                                Spacer()
-                            }
-
-                            HStack {
-                                Text("Port")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .frame(width: 60, alignment: .trailing)
-                                if isProbingHost {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .frame(width: 80, alignment: .leading)
-                                } else {
-                                    TextField(defaultPortPlaceholder, text: $portString)
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 80)
-                                        .disabled(config.hasExplicitPort)
-                                        .foregroundStyle(config.hasExplicitPort ? Theme.textTertiary : Theme.textPrimary)
-                                        .onChange(of: portString) { newValue in
-                                            config.port = Int(newValue)
-                                        }
-                                }
+                                Text(serverURLHint)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.textTertiary)
                                 Spacer()
                             }
                         }
@@ -440,7 +369,7 @@ struct ServerConfigView: View {
                     saveAndConnect()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!config.isConfigured || isConnecting)
+                .disabled(!canSave || isConnecting)
             }
             .padding(Theme.spacingMD)
         }
@@ -451,34 +380,20 @@ struct ServerConfigView: View {
     #if os(iOS)
     private var serverSection: some View {
         Section {
-            LabeledContent("Host") {
-                TextField("192.168.1.100", text: $config.host)
+            LabeledContent("URL") {
+                TextField(urlPlaceholder, text: $urlString)
                     .keyboardType(.URL)
                     .autocapitalization(.none)
-            }
-
-            Toggle("Use HTTPS", isOn: $config.useHTTPS)
-                .disabled(config.hasExplicitScheme)
-
-            LabeledContent("Port") {
-                if isProbingHost {
-                    ProgressView()
-                        .tint(Theme.accent)
-                } else {
-                    TextField(defaultPortPlaceholder, text: $portString)
-                        .multilineTextAlignment(.trailing)
-                        .keyboardType(.numberPad)
-                        .disabled(config.hasExplicitPort)
-                        .foregroundStyle(config.hasExplicitPort ? Theme.textTertiary : Theme.textPrimary)
-                        .onChange(of: portString) { newValue in
-                            config.port = Int(newValue)
-                        }
-                }
+                    .autocorrectionDisabled()
+                    .multilineTextAlignment(.trailing)
             }
         } header: {
             Text("Server Address")
         } footer: {
-            Text(Brand.serverFooter)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(serverURLHint)
+                Text(Brand.serverFooter)
+            }
         }
     }
 
@@ -518,7 +433,26 @@ struct ServerConfigView: View {
     }
     #endif
 
+    private var canSave: Bool {
+        !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || config.isDemoMode
+    }
+
+    private func applyURLToConfig() {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.host = trimmed
+        // The full URL (scheme/port/path) lives inside `host` now; clear the
+        // legacy split fields so baseURL parses solely from the typed string.
+        config.port = nil
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("https://") {
+            config.useHTTPS = true
+        } else if lower.hasPrefix("http://") {
+            config.useHTTPS = false
+        }
+    }
+
     private func saveAndConnect() {
+        applyURLToConfig()
         guard config.isConfigured else { return }
 
         isConnecting = true
@@ -549,81 +483,6 @@ struct ServerConfigView: View {
         }
     }
 
-    private func scheduleHostProbe(for host: String) {
-        hostProbeTask?.cancel()
-        isProbingHost = false
-        hostProbeGeneration += 1
-
-        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty, trimmedHost.lowercased() != "demo" else { return }
-        // If the user typed an explicit http:// or https:// prefix, trust it
-        // and skip probing entirely.
-        if config.hasExplicitScheme {
-            let explicitHTTPS = trimmedHost.lowercased().hasPrefix("https://")
-            if config.useHTTPS != explicitHTTPS {
-                config.useHTTPS = explicitHTTPS
-            }
-        }
-        if let embedded = config.explicitHostPort {
-            if config.port != embedded {
-                config.port = embedded
-            }
-            if portString != String(embedded) {
-                portString = String(embedded)
-            }
-        }
-        if config.hasExplicitScheme || config.hasExplicitPort {
-            return
-        }
-
-        let probeGeneration = hostProbeGeneration
-        let preferredHTTPS = config.useHTTPS
-
-        hostProbeTask = Task {
-            await MainActor.run {
-                isProbingHost = true
-            }
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else {
-                await MainActor.run {
-                    if hostProbeGeneration == probeGeneration {
-                        isProbingHost = false
-                    }
-                }
-                return
-            }
-
-            let currentHost = await MainActor.run {
-                config.host.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            guard currentHost.caseInsensitiveCompare(trimmedHost) == .orderedSame else {
-                await MainActor.run {
-                    if hostProbeGeneration == probeGeneration {
-                        isProbingHost = false
-                    }
-                }
-                return
-            }
-
-            if let detected = await ServerDiscoveryService.detectHostConfiguration(host: trimmedHost, preferredHTTPS: preferredHTTPS) {
-                await MainActor.run {
-                    guard hostProbeGeneration == probeGeneration else { return }
-                    guard config.host.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedHost) == .orderedSame else { return }
-                    config.port = detected.port
-                    portString = String(detected.port)
-                    config.useHTTPS = detected.useHTTPS
-                    isProbingHost = false
-                }
-            } else {
-                await MainActor.run {
-                    if hostProbeGeneration == probeGeneration,
-                       config.host.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(trimmedHost) == .orderedSame {
-                        isProbingHost = false
-                    }
-                }
-            }
-        }
-    }
 }
 
 #Preview {

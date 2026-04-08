@@ -316,7 +316,9 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             ))
 
             // Step 1: Initiate session
-            let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=\(deviceName)&format=json")!
+            guard let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=\(deviceName)&format=json") else {
+                throw NextPVRError.notConfigured
+            }
             NetworkEventLog.shared.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
@@ -361,7 +363,9 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             let loginHash = MD5Hasher.hash(combined)
 
             // Step 3: Login
-            let loginURL = URL(string: "\(baseURL)/services/service?method=session.login&sid=\(tempSid)&md5=\(loginHash)&format=json")!
+            guard let loginURL = URL(string: "\(baseURL)/services/service?method=session.login&sid=\(tempSid)&md5=\(loginHash)&format=json") else {
+                throw NextPVRError.notConfigured
+            }
             NetworkEventLog.shared.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
