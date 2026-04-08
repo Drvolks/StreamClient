@@ -1340,15 +1340,39 @@ enum TVSidebarItem: Hashable {
 #if os(macOS)
 private struct MacOSDetailTopInsetModifier: ViewModifier {
     let tab: Tab
+    @State private var isFullScreen: Bool = {
+        NSApp.keyWindow?.styleMask.contains(.fullScreen) ?? false
+    }()
+
     func body(content: Content) -> some View {
-        if tab == .guide {
-            content
-        } else {
-            VStack(spacing: 0) {
-                Color.clear.frame(height: 12)
+        Group {
+            if tab == .guide {
+                if isFullScreen {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: 48)
+                        content
+                    }
+                } else {
+                    content
+                }
+            } else if isFullScreen {
+                // In fullscreen there is no title-bar safe area, so don't ignore
+                // it (and don't add the windowed-mode spacer) — otherwise the
+                // top of the content gets clipped under the auto-hide menubar.
                 content
+            } else {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 15)
+                    content
+                }
+                .ignoresSafeArea(.container, edges: .top)
             }
-            .ignoresSafeArea(.container, edges: .top)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            isFullScreen = false
         }
     }
 }
