@@ -25,7 +25,7 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
     let channelId: Int?
     let status: String?
     let file: String?
-    let recurring: Bool?
+    let recurring: Int?
     let recurringParent: Int?
     let epgEventId: Int?
     let size: Int64?
@@ -118,7 +118,7 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
     init(id: Int, name: String, subtitle: String? = nil, desc: String? = nil,
          startTime: Int? = nil, duration: Int? = nil, channel: String? = nil,
          channelId: Int? = nil, status: String? = nil, file: String? = nil,
-         recurring: Bool? = nil, recurringParent: Int? = nil, epgEventId: Int? = nil,
+         recurring: Int? = nil, recurringParent: Int? = nil, epgEventId: Int? = nil,
          size: Int64? = nil, quality: String? = nil, genres: [String]? = nil,
          playbackPosition: Int? = nil, prePadding: Int? = nil, postPadding: Int? = nil,
          season: Int? = nil, episode: Int? = nil, seriesBannerURL: String? = nil) {
@@ -183,7 +183,13 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
         channelId = try container.decodeIfPresent(Int.self, forKey: .channelId)
         status = try container.decodeIfPresent(String.self, forKey: .status)
         file = try container.decodeIfPresent(String.self, forKey: .file)
-        recurring = try container.decodeIfPresent(Bool.self, forKey: .recurring)
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .recurring) {
+            recurring = intValue
+        } else if let boolValue = try? container.decodeIfPresent(Bool.self, forKey: .recurring) {
+            recurring = (boolValue == true) ? 1 : 0
+        } else {
+            recurring = nil
+        }
         recurringParent = try container.decodeIfPresent(Int.self, forKey: .recurringParent)
         epgEventId = try container.decodeIfPresent(Int.self, forKey: .epgEventId)
         size = try container.decodeIfPresent(Int64.self, forKey: .size)
@@ -236,7 +242,7 @@ extension Recording {
             channelId: 1,
             status: "Ready",
             file: "/recordings/sample.ts",
-            recurring: false,
+            recurring: 0,
             recurringParent: nil,
             epgEventId: 12345,
             size: 2_500_000_000,
@@ -257,7 +263,7 @@ extension Recording {
             channelId: 2,
             status: "Pending",
             file: nil,
-            recurring: true,
+            recurring: 100,
             recurringParent: 100,
             epgEventId: 12346,
             size: nil,

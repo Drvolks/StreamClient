@@ -17,6 +17,20 @@ struct RecordingDetailView: View {
 
     @State private var isDeleting = false
     @State private var deleteError: String?
+    @State private var isCancellingSeries = false
+
+    #if !DISPATCHERPVR
+    private var seriesParentId: Int? {
+        if let parent = recording.recurringParent, parent != 0 { return parent }
+        if let r = recording.recurring, r != 0 { return r }
+        return nil
+    }
+    private var canCancelSeries: Bool {
+        recording.recordingStatus.isScheduled && seriesParentId != nil
+    }
+    #else
+    private var canCancelSeries: Bool { false }
+    #endif
 
     var body: some View {
         #if os(tvOS)
@@ -219,6 +233,26 @@ struct RecordingDetailView: View {
                             }
                             .buttonStyle(TVPopupActionButtonStyle(variant: .secondary))
                             .disabled(isDeleting)
+
+                            #if !DISPATCHERPVR
+                            if canCancelSeries {
+                                Button(role: .destructive) {
+                                    cancelSeries()
+                                } label: {
+                                    HStack {
+                                        if isCancellingSeries {
+                                            ProgressView().tint(.white)
+                                        } else {
+                                            Image(systemName: "arrow.2.squarepath")
+                                        }
+                                        Text("Cancel Series")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(TVPopupActionButtonStyle(variant: .secondary))
+                                .disabled(isCancellingSeries)
+                            }
+                            #endif
                         } else {
                             Label("Managing recordings requires admin permissions", systemImage: "lock.fill")
                                 .font(.subheadline)
@@ -260,7 +294,7 @@ struct RecordingDetailView: View {
 
                 Spacer()
 
-                if recording.recurring == true {
+                if (recording.recurring ?? 0) != 0 {
                     Label("Recurring", systemImage: "repeat")
                         .font(.caption)
                         .foregroundStyle(Theme.textSecondary)
@@ -375,7 +409,7 @@ struct RecordingDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(SecondaryButtonStyle())
+                    .buttonStyle(AccentButtonStyle())
                     .disabled(!canPlayInProgress)
                 }
                 #endif
@@ -390,7 +424,7 @@ struct RecordingDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(SecondaryButtonStyle())
+                    .buttonStyle(AccentButtonStyle())
                 }
             } else if recording.recordingStatus.isPlayable {
                 Button {
@@ -414,7 +448,7 @@ struct RecordingDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(SecondaryButtonStyle())
+                    .buttonStyle(AccentButtonStyle())
                 }
             }
 
@@ -439,8 +473,28 @@ struct RecordingDetailView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(SecondaryButtonStyle())
+                .buttonStyle(AccentButtonStyle())
                 .disabled(isDeleting)
+
+                #if !DISPATCHERPVR
+                if canCancelSeries {
+                    Button(role: .destructive) {
+                        cancelSeries()
+                    } label: {
+                        HStack {
+                            if isCancellingSeries {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "arrow.2.squarepath")
+                            }
+                            Text("Cancel Series")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(AccentButtonStyle())
+                    .disabled(isCancellingSeries)
+                }
+                #endif
             } else {
                 Label("Managing recordings requires admin permissions", systemImage: "lock.fill")
                     .font(.subheadline)
@@ -493,6 +547,24 @@ struct RecordingDetailView: View {
             }
         }
     }
+
+    #if !DISPATCHERPVR
+    private func cancelSeries() {
+        guard let parentId = seriesParentId else { return }
+        isCancellingSeries = true
+        Task {
+            do {
+                try await client.cancelSeriesRecording(recurringId: parentId)
+                isCancellingSeries = false
+                NotificationCenter.default.post(name: .recordingsDidChange, object: nil)
+                dismiss()
+            } catch {
+                deleteError = error.localizedDescription
+                isCancellingSeries = false
+            }
+        }
+    }
+    #endif
 
     private func deleteRecording() {
         isDeleting = true

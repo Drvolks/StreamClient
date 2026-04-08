@@ -350,7 +350,7 @@ struct ProgramDetailView: View {
 
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
-            if let recording = completedRecording {
+            if let recording = completedRecording, !isScheduled {
                 Button {
                     playRecording(recording)
                 } label: {
@@ -400,9 +400,6 @@ struct ProgramDetailView: View {
                             if isScheduling {
                                 ProgressView()
                                     .tint(.white)
-                            } else if completedRecording != nil {
-                                Image(systemName: "trash")
-                                Text("Remove Recording")
                             } else {
                                 Image(systemName: "xmark.circle")
                                 Text("Cancel Recording")
@@ -616,8 +613,10 @@ struct ProgramDetailView: View {
                 #if DISPATCHERPVR
                 isSeriesScheduled = program.seriesInfo != nil
                 #else
-                isSeriesScheduled = recording.recurringParent != nil || recording.recurring == true
-                recurringParentId = recording.recurringParent
+                let parent = recording.recurringParent ?? 0
+                let recurringId = recording.recurring ?? 0
+                isSeriesScheduled = parent != 0 || recurringId != 0
+                recurringParentId = parent != 0 ? parent : (recurringId != 0 ? recurringId : nil)
                 #endif
             }
 

@@ -89,7 +89,7 @@ nonisolated struct DispatcharrRecording: Decodable {
             channelId: channel,
             status: status,
             file: nil,
-            recurring: false,
+            recurring: 0,
             recurringParent: nil,
             epgEventId: epgEventId,
             size: nil,
