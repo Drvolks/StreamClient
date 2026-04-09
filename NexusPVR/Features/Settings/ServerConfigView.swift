@@ -468,12 +468,12 @@ struct ServerConfigView: View {
         }
         #endif
 
-        config.save()
         client.updateConfig(config)
 
         Task {
             do {
                 try await client.authenticate()
+                config.save()
                 isConnecting = false
                 dismiss()
             } catch {
