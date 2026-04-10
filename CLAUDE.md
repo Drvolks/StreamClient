@@ -10,12 +10,15 @@ StreamClient is a native Apple streaming client for PVR/DVR servers. Supports iO
 
 ## Tech Stack
 
-- **Language**: Swift 5.0
-- **UI Framework**: SwiftUI (iOS 26+, tvOS 26+, macOS 26+)
+- **Platform**: iOS 16+ / macOS 15+ / tvOS 18+
+- **Language**: Swift 6.0
+- **UI Framework**: SwiftUI
+- **Architecture**: MVVM with @Observable
+- **Minimum Deployment**: iOS 16.0
+- **Package Manager**: Swift Package Manager
 - **Video Playback**: MPV (libmpv) via Metal rendering
 - **Networking**: URLSession with async/await
 - **Data Sync**: iCloud Key-Value Store (NSUbiquitousKeyValueStore)
-- **Architecture**: MVVM with environment objects
 
 ## Project Structure
 
@@ -153,6 +156,14 @@ Also defines `PlayerStats` struct for MPV playback statistics.
 
 Server config stored separately in `ServerConfig` (Core/Models/Session.swift).
 
+## XcodeBuildMCP Integration
+**IMPORTANT**: This project uses XcodeBuildMCP for all Xcode operations.
+## Build Commands
+- **Build**: Use `mcp__xcodebuildmcp__build_sim_name_proj` for simulator builds
+- **Test**: Use `mcp__xcodebuildmcp__test_sim_name_proj` for running tests
+- **Clean**: Use `mcp__xcodebuildmcp__clean` before major rebuilds
+- **Logs**: Use `mcp__xcodebuildmcp__capture_logs` to debug runtime issues
+
 ## Build Instructions
 
 The project has two schemes:
@@ -205,122 +216,69 @@ Note: MPV framework must be properly linked for video playback.
 3. Update view models to call the new method
 4. Handle errors consistently with existing patterns
 
-### Running UI Tests
-1. Ensure demo server is accessible
-2. Select test target in Xcode
-3. Run tests via Cmd+U or xcodebuild
+### Unit testing
+- Unit tests for all ViewModels
+- UI tests for critical user flows
+- Use Swift Testing framework (@Test, #expect)
+- Minimum 80% code coverage for business logic
+
+#### DO NOT
+- Write UITests during scaffolding phase
+- Use deprecated APIs (UIKit when SwiftUI suffices)
+- Create massive monolithic views
+- Use force unwrapping (!) without justification
+- Ignore Swift 6 concurrency warnings
 
 ### Debugging
 - Use `#if DEBUG` for debug-only code (logging, test data)
 - MPV player logs to console - useful for playback issues
 - Enable network logging in Xcode to inspect API calls
 
-## Code Style
+## Coding Standards
 
-- Use `Theme.*` for all colors, spacing, and sizing
-- Prefer `async/await` over completion handlers
-- Use `@ViewBuilder` for conditional view composition
-- Keep views small, extract reusable components
-- Use `#if DEBUG` for debug-only code
+### Swift Style
+- Use Swift 6 strict concurrency
+- Prefer `@Observable` over `ObservableObject`
+- Use `async/await` for all async operations
+- Follow Apple's Swift API Design Guidelines
+- Use `guard` for early exits
+- Prefer value types (structs) over reference types (classes)
 
-## Image Generation
+### SwiftUI Patterns
+- Extract views when they exceed 100 lines
+- Use `@State` for local view state only
+- Use `@Environment` for dependency injection
+- Prefer `NavigationStack` over deprecated `NavigationView`
+- Use `@Bindable` for bindings to @Observable objects
 
-App icons and assets are generated using Python with Pillow. Setup:
+### Navigation Pattern
+```swift
+// Use NavigationStack with type-safe routing
+enum Route: Hashable {
+    case detail(Item)
+    case settings
+}
 
-```bash
-python3 -m venv /private/tmp/imgvenv
-source /private/tmp/imgvenv/bin/activate
-pip install Pillow
+NavigationStack(path: $router.path) {
+    ContentView()
+        .navigationDestination(for: Route.self) { route in
+            // Handle routing
+        }
+}
 ```
 
-### tvOS App Icon Structure
-
-tvOS uses layered icons with parallax effect:
-- **Back layer**: Background gradient
-- **Middle layer**: Transparent (depth layer)
-- **Front layer**: Foreground elements (play button, recording dot)
-
-Sizes required:
-- App Icon: `400x240` (1x), `800x480` (2x)
-- App Store: `1280x768`
-
-Location: `Assets.xcassets/tv.brandassets/App Icon.imagestack/`
-
-### Generate tvOS Icon Layers
-Use python3 to generate images
-
-```python
-from PIL import Image, ImageDraw
-import math
-
-def create_radial_gradient(width, height, center_color, edge_color):
-    img = Image.new('RGB', (width, height))
-    pixels = img.load()
-    cx, cy = width / 2, height / 2
-    max_dist = math.sqrt((width/2)**2 + (height/2)**2)
-
-    for y in range(height):
-        for x in range(width):
-            dist = math.sqrt((x - cx)**2 + (y - cy)**2)
-            ratio = min(dist / max_dist, 1.0)
-            r = int(center_color[0] + (edge_color[0] - center_color[0]) * ratio)
-            g = int(center_color[1] + (edge_color[1] - center_color[1]) * ratio)
-            b = int(center_color[2] + (edge_color[2] - center_color[2]) * ratio)
-            pixels[x, y] = (r, g, b)
-    return img
-
-def create_front_layer(width, height):
-    img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cx, cy = width / 2, height / 2
-    scale = width / 400
-
-    # Play button triangle
-    triangle_size = 70 * scale
-    play_x = cx - triangle_size * 0.3
-    points = [
-        (play_x - triangle_size * 0.4, cy - triangle_size * 0.6),
-        (play_x - triangle_size * 0.4, cy + triangle_size * 0.6),
-        (play_x + triangle_size * 0.6, cy)
-    ]
-    draw.polygon(points, fill=(255, 255, 255, 255))
-
-    # Recording dot
-    dot_radius = 12 * scale
-    dot_x, dot_y = cx + 55 * scale, cy - 45 * scale
-    draw.ellipse([dot_x - dot_radius, dot_y - dot_radius,
-                  dot_x + dot_radius, dot_y + dot_radius],
-                 fill=(236, 51, 7, 255))
-    return img
-
-# Theme colors
-center_color = (42, 107, 153)  # Light blue
-edge_color = (15, 35, 60)      # Dark blue
-
-# Generate layers
-back = create_radial_gradient(400, 240, center_color, edge_color)
-front = create_front_layer(400, 240)
-middle = Image.new('RGBA', (400, 240), (0, 0, 0, 0))
+### Error handling
+```swift
+// Always use typed errors
+enum AppError: LocalizedError {
+    case networkError(underlying: Error)
+    case validationError(message: String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .networkError(let error): return error.localizedDescription
+        case .validationError(let msg): return msg
+        }
+    }
+}
 ```
-
-## UI Tests
-### Setup
-Use the demo server
-### Target
-Both apps and 3 platforms
-### Test plan
-- Click on a channel open the player (macos, ios)
-- Click on a current program open the player (tvos)
-- Click on a future program open the program details
-  - Click on the record button
-    - The program cell will indicate is it scheduled to be recorded
-    - Navigate to the recordings page and confirm we see the scheduled recording
-- Click on the recording page and confirm we see existing recordings
-  - click on one recording to show program details (macos, ios)
-  - click on one recording open the player (tvos)
-- Click on the topic page and add a topic having a keyword of the program we've scheduled recording
-  - we now see this program and it is identified as scheduled
-- Click on the search page and search for program we've scheduled recording
-  - program is in the search result
-- Click on the settings page and unlink the server
-- end
