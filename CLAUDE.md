@@ -223,7 +223,6 @@ Note: MPV framework must be properly linked for video playback.
 - Minimum 80% code coverage for business logic
 
 #### DO NOT
-- Write UITests during scaffolding phase
 - Use deprecated APIs (UIKit when SwiftUI suffices)
 - Create massive monolithic views
 - Use force unwrapping (!) without justification
