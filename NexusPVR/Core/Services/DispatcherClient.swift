@@ -803,7 +803,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
     /// Fetch all items from a paginated Dispatcharr endpoint
     /// - Parameter maxPages: Maximum number of pages to fetch (0 = unlimited). Prevents unbounded memory usage for large datasets.
-    private func fetchAllPages<T: Decodable>(_ url: URL, maxPages: Int = 0) async throws -> [T] {
+    private func fetchAllPages<T: Decodable & Sendable>(_ url: URL, maxPages: Int = 0) async throws -> [T] {
         // Fetch page 1 to get total count and page size
         let firstResponse: DispatcharrListResponse<T> = try await authenticatedRequest(url)
         var allItems = firstResponse.allItems
@@ -1770,7 +1770,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
 // MARK: - XMLTV Parser
 
-private final class XMLTVParserDelegate: NSObject, XMLParserDelegate {
+private nonisolated final class XMLTVParserDelegate: NSObject, XMLParserDelegate {
     var programs: [Int: [Program]] = [:]
     private let channelNumberToId: [String: Int]
 

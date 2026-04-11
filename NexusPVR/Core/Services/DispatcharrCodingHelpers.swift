@@ -14,7 +14,7 @@ struct DispatcharrDynamicCodingKey: CodingKey {
     init?(stringValue: String) { self.stringValue = stringValue }
 }
 
-func decodeFirstDispatcharrImageField(
+nonisolated func decodeFirstDispatcharrImageField(
     from container: KeyedDecodingContainer<DispatcharrDynamicCodingKey>,
     keys: [String]
 ) -> String? {

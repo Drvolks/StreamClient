@@ -91,7 +91,7 @@ nonisolated struct UserPreferences: Codable {
     }
 
     private static let storageKey = "UserPreferences"
-    private static let ubiquitousStore = NSUbiquitousKeyValueStore.default
+    private static var ubiquitousStore: NSUbiquitousKeyValueStore { NSUbiquitousKeyValueStore.default }
 
     /// In-memory store for demo mode — when set, load/save bypass persistence
     nonisolated(unsafe) static var demoStore: UserPreferences?
@@ -129,7 +129,7 @@ nonisolated struct UserPreferences: Codable {
     }
 
     /// Call this to start observing iCloud sync changes
-    static func startObservingSync(onChange: @escaping () -> Void) {
+    static func startObservingSync(onChange: @escaping @Sendable () -> Void) {
         NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: ubiquitousStore,

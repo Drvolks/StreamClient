@@ -178,7 +178,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
 
 nonisolated extension ServerConfig {
     private static let storageKey = "ServerConfig"
-    private static let ubiquitousStore = NSUbiquitousKeyValueStore.default
+    private static var ubiquitousStore: NSUbiquitousKeyValueStore { NSUbiquitousKeyValueStore.default }
 
     static let appGroupSuite: String = Bundle.main.object(forInfoDictionaryKey: "AppGroupID") as? String ?? ""
 
@@ -270,7 +270,7 @@ nonisolated extension ServerConfig {
     }
 
     /// Call this to start observing iCloud sync changes
-    static func startObservingSync(onChange: @escaping (ServerConfig) -> Void) {
+    static func startObservingSync(onChange: @escaping @Sendable (ServerConfig) -> Void) {
         NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: ubiquitousStore,

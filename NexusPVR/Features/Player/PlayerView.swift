@@ -1634,9 +1634,9 @@ class MPVPlayerCore: NSObject {
         super.init()
     }
 
-    deinit {
-        destroy()
-    }
+    // Note: no deinit. Owners (ActivePlayerSession, PlayerView) are responsible
+    // for calling `destroy()` explicitly before releasing the instance. Swift 6
+    // makes deinit nonisolated, and `destroy()` touches main-actor state.
 
     func destroy() {
         guard !isDestroyed else { return }
@@ -1677,8 +1677,13 @@ class MPVPlayerCore: NSObject {
         var statsCounter = 0
         positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            let position = self.getTimePosition()
-            var duration = self.getDuration()
+            // Timers scheduled on the main RunLoop fire on the main thread —
+            // safe to assume MainActor isolation here. Swift 6's Timer closure
+            // is @Sendable, which is why we need this hop to access self's
+            // MainActor-isolated members.
+            MainActor.assumeIsolated {
+                let position = self.getTimePosition()
+                var duration = self.getDuration()
 
             // For recordings in progress: estimate growing duration via HEAD,
             // then subtract a 15s safety margin so the seek bar and playback
@@ -1724,8 +1729,7 @@ class MPVPlayerCore: NSObject {
             //     self.logPerformanceStats()
             // }
 
-            DispatchQueue.main.async {
-                self.onPositionUpdate?(position, duration)
+            self.onPositionUpdate?(position, duration)
                 if let info {
                     self.onVideoInfoUpdate?(info.codec, info.height, info.hwdec, info.audioChannels, info.droppedFrames, info.gamma, info.fps)
                 }
@@ -4701,7 +4705,7 @@ class MPVPlayerPixelBufferView: UIView {
 class MPVPlayerGLView: GLKView {
     private var player: MPVPlayerCore?
     private var defaultFBO: GLint = -1
-    private var displayLink: CADisplayLink?
+    nonisolated(unsafe) private var displayLink: CADisplayLink?
     private var resizeDebouncer: DispatchWorkItem?
     private var isResizing = false
     var mpvGL: UnsafeMutableRawPointer?

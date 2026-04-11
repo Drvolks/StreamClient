@@ -8,17 +8,19 @@
 import SwiftUI
 import Combine
 
-private func normalizeProgramName(_ name: String) -> String {
-    name
-        .replacingOccurrences(of: " ᴺᵉʷ", with: "")
-        .lowercased()
-        .split(separator: " ")
-        .joined(separator: " ")
-        .trimmingCharacters(in: .whitespaces)
-}
-
 @MainActor
 final class TopicProgramRowViewModel: ObservableObject {
+    /// Normalize a program name for "already recorded" matching. Strips the Unicode
+    /// "New" marker, lowercases, collapses interior whitespace runs, and trims
+    /// leading/trailing whitespace.
+    nonisolated static func normalizeProgramName(_ name: String) -> String {
+        name
+            .replacingOccurrences(of: " ᴺᵉʷ", with: "")
+            .lowercased()
+            .split(separator: " ")
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+    }
     @Published var isScheduled = false
     @Published var isRecording = false
     @Published var existingRecordingId: Int?
@@ -53,7 +55,7 @@ final class TopicProgramRowViewModel: ObservableObject {
 
             let cutoff = Date().addingTimeInterval(-48 * 3600)
             if let existing = completed.first(where: { recording in
-                normalizeProgramName(recording.name) == normalizeProgramName(program.name) &&
+                TopicProgramRowViewModel.normalizeProgramName(recording.name) == TopicProgramRowViewModel.normalizeProgramName(program.name) &&
                 recording.recordingStatus == .ready &&
                 (recording.startDate ?? .distantPast) > cutoff
             }) {
@@ -61,7 +63,7 @@ final class TopicProgramRowViewModel: ObservableObject {
             }
 
             if let earlier = scheduled.first(where: { recording in
-                normalizeProgramName(recording.name) == normalizeProgramName(program.name) &&
+                TopicProgramRowViewModel.normalizeProgramName(recording.name) == TopicProgramRowViewModel.normalizeProgramName(program.name) &&
                 recording.epgEventId != program.id &&
                 (recording.startTime ?? 0) < program.start &&
                 recording.recordingStatus == .pending

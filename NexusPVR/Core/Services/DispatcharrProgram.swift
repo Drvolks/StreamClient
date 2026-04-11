@@ -83,12 +83,12 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
         )
     }
 
-    private static let isoFractional: ISO8601DateFormatter = {
+    nonisolated(unsafe) private static let isoFractional: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
-    private static let isoPlain = ISO8601DateFormatter()
+    nonisolated(unsafe) private static let isoPlain = ISO8601DateFormatter()
 
     /// Fast path parser for the common Dispatcharr shape "yyyy-MM-ddTHH:mm:ssZ" / with fractional seconds.
     /// Avoids ISO8601DateFormatter for the typical case (~10x faster across hundreds of thousands of programs).

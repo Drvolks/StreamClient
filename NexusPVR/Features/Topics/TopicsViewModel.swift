@@ -26,7 +26,7 @@ final class TopicsViewModel: ObservableObject {
 
     weak var epgCache: EPGCache?
     var client: PVRClient?
-    private var syncObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var syncObserver: NSObjectProtocol?
 
     init() {
         // Observe iCloud sync changes and reload keywords

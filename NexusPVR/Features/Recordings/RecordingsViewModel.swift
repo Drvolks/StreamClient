@@ -580,7 +580,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Parse MP4 boxes to find mvhd and extract duration
-    nonisolated private static func extractMP4Duration(from data: Data) -> Int? {
+    nonisolated static func extractMP4Duration(from data: Data) -> Int? {
         var offset = 0
 
         func readUInt32(at pos: Int) -> UInt32? {
@@ -642,7 +642,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Parse MKV/WebM EBML to extract duration from Segment Info
-    nonisolated private static func extractMKVDuration(from data: Data) -> Int? {
+    nonisolated static func extractMKVDuration(from data: Data) -> Int? {
         var offset = 0
         var timestampScale: UInt64 = 1_000_000 // Default: 1ms
         var duration: Double?
@@ -752,7 +752,7 @@ final class RecordingsViewModel: ObservableObject {
     // MARK: - MPEG-TS PTS Extraction
 
     /// Compact TS diagnostics used when duration probing cannot find valid first/last PTS.
-    nonisolated private static func tsProbeStats(from data: Data) -> String {
+    nonisolated static func tsProbeStats(from data: Data) -> String {
         guard !data.isEmpty else { return "empty" }
 
         var syncOffset: Int?
@@ -799,7 +799,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Parse a 33-bit PTS/DTS value from 5 bytes in the PES header
-    nonisolated private static func parsePTS(from data: Data, at offset: Int) -> UInt64? {
+    nonisolated static func parsePTS(from data: Data, at offset: Int) -> UInt64? {
         guard offset + 5 <= data.count else { return nil }
         let b0 = UInt64(data[offset])
         let b1 = UInt64(data[offset + 1])
@@ -818,7 +818,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract the first PTS found in TS data
-    nonisolated private static func extractFirstPTS(from data: Data) -> UInt64? {
+    nonisolated static func extractFirstPTS(from data: Data) -> UInt64? {
         let packetSize = 188
         var offset = 0
 
@@ -866,7 +866,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract the first (PID, PTS) sample found in TS data.
-    nonisolated private static func extractFirstPTSSample(from data: Data) -> (pid: Int, pts: UInt64)? {
+    nonisolated static func extractFirstPTSSample(from data: Data) -> (pid: Int, pts: UInt64)? {
         let packetSize = 188
         var offset = 0
 
@@ -910,7 +910,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract the last PTS found in TS data
-    nonisolated private static func extractLastPTS(from data: Data) -> UInt64? {
+    nonisolated static func extractLastPTS(from data: Data) -> UInt64? {
         let packetSize = 188
         var lastPTS: UInt64?
 
@@ -957,7 +957,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract the last (PID, PTS) sample found in TS data.
-    nonisolated private static func extractLastPTSSample(from data: Data) -> (pid: Int, pts: UInt64)? {
+    nonisolated static func extractLastPTSSample(from data: Data) -> (pid: Int, pts: UInt64)? {
         let packetSize = 188
         var lastSample: (pid: Int, pts: UInt64)?
 
@@ -1002,7 +1002,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract the last PTS for a specific TS PID.
-    nonisolated private static func extractLastPTS(from data: Data, matchingPID pid: Int) -> UInt64? {
+    nonisolated static func extractLastPTS(from data: Data, matchingPID pid: Int) -> UInt64? {
         let packetSize = 188
         var lastPTS: UInt64?
 
@@ -1053,7 +1053,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract all (PID, PTS) PES samples in order of appearance.
-    nonisolated private static func extractPTSSamples(from data: Data) -> [(pid: Int, pts: UInt64)] {
+    nonisolated static func extractPTSSamples(from data: Data) -> [(pid: Int, pts: UInt64)] {
         let packetSize = 188
         var samples: [(pid: Int, pts: UInt64)] = []
 
@@ -1098,7 +1098,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Extract all PTS values found for a specific TS PID in order of appearance.
-    nonisolated private static func extractPTSValues(from data: Data, matchingPID pid: Int) -> [UInt64] {
+    nonisolated static func extractPTSValues(from data: Data, matchingPID pid: Int) -> [UInt64] {
         let packetSize = 188
         var ptsValues: [UInt64] = []
 
@@ -1149,7 +1149,7 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Estimate a plausible recording duration from head/tail PTS windows in case of discontinuity.
-    nonisolated private static func estimateDurationSecondsFromPTSWindows(
+    nonisolated static func estimateDurationSecondsFromPTSWindows(
         headPTSValues: [UInt64],
         tailPTSValues: [UInt64],
         expectedSeconds: Int
@@ -1180,7 +1180,7 @@ final class RecordingsViewModel: ObservableObject {
         return best.score <= acceptableError ? best.seconds : nil
     }
 
-    nonisolated private static func estimateDurationSecondsAcrossCommonPIDs(
+    nonisolated static func estimateDurationSecondsAcrossCommonPIDs(
         headData: Data,
         tailData: Data,
         expectedSeconds: Int

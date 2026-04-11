@@ -55,7 +55,7 @@ final class NetworkEventLog: ObservableObject {
         }.joined(separator: "\n")
     }
 
-    private static func consoleLine(for event: NetworkEvent) -> String {
+    static func consoleLine(for event: NetworkEvent) -> String {
         let time = timeFormatter.string(from: event.timestamp)
         let status = event.statusCode.map { " → \($0)" } ?? (event.isSuccess ? "" : " → ERR")
         let duration = event.durationMs > 0 ? " (\(event.durationMs)ms)" : ""

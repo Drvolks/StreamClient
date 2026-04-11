@@ -7,7 +7,7 @@
 
 import Foundation
 
-nonisolated struct DispatcharrListResponse<T: Decodable>: Decodable {
+nonisolated struct DispatcharrListResponse<T: Decodable & Sendable>: Decodable, Sendable {
     let results: [T]?
     let data: [T]?
     let count: Int?

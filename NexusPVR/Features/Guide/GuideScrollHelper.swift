@@ -9,7 +9,7 @@
 import Foundation
 
 /// Helper for calculating guide scroll positions and text padding
-enum GuideScrollHelper {
+nonisolated enum GuideScrollHelper {
 
     /// Calculates the scroll target time (either :00 or :30 of the current hour)
     /// - Parameter currentTime: The current time

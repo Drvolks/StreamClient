@@ -6,6 +6,8 @@
 //
 
 import Testing
+import Foundation
+@testable import NextPVR
 
 struct NexusPVRTests {
 

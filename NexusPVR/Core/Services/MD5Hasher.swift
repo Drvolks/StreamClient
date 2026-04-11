@@ -8,7 +8,7 @@
 import Foundation
 import CryptoKit
 
-enum MD5Hasher {
+nonisolated enum MD5Hasher {
     static func hash(_ string: String) -> String {
         let data = Data(string.utf8)
         let digest = Insecure.MD5.hash(data: data)
