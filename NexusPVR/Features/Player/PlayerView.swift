@@ -3514,7 +3514,7 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
     }
 }
 
-private final class StableMetalLayer: CAMetalLayer {
+private nonisolated(unsafe) final class StableMetalLayer: CAMetalLayer {
     override var drawableSize: CGSize {
         get { super.drawableSize }
         set {

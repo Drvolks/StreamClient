@@ -117,6 +117,42 @@ struct GuideViewModelTests {
         #expect(hours.count == 24)
     }
 
+    // MARK: - hourCount
+
+    @Test("hourCount enforces minimum 6 hours even late at night")
+    func hourCountLateAtNightMinimum() {
+        let calendar = Calendar.current
+        let tonight11pm = calendar.date(bySettingHour: 23, minute: 0, second: 0, of: Date())!
+        let count = GuideViewModel.hourCount(for: tonight11pm, now: tonight11pm)
+        #expect(count >= 6)
+    }
+
+    @Test("hourCount returns 24 for a non-today date")
+    func hourCountNonToday() {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Date())!
+        let count = GuideViewModel.hourCount(for: tomorrow, now: Date())
+        #expect(count == 24)
+    }
+
+    @Test("Guide grid width at 23:00 is usable on macOS (minimum 1800pt)")
+    func guideGridWidthAt11pm() {
+        let calendar = Calendar.current
+        let hourWidth: CGFloat = Theme.hourColumnWidth   // 300pt (non-tvOS)
+        let channelWidth: CGFloat = Theme.channelColumnWidth // 72pt
+
+        // Test every hour from 20:00 to 23:30
+        let testTimes: [(hour: Int, minute: Int)] = [
+            (20, 0), (21, 0), (22, 0), (23, 0), (23, 30)
+        ]
+        for time in testTimes {
+            let date = calendar.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date())!
+            let count = GuideViewModel.hourCount(for: date, now: date)
+            let gridWidth = channelWidth + hourWidth * CGFloat(count)
+            // Minimum usable macOS window width ~1200pt; grid should be at least 1800pt
+            #expect(gridWidth >= 1800, "Grid too narrow at \(time.hour):\(time.minute) — \(gridWidth)pt from \(count) hours")
+        }
+    }
+
     // MARK: - channels / programs without epg cache
 
     @Test("channels is empty when no EPGCache is attached")

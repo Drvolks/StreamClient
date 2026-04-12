@@ -83,14 +83,21 @@ final class GuideViewModel: ObservableObject {
         return result
     }
 
+    /// Returns the number of hour slots to display for a given selected date.
+    /// Accepts an explicit `now` for testability.
+    static func hourCount(for selectedDate: Date, now: Date = Date()) -> Int {
+        let calendar = Calendar.current
+        let isToday = calendar.isDateInToday(selectedDate)
+        let remainingHours = isToday ? (24 - calendar.component(.hour, from: now)) : 24
+        let startsAtHalfHour = isToday && calendar.component(.minute, from: now) >= 30
+        return max(remainingHours + (startsAtHalfHour ? 1 : 0), 6)
+    }
+
     var hoursToShow: [Date] {
         var hours: [Date] = []
         let calendar = Calendar.current
         var current = timelineStart
-        let remainingHours = isOnToday ? (24 - calendar.component(.hour, from: Date())) : 24
-        // Add an extra hour when starting at :30 to cover the same time range
-        let startsAtHalfHour = isOnToday && calendar.component(.minute, from: Date()) >= 30
-        let count = remainingHours + (startsAtHalfHour ? 1 : 0)
+        let count = Self.hourCount(for: selectedDate, now: Date())
 
         for _ in 0..<count {
             hours.append(current)
