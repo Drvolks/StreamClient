@@ -69,3 +69,4 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 .claude
+.xcodebuildmcp
