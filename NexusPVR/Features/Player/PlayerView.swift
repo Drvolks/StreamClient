@@ -1594,7 +1594,7 @@ struct PlayerView: View {
 
 // MARK: - MPV Player Core
 
-class MPVPlayerCore: NSObject {
+nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var mpv: OpaquePointer?
     var mpvGL: OpaquePointer?
     private var errorBinding: Binding<String?>?

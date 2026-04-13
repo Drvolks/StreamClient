@@ -7,7 +7,7 @@ import Foundation
 /// position-polling timer via `checkRecordingEOF()`. This class provides
 /// updated duration estimates so the player can reload proactively before
 /// EOF when possible.
-final class MPVRecordingMonitor {
+nonisolated final class MPVRecordingMonitor {
     private(set) var currentURL: String?
 
     private var baselineDuration: Double = 0

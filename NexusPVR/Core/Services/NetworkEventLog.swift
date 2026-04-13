@@ -22,10 +22,12 @@ struct NetworkEvent: Identifiable {
 
 @MainActor
 final class NetworkEventLog: ObservableObject {
-    static let shared = NetworkEventLog()
+    nonisolated static let shared = NetworkEventLog()
 
     @Published private(set) var events: [NetworkEvent] = []
     private let maxEvents = 200
+
+    nonisolated init() {}
 
     nonisolated func log(_ event: NetworkEvent) {
         Task { @MainActor in
