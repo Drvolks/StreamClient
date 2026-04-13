@@ -80,9 +80,9 @@
 		6EA347F32F48EF9C00E0A324 /* NexusPVR TopShelf.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "NexusPVR TopShelf.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6EA347F52F48EF9C00E0A324 /* TVServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = TVServices.framework; path = Library/Frameworks/TVServices.framework; sourceTree = DEVELOPER_DIR; };
 		6EA348072F48EFB600E0A324 /* DispatcherPVR TopShelf.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "DispatcherPVR TopShelf.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		D1AAAA012F31559900D2B8DF /* StreamClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StreamClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CCCC00012F60000000CCCC01 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		CCCC00022F60000000CCCC02 /* Secret.xcconfig.template */ = {isa = PBXFileReference; lastKnownFileType = text; path = Secret.xcconfig.template; sourceTree = "<group>"; };
+		D1AAAA012F31559900D2B8DF /* StreamClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StreamClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -128,8 +128,8 @@
 				Core/Models/SubtitleMode.swift,
 				Core/Models/SubtitleSize.swift,
 				Core/Models/UserPreferences.swift,
-				Core/Models/WatchHistory.swift,
 				Core/Models/WatchedChannel.swift,
+				Core/Models/WatchHistory.swift,
 				Core/NexusPVRBrand.swift,
 				Core/Services/LiveProgramFetcher.swift,
 				Core/Services/RecordingFetcher.swift,
@@ -167,8 +167,8 @@
 				Core/Models/SubtitleMode.swift,
 				Core/Models/SubtitleSize.swift,
 				Core/Models/UserPreferences.swift,
-				Core/Models/WatchHistory.swift,
 				Core/Models/WatchedChannel.swift,
+				Core/Models/WatchHistory.swift,
 				Core/NexusPVRBrand.swift,
 				Core/Services/LiveProgramFetcher.swift,
 				Core/Services/RecordingFetcher.swift,
@@ -830,7 +830,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR";
 				PRODUCT_MODULE_NAME = NextPVR;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -908,7 +908,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR";
 				PRODUCT_MODULE_NAME = NextPVR;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1056,7 +1056,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -1092,7 +1092,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -1129,7 +1129,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -1165,7 +1165,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -1239,7 +1239,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = StreamClient;
@@ -1317,7 +1317,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = StreamClient;
