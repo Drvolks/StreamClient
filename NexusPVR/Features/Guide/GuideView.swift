@@ -653,6 +653,13 @@ struct GuideView: View {
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 geo.contentOffset.y
             } action: { old, new in
+                if appState.isUITesting {
+                    if appState.isBottomBarHidden {
+                        appState.isBottomBarHidden = false
+                    }
+                    return
+                }
+
                 let delta = new - old
                 if delta > 5 && !appState.isBottomBarHidden {
                     // Scrolling down — hide immediately

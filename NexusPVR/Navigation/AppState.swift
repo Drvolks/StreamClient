@@ -5,11 +5,14 @@
 //  Global application state
 //
 
+import Foundation
 import SwiftUI
 import Combine
 
 @MainActor
 final class AppState: ObservableObject {
+    let isUITesting: Bool = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+
     @Published var selectedTab: Tab = .guide
     @Published var searchQuery: String = ""
     @Published var guideChannelFilter: String = ""
