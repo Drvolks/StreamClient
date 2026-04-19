@@ -13,17 +13,17 @@ import Foundation
 struct OpenGLCallbackTests {
 
     /// Regression test: OpenGL callback main-queue scheduling.
-    /// Verifies that `MPVPlayerCore.scheduleOnMain` delivers work to the main thread
+    /// Verifies that `MPVPlayerCore.scheduleOnMain` delivers work to the main dispatch queue
     /// even when called from a background queue (simulating the mpv render callback path).
+    /// Uses dispatchPrecondition to assert queue identity, not just thread identity.
     @Test func openGLCallbackMainQueueRegression() async {
-        let isMainThread = await withCheckedContinuation { continuation in
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.global(qos: .background).async {
                 MPVPlayerCore.scheduleOnMain {
-                    continuation.resume(returning: Thread.isMainThread)
+                    dispatchPrecondition(condition: .onQueue(.main))
+                    continuation.resume()
                 }
             }
         }
-
-        #expect(isMainThread == true)
     }
 }

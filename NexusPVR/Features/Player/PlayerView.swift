@@ -1595,10 +1595,10 @@ struct PlayerView: View {
 // MARK: - MPV Player Core
 
 nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
-    /// Helper to schedule work safely onto the main queue from any thread (including mpv render callbacks).
-    /// This avoids crashes when GL/OpenGL calls are issued from a non-main queue.
+    /// Helper to schedule work safely onto the main dispatch queue from any thread (including mpv render callbacks).
+    /// Uses DispatchQueue.main.async to satisfy queue-assertion APIs (e.g. OpenGL) that crash on non-main-queue invocation.
     internal nonisolated static func scheduleOnMain(_ closure: @MainActor @escaping () -> Void) {
-        Task { @MainActor in
+        DispatchQueue.main.async {
             closure()
         }
     }
@@ -2366,18 +2366,10 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
             view.mpvGL = UnsafeMutableRawPointer(mpvGL)
 
-            mpv_render_context_set_update_callback(
-                mpvGL,
-                { (ctx) in
-                    guard let ctx = ctx else { return }
-                    MPVPlayerCore.scheduleOnMain {
-                        let view = Unmanaged<MPVPlayerGLView>.fromOpaque(ctx).takeUnretainedValue()
-                        guard view.needsDrawing else { return }
-                        view.display()
-                    }
-                },
-                UnsafeMutableRawPointer(Unmanaged.passUnretained(view).toOpaque())
-            )
+            // iOS/tvOS OpenGL path: rely exclusively on CADisplayLink-driven rendering.
+            // Avoid libmpv VO-thread callback interactions that can trigger queue assertions
+            // in debug builds on Apple platforms.
+            mpv_render_context_set_update_callback(mpvGL, nil, nil)
         }
     }
     #endif
@@ -4786,13 +4778,12 @@ class MPVPlayerGLView: GLKView {
     }
 
     @objc private func updateFrame() {
-        if needsDrawing {
-            setNeedsDisplay()
-        }
+        guard !isResizing, mpvGL != nil else { return }
+        display()
     }
 
     override func draw(_ rect: CGRect) {
-        guard needsDrawing, !isResizing, let mpvGL = mpvGL else { return }
+        guard !isResizing, let mpvGL = mpvGL else { return }
 
         guard EAGLContext.setCurrent(context) else { return }
 
@@ -4821,6 +4812,7 @@ class MPVPlayerGLView: GLKView {
                 mpv_render_context_render(OpaquePointer(mpvGL), &params)
             }
         }
+
     }
 
 
