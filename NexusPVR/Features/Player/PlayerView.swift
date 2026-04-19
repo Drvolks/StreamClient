@@ -1595,6 +1595,14 @@ struct PlayerView: View {
 // MARK: - MPV Player Core
 
 nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
+    /// Helper to schedule work safely onto the main queue from any thread (including mpv render callbacks).
+    /// This avoids crashes when GL/OpenGL calls are issued from a non-main queue.
+    internal nonisolated static func scheduleOnMain(_ closure: @MainActor @escaping () -> Void) {
+        Task { @MainActor in
+            closure()
+        }
+    }
+
     private var mpv: OpaquePointer?
     var mpvGL: OpaquePointer?
     private var errorBinding: Binding<String?>?
@@ -2327,6 +2335,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     #endif
 
     #if os(iOS) || os(tvOS)
+    @MainActor
     func createRenderContext(view: MPVPlayerGLView) {
         guard let mpv = mpv else { return }
 
@@ -2361,9 +2370,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 mpvGL,
                 { (ctx) in
                     guard let ctx = ctx else { return }
-                    let view = Unmanaged<MPVPlayerGLView>.fromOpaque(ctx).takeUnretainedValue()
-                    guard view.needsDrawing else { return }
-                    view.renderQueue.async {
+                    MPVPlayerCore.scheduleOnMain {
+                        let view = Unmanaged<MPVPlayerGLView>.fromOpaque(ctx).takeUnretainedValue()
+                        guard view.needsDrawing else { return }
                         view.display()
                     }
                 },
