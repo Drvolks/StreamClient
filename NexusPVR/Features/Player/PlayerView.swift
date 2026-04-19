@@ -531,6 +531,7 @@ struct PlayerView: View {
             // Wait for tracks to be populated after demuxing starts
             try? await Task.sleep(for: .seconds(2))
             autoSelectSubtitleIfNeeded()
+
             // Poll subtitle text while playing
             while !Task.isCancelled {
                 let text = getSubtitleTextFunc?()
@@ -2204,9 +2205,10 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         mpv_set_option_string(mpv, "hr-seek", "yes")
 
         // Subtitles: start with no subtitle selected; user picks from settings panel.
-        // Subtitle text is read via sub-text and rendered as a SwiftUI overlay,
-        // since the custom pixelbuffer VO does not support OSD/subtitle rendering.
+        // Subtitles: use custom SwiftUI overlay across all renderers.
+        // Keep mpv subtitle decoding enabled via sid, but disable native drawing.
         mpv_set_option_string(mpv, "sid", "no")
+        mpv_set_option_string(mpv, "sub-visibility", "no")
 
         // Disable MPV's built-in OSD (seek bar, etc.) — we use our own SwiftUI overlay
         mpv_set_option_string(mpv, "osd-level", "0")
