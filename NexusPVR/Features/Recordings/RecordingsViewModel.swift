@@ -22,6 +22,7 @@ final class RecordingsViewModel: ObservableObject {
     @Published var durationUnverifiable: Set<Int> = []
 
     private let client: PVRClient
+    private let launchArguments = ProcessInfo.processInfo.arguments
 
     init(client: PVRClient) {
         self.client = client
@@ -123,7 +124,19 @@ final class RecordingsViewModel: ObservableObject {
                 try await client.authenticate()
             }
 
-            let (completed, recording, scheduled) = try await client.getAllRecordings()
+            var (completed, recording, scheduled) = try await client.getAllRecordings()
+
+            if launchArguments.contains("--ui-testing-empty-completed-recordings") {
+                completed.removeAll()
+            }
+            if launchArguments.contains("--ui-testing-empty-scheduled-recordings") {
+                scheduled.removeAll()
+            }
+            if launchArguments.contains("--ui-testing-empty-series-recordings") {
+                completed.removeAll { $0.seriesInfo != nil }
+                scheduled.removeAll { $0.seriesInfo != nil }
+            }
+
             completedRecordings = completed
             activeRecordings = recording
             scheduledRecordings = scheduled

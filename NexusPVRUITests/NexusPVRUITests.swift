@@ -100,6 +100,60 @@ final class NexusPVRUITests: XCTestCase {
         #endif
     }
 
+    #if os(tvOS)
+    @MainActor
+    func testRecordingsCompletedEmptyReturnsFocusToSidebar() throws {
+        let app = launchApp(additionalArguments: ["--ui-testing-empty-completed-recordings"])
+        openSidebarOnTV(in: app)
+        focusAndSelectSidebarItem("recordings-filter-Completed", in: app)
+
+        let emptyMessage = app.staticTexts["No completed recordings."].firstMatch
+        XCTAssertTrue(emptyMessage.waitForExistence(timeout: 8), "Completed empty state should be visible")
+        XCTAssertEqual(recordingRowCount(in: app), 0, "Completed list should be empty")
+
+        pressMenuAndAssertSidebarFocused(app: app, sidebarIdentifier: "recordings-filter-Completed")
+    }
+
+    @MainActor
+    func testRecordingsScheduledEmptyReturnsFocusToSidebar() throws {
+        let app = launchApp(additionalArguments: ["--ui-testing-empty-scheduled-recordings"])
+        openSidebarOnTV(in: app)
+        focusAndSelectSidebarItem("recordings-filter-Scheduled", in: app)
+
+        let emptyMessage = app.staticTexts["No scheduled recordings."].firstMatch
+        XCTAssertTrue(emptyMessage.waitForExistence(timeout: 8), "Scheduled empty state should be visible")
+        XCTAssertEqual(recordingRowCount(in: app), 0, "Scheduled list should be empty")
+
+        pressMenuAndAssertSidebarFocused(app: app, sidebarIdentifier: "recordings-filter-Scheduled")
+    }
+
+    @MainActor
+    func testRecordingsSeriesEmptyReturnsFocusToSidebar() throws {
+        let app = launchApp(additionalArguments: ["--ui-testing-empty-series-recordings"])
+        openSidebarOnTV(in: app)
+        focusAndSelectSidebarItem("recordings-series-menu", in: app)
+
+        XCTAssertEqual(recordingRowCount(in: app), 0, "Series list should have no recording rows")
+
+        pressMenuAndAssertSidebarVisible(app: app)
+    }
+
+    @MainActor
+    func testTopicsEmptyReturnsFocusToSidebar() throws {
+        let app = launchApp(additionalArguments: ["--ui-testing-empty-topics"])
+        openSidebarOnTV(in: app)
+        focusAndSelectSidebarItem("topic-keyword-__no_topic_matches__", in: app)
+
+        let emptyMessage = app.staticTexts["No Matching Programs"].firstMatch
+        XCTAssertTrue(emptyMessage.waitForExistence(timeout: 8), "Topics empty state should be visible")
+        let topicRows = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'topic-program-'"))
+        XCTAssertEqual(topicRows.count, 0, "Topics list should be empty")
+
+        pressMenuAndAssertSidebarFocused(app: app, sidebarIdentifier: "topic-keyword-__no_topic_matches__")
+    }
+    #endif
+
     #if !os(macOS)
     @MainActor
     func testCompletedRecordingsShowDemoFixtures() throws {
@@ -305,13 +359,13 @@ final class NexusPVRUITests: XCTestCase {
     // MARK: - App Launch
 
     @MainActor
-    private func launchApp() -> XCUIApplication {
+    private func launchApp(additionalArguments: [String] = []) -> XCUIApplication {
         #if os(iOS)
         XCUIDevice.shared.orientation = .portrait
         #endif
 
         let app = XCUIApplication()
-        app.launchArguments = ["--demo-mode", "--ui-testing"]
+        app.launchArguments = ["--demo-mode", "--ui-testing"] + additionalArguments
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
         return app
@@ -568,24 +622,26 @@ final class NexusPVRUITests: XCTestCase {
     private func selectRecordingsFilter(_ filter: String, in app: XCUIApplication) {
         #if os(tvOS)
         let remote = XCUIRemote.shared
-        let picker = app.segmentedControls["recordings-filter"].firstMatch
-        XCTAssertTrue(picker.waitForExistence(timeout: 5), "Expected recordings filter control")
+        remote.press(.menu)
+        pause(0.8)
 
-        let labels = picker.buttons.allElementsBoundByIndex.map(\.label)
-        guard let targetIndex = labels.firstIndex(of: filter) else {
-            XCTFail("Could not locate recordings filter '\(filter)'")
-            return
+        let targetIdentifier = "recordings-filter-\(filter)"
+        let option = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", targetIdentifier))
+            .firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5), "Expected recordings filter '\(filter)' to be available")
+
+        for _ in 0..<8 where !option.hasFocus {
+            remote.press(.down)
+            pause(0.2)
+        }
+        for _ in 0..<8 where !option.hasFocus {
+            remote.press(.up)
+            pause(0.2)
         }
 
-        remote.press(.up)
-        pause(0.4)
-        let currentIndex = labels.firstIndex(where: { picker.buttons.element(boundBy: $0).hasFocus }) ?? 0
-        let steps = targetIndex - currentIndex
-        let direction: XCUIRemote.Button = steps >= 0 ? .right : .left
-        for _ in 0..<abs(steps) {
-            remote.press(direction)
-            pause(0.25)
-        }
+        XCTAssertTrue(option.hasFocus, "Expected recordings filter '\(filter)' to receive focus")
+        remote.press(.select)
         pause(0.8)
         #elseif os(iOS)
         let expandButton = app.buttons["nav-expand-button"].firstMatch
@@ -687,4 +743,64 @@ final class NexusPVRUITests: XCTestCase {
     private func pause(_ duration: TimeInterval) {
         Thread.sleep(forTimeInterval: duration)
     }
+
+    private func recordingRowCount(in app: XCUIApplication) -> Int {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'recording-row-'"))
+            .count
+    }
+
+    // MARK: - tvOS Navigation Helpers
+
+    #if os(tvOS)
+    private func openSidebarOnTV(in app: XCUIApplication) {
+        let remote = XCUIRemote.shared
+        remote.press(.menu)
+        pause(1.0)
+    }
+
+    private func focusAndSelectSidebarItem(_ identifier: String, in app: XCUIApplication) {
+        let remote = XCUIRemote.shared
+        let target = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", identifier))
+            .firstMatch
+        XCTAssertTrue(target.waitForExistence(timeout: 8), "Sidebar item '\(identifier)' should be visible")
+
+        for _ in 0..<14 where !target.hasFocus {
+            remote.press(.down)
+            pause(0.2)
+        }
+        for _ in 0..<14 where !target.hasFocus {
+            remote.press(.up)
+            pause(0.2)
+        }
+
+        XCTAssertTrue(target.hasFocus, "Sidebar item '\(identifier)' should receive focus")
+        remote.press(.select)
+        pause(1.0)
+    }
+
+    private func pressMenuAndAssertSidebarFocused(app: XCUIApplication, sidebarIdentifier: String) {
+        let remote = XCUIRemote.shared
+        remote.press(.menu)
+        pause(1.0)
+
+        let sidebarElement = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", sidebarIdentifier))
+            .firstMatch
+        XCTAssertTrue(sidebarElement.waitForExistence(timeout: 5), "Sidebar element '\(sidebarIdentifier)' should be visible after back/menu")
+        XCTAssertTrue(sidebarElement.hasFocus, "Sidebar element '\(sidebarIdentifier)' should have focus after back/menu")
+    }
+
+    private func pressMenuAndAssertSidebarVisible(app: XCUIApplication) {
+        let remote = XCUIRemote.shared
+        remote.press(.menu)
+        pause(1.0)
+
+        let guideTab = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@", "tab-Guide"))
+            .firstMatch
+        XCTAssertTrue(guideTab.waitForExistence(timeout: 5), "Sidebar should be visible after back/menu")
+    }
+    #endif
 }

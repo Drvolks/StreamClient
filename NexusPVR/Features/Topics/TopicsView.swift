@@ -290,6 +290,7 @@ struct TopicsView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .tvOSFocusableEmptyState()
+        .accessibilityIdentifier("topics-empty")
         #if os(tvOS)
         .onExitCommand {
             requestSidebarFocus()

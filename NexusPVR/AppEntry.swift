@@ -21,7 +21,11 @@ struct PVRApp: App {
 
             // Use in-memory preferences seeded with demo keywords
             var demoPrefs = UserPreferences()
-            demoPrefs.keywords = DemoDataProvider.keywords
+            if ProcessInfo.processInfo.arguments.contains("--ui-testing-empty-topics") {
+                demoPrefs.keywords = ["__no_topic_matches__"]
+            } else {
+                demoPrefs.keywords = DemoDataProvider.keywords
+            }
             UserPreferences.demoStore = demoPrefs
         }
 

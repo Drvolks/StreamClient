@@ -336,6 +336,7 @@ private struct RecordingsListContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .tvOSFocusableEmptyState()
+        .accessibilityIdentifier("recordings-empty-\(vm.filter.rawValue)")
     }
 
     private func emptyMessage(for filter: RecordingsFilter) -> String {
@@ -1098,50 +1099,65 @@ private struct RecordingsListContentView: View {
     private func seriesIndexList(_ vm: RecordingsViewModel) -> some View {
         #if os(tvOS)
         let seriesNames = vm.recordingsSeriesSummaries.map(\.name)
-        ScrollView {
-            LazyVStack(spacing: Theme.spacingMD) {
-                ForEach(vm.recordingsSeriesSummaries) { summary in
-                    Button {
-                        appState.selectRecordingsSeries(named: summary.name, userInitiated: true)
-                    } label: {
-                        HStack(spacing: Theme.spacingMD) {
-                            seriesListArtwork(summary: summary, width: 84, height: 126)
-                            Text(summary.name)
-                                .foregroundStyle(Theme.textPrimary)
-                            Spacer()
-                            Text("(\(summary.unwatchedCount))")
-                                .foregroundStyle(Theme.textSecondary)
+        if seriesNames.isEmpty {
+            VStack(spacing: Theme.spacingMD) {
+                Image(systemName: "tv")
+                    .font(.system(size: 48))
+                    .foregroundStyle(Theme.textTertiary)
+                Text("No series recordings.")
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .tvOSFocusableEmptyState()
+            .accessibilityIdentifier("recordings-series-list-empty")
+        } else {
+            ScrollView {
+                LazyVStack(spacing: Theme.spacingMD) {
+                    ForEach(vm.recordingsSeriesSummaries) { summary in
+                        Button {
+                            appState.selectRecordingsSeries(named: summary.name, userInitiated: true)
+                        } label: {
+                            HStack(spacing: Theme.spacingMD) {
+                                seriesListArtwork(summary: summary, width: 84, height: 126)
+                                Text(summary.name)
+                                    .foregroundStyle(Theme.textPrimary)
+                                Spacer()
+                                Text("(\(summary.unwatchedCount))")
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .font(.title3.weight(.semibold))
+                            .padding(.horizontal, Theme.spacingMD)
+                            .padding(.vertical, Theme.spacingSM)
+                            .background(Theme.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                         }
-                        .font(.title3.weight(.semibold))
-                        .padding(.horizontal, Theme.spacingMD)
-                        .padding(.vertical, Theme.spacingSM)
-                        .background(Theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+                        .buttonStyle(TVRecordingSubtleButtonStyle())
+                        .focused($focusedSeriesName, equals: summary.name)
                     }
-                    .buttonStyle(TVRecordingSubtleButtonStyle())
-                    .focused($focusedSeriesName, equals: summary.name)
+                }
+                .padding()
+            }
+            .accessibilityIdentifier("recordings-series-list")
+            .onAppear {
+                guard appState.showingRecordingsSeriesList else { return }
+                guard let firstName = seriesNames.first else { return }
+                if focusedSeriesName == nil || !seriesNames.contains(focusedSeriesName ?? "") {
+                    DispatchQueue.main.async {
+                        focusedSeriesName = firstName
+                    }
                 }
             }
-            .padding()
-        }
-        .onAppear {
-            guard appState.showingRecordingsSeriesList else { return }
-            guard let firstName = seriesNames.first else { return }
-            if focusedSeriesName == nil || !seriesNames.contains(focusedSeriesName ?? "") {
-                DispatchQueue.main.async {
-                    focusedSeriesName = firstName
+            .onChange(of: seriesNames) { names in
+                guard appState.showingRecordingsSeriesList else { return }
+                guard let firstName = names.first else {
+                    focusedSeriesName = nil
+                    return
                 }
-            }
-        }
-        .onChange(of: seriesNames) { names in
-            guard appState.showingRecordingsSeriesList else { return }
-            guard let firstName = names.first else {
-                focusedSeriesName = nil
-                return
-            }
-            if !names.contains(focusedSeriesName ?? "") {
-                DispatchQueue.main.async {
-                    focusedSeriesName = firstName
+                if !names.contains(focusedSeriesName ?? "") {
+                    DispatchQueue.main.async {
+                        focusedSeriesName = firstName
+                    }
                 }
             }
         }
@@ -1336,6 +1352,7 @@ private struct RecordingsListContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.spacingXL)
         .tvOSFocusableEmptyState()
+        .accessibilityIdentifier("recordings-series-empty")
     }
     #else
     private func iOSRecordingRow(_ recording: Recording) -> some View {

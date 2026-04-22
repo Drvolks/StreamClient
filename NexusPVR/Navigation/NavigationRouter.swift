@@ -1189,6 +1189,7 @@ struct TVOSNavigation: View {
         }
         .buttonStyle(.card)
         .focused($focusedItem, equals: item)
+        .accessibilityIdentifier(tvOSSidebarIdentifier(for: item))
     }
 
     private func tvOSSidebarSection<Badge: View, Content: View>(
@@ -1281,6 +1282,24 @@ struct TVOSNavigation: View {
         .buttonStyle(.card)
         .padding(.leading, 62) // align with parent row text
         .focused($focusedItem, equals: item)
+        .accessibilityIdentifier(tvOSSidebarIdentifier(for: item))
+    }
+
+    private func tvOSSidebarIdentifier(for item: TVSidebarItem) -> String {
+        switch item {
+        case .tab(let tab):
+            return "tab-\(tab.rawValue)"
+        case .recordingsFilter(let filter):
+            return "recordings-filter-\(filter.rawValue)"
+        case .recordingsSeries(let seriesName):
+            return "recordings-series-\(seriesName)"
+        case .recordingsSeriesMore:
+            return "recordings-series-menu"
+        case .topicKeyword(let keyword):
+            return "topic-keyword-\(keyword)"
+        case .topicManage:
+            return "topic-manage"
+        }
     }
 
     private func tvOSSidebarStaticSubRow(label: String) -> some View {

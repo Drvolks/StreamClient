@@ -27,6 +27,7 @@ final class TopicsViewModel: ObservableObject {
     weak var epgCache: EPGCache?
     var client: PVRClient?
     nonisolated(unsafe) private var syncObserver: NSObjectProtocol?
+    private let launchArguments = ProcessInfo.processInfo.arguments
 
     init() {
         // Observe iCloud sync changes and reload keywords
@@ -71,6 +72,10 @@ final class TopicsViewModel: ObservableObject {
             let scheduledMatches = await loadScheduledAsTopics(cache: cache)
             matches.append(contentsOf: scheduledMatches)
             matches.sort { $0.program.startDate < $1.program.startDate }
+        }
+
+        if launchArguments.contains("--ui-testing-empty-topics") {
+            matches.removeAll()
         }
 
         matchingPrograms = matches

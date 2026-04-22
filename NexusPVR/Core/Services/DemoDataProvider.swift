@@ -9,6 +9,10 @@ import Foundation
 
 struct DemoDataProvider {
 
+    private static func hasLaunchArgument(_ argument: String) -> Bool {
+        ProcessInfo.processInfo.arguments.contains(argument)
+    }
+
     // MARK: - In-Memory Recording State
 
     /// Event IDs scheduled by the user during this session
@@ -598,6 +602,19 @@ struct DemoDataProvider {
                     genres: program.genres
                 ))
             }
+        }
+
+        if hasLaunchArgument("--ui-testing-empty-completed-recordings") {
+            completed = []
+        }
+
+        if hasLaunchArgument("--ui-testing-empty-scheduled-recordings") {
+            scheduled = []
+        }
+
+        if hasLaunchArgument("--ui-testing-empty-series-recordings") {
+            completed.removeAll { $0.seriesInfo != nil }
+            scheduled.removeAll { $0.seriesInfo != nil }
         }
 
         return (completed: completed, recording: [], scheduled: scheduled)
