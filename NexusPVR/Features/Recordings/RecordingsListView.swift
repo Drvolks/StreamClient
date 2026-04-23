@@ -64,6 +64,8 @@ private struct RecordingsListContentView: View {
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     @FocusState private var focusedRecordingID: Int?
     @FocusState private var focusedSeriesName: String?
+    @FocusState private var focusedSeriesRecordingID: Int?
+    @FocusState private var isRecordingsEmptyStateFocused: Bool
     #endif
 
     private var recordingsNavigationTitle: String {
@@ -336,6 +338,9 @@ private struct RecordingsListContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .tvOSFocusableEmptyState()
+#if os(tvOS)
+        .focused($isRecordingsEmptyStateFocused)
+#endif
         .accessibilityIdentifier("recordings-empty-\(vm.filter.rawValue)")
     }
 
@@ -474,6 +479,7 @@ private struct RecordingsListContentView: View {
         .onAppear {
             guard !appState.showingRecordingsSeriesList, !appState.hasSelectedRecordingsSeries else { return }
             guard let firstID = recordingIDs.first else { return }
+            isRecordingsEmptyStateFocused = false
             if focusedRecordingID == nil || !recordingIDs.contains(focusedRecordingID ?? -1) {
                 DispatchQueue.main.async {
                     focusedRecordingID = firstID
@@ -484,8 +490,10 @@ private struct RecordingsListContentView: View {
             guard !appState.showingRecordingsSeriesList, !appState.hasSelectedRecordingsSeries else { return }
             guard let firstID = ids.first else {
                 focusedRecordingID = nil
+                isRecordingsEmptyStateFocused = true
                 return
             }
+            isRecordingsEmptyStateFocused = false
             if !ids.contains(focusedRecordingID ?? -1) {
                 DispatchQueue.main.async {
                     focusedRecordingID = firstID
@@ -576,6 +584,7 @@ private struct RecordingsListContentView: View {
                         sectionHeaderTV("Active")
                         ForEach(remainingActive) { recording in
                             tvOSSeriesRecordingRow(recording, channelIdByName: channelIdByName)
+                                .focused($focusedSeriesRecordingID, equals: recording.id)
                         }
                     }
                     if !remainingCompleted.isEmpty {
@@ -584,6 +593,7 @@ private struct RecordingsListContentView: View {
                         }
                         ForEach(remainingCompleted) { recording in
                             tvOSSeriesRecordingRow(recording, channelIdByName: channelIdByName)
+                                .focused($focusedSeriesRecordingID, equals: recording.id)
                         }
                     }
                     if !remainingScheduled.isEmpty {
@@ -592,6 +602,7 @@ private struct RecordingsListContentView: View {
                         }
                         ForEach(remainingScheduled) { recording in
                             tvOSSeriesRecordingRow(recording, channelIdByName: channelIdByName)
+                                .focused($focusedSeriesRecordingID, equals: recording.id)
                         }
                     }
                     if summary.totalCount == 0 {
@@ -605,6 +616,31 @@ private struct RecordingsListContentView: View {
         }
         .id("\(seriesName)-\(resolvedLeftArtworkURLString ?? "no-left-art")-\(resolvedBannerURLString ?? "no-fanart")")
         .background(seriesFanartBackgroundTV(resolvedBannerURLString))
+        .onAppear {
+            guard appState.hasSelectedRecordingsSeries else { return }
+            guard !recordings.isEmpty else { return }
+            isRecordingsEmptyStateFocused = false
+            guard let firstID = recordings.first?.id else { return }
+            if focusedSeriesRecordingID == nil || !recordings.map(\.id).contains(focusedSeriesRecordingID ?? -1) {
+                DispatchQueue.main.async {
+                    focusedSeriesRecordingID = firstID
+                }
+            }
+        }
+        .onChange(of: recordings.map(\.id)) { ids in
+            guard appState.hasSelectedRecordingsSeries else { return }
+            guard let firstID = ids.first else {
+                focusedSeriesRecordingID = nil
+                isRecordingsEmptyStateFocused = true
+                return
+            }
+            isRecordingsEmptyStateFocused = false
+            if !ids.contains(focusedSeriesRecordingID ?? -1) {
+                DispatchQueue.main.async {
+                    focusedSeriesRecordingID = firstID
+                }
+            }
+        }
         #else
         return List {
             Button {
@@ -811,6 +847,7 @@ private struct RecordingsListContentView: View {
                         .foregroundStyle(Theme.textPrimary)
                     ForEach(inlineActive) { recording in
                         tvOSSeriesInlineRecordingRow(recording)
+                            .focused($focusedSeriesRecordingID, equals: recording.id)
                     }
                 }
 
@@ -821,6 +858,7 @@ private struct RecordingsListContentView: View {
                         .padding(.top, inlineActive.isEmpty ? 0 : Theme.spacingXS)
                     ForEach(inlineCompleted) { recording in
                         tvOSSeriesInlineRecordingRow(recording)
+                            .focused($focusedSeriesRecordingID, equals: recording.id)
                     }
                 }
 
@@ -831,6 +869,7 @@ private struct RecordingsListContentView: View {
                         .padding(.top, inlineCompleted.isEmpty ? 0 : Theme.spacingXS)
                     ForEach(inlineScheduled) { recording in
                         tvOSSeriesInlineRecordingRow(recording)
+                            .focused($focusedSeriesRecordingID, equals: recording.id)
                     }
                 }
             }
@@ -1352,6 +1391,9 @@ private struct RecordingsListContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.spacingXL)
         .tvOSFocusableEmptyState()
+        #if os(tvOS)
+        .focused($isRecordingsEmptyStateFocused)
+        #endif
         .accessibilityIdentifier("recordings-series-empty")
     }
     #else
