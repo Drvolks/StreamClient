@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct PVRApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
     @StateObject private var client = PVRClient()
     @StateObject private var epgCache = EPGCache()
+    @State private var foregroundAuthTask: Task<Void, Never>?
 
     init() {
         // Check for --demo-mode launch argument (used by UI tests)
@@ -68,11 +70,46 @@ struct PVRApp: App {
                 .onOpenURL { url in
                     handleDeepLink(url)
                 }
+                .onChange(of: scenePhase) { _, newPhase in
+                    guard newPhase == .active else { return }
+                    validateAuthenticationOnForeground()
+                }
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         #endif
+    }
+
+    private func validateAuthenticationOnForeground() {
+        guard client.isConfigured else { return }
+
+        let expectedConfig = client.config
+        foregroundAuthTask?.cancel()
+        foregroundAuthTask = Task {
+            await authenticateConfiguredClientOnForeground(expectedConfig: expectedConfig)
+            await MainActor.run {
+                if client.config == expectedConfig {
+                    foregroundAuthTask = nil
+                }
+            }
+        }
+    }
+
+    private func authenticateConfiguredClientOnForeground(expectedConfig: ServerConfig) async {
+        let retryDelays: [Double] = [0.75, 1.5, 3.0]
+
+        for attempt in 1...retryDelays.count {
+            guard !Task.isCancelled, client.isConfigured, client.config == expectedConfig else { return }
+
+            do {
+                try await client.authenticate()
+                return
+            } catch {
+                guard attempt < retryDelays.count else { return }
+                try? await Task.sleep(for: .seconds(retryDelays[attempt - 1]))
+            }
+        }
     }
 
     private func handleDeepLink(_ url: URL) {
