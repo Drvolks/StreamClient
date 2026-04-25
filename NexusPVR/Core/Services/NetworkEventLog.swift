@@ -8,7 +8,7 @@
 import Foundation
 import Combine
 
-struct NetworkEvent: Identifiable {
+struct NetworkEvent: Identifiable, Sendable {
     let id = UUID()
     let timestamp: Date
     let method: String
@@ -20,10 +20,14 @@ struct NetworkEvent: Identifiable {
     let errorDetail: String?
 }
 
-@MainActor
-final class NetworkEventLog: ObservableObject {
-    nonisolated static let shared = NetworkEventLog()
+/// Protocol for logging network events — allows test doubles and alternative implementations.
+protocol NetworkEventLogging: AnyObject, Sendable {
+    nonisolated func log(_ event: NetworkEvent)
+}
 
+/// Concrete observable implementation for network event logging.
+@MainActor
+final class NetworkEventLog: ObservableObject, NetworkEventLogging {
     @Published private(set) var events: [NetworkEvent] = []
     private let maxEvents = 200
 

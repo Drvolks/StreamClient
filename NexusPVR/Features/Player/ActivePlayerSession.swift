@@ -1,13 +1,28 @@
 import AVFoundation
 import MPVPixelBufferBridge
 
+/// Protocol for active player session management — allows test doubles and alternative implementations.
+@MainActor
+protocol ActivePlayerSessionManaging: AnyObject {
+    var player: MPVPlayerCore? { get }
+    var bridge: MPVPixelBufferBridge? { get }
+    var pipController: PiPController? { get }
+    var displayLayer: AVSampleBufferDisplayLayer { get }
+    var isPiPActive: Bool { get set }
+    var dismissingForPiP: Bool { get set }
+    var hasActiveSession: Bool { get }
+
+    func createSession(player: MPVPlayerCore, bridge: MPVPixelBufferBridge)
+    func setupPiP(playPauseHandler: @escaping (Bool) -> Void, isPausedQuery: @escaping () -> Bool)
+    func detachFromView()
+    func teardown()
+}
+
 /// Singleton that holds the mpv player, bridge, and PiP controller so they
 /// survive SwiftUI view lifecycle (fullScreenCover dismiss/dismantle).
 /// Only used for the pixelbuffer renderer path.
 @MainActor
-final class ActivePlayerSession {
-    static let shared = ActivePlayerSession()
-
+final class ActivePlayerSession: ActivePlayerSessionManaging {
     private(set) var player: MPVPlayerCore?
     private(set) var bridge: MPVPixelBufferBridge?
     private(set) var pipController: PiPController?
@@ -17,7 +32,7 @@ final class ActivePlayerSession {
     var dismissingForPiP: Bool = false
     private var restoringFromPiP: Bool = false
 
-    private init() {}
+    init() {}
 
     func createSession(player: MPVPlayerCore, bridge: MPVPixelBufferBridge) {
         if self.player != nil {

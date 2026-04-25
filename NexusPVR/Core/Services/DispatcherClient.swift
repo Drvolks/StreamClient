@@ -22,6 +22,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     var useOutputEndpoints = false
     private var authInProgress: Task<Void, Error>?
     private let session: URLSession
+    private let networkEventLogger: any NetworkEventLogging
     /// Maps tvg_id (e.g. "TSN1.ca") → channel id for EPG lookups
     private var tvgIdToChannelId: [String: Int] = [:]
     /// Maps channel id → logo id for icon URLs
@@ -35,8 +36,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     /// In-memory map of synthetic recurring IDs -> Dispatcharr series rule, used for cancel.
     private var seriesRuleIndex: [Int: DispatcharrSeriesRuleResponseItem] = [:]
 
-    init(config: ServerConfig? = nil) {
+    init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
         self.config = config ?? ServerConfig.load()
+        self.networkEventLogger = networkEventLogger
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
@@ -116,7 +118,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     }
 
     private func isRetryableNSError(_ error: NSError) -> Bool {
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "RETRY",
             path: "/retryability/ns-error",
@@ -144,7 +146,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             return isRetryableNSError(underlying)
         }
 
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "RETRY",
             path: "/retryability/ns-error",
@@ -201,7 +203,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
         for attempt in 1...Self.maxAttempts {
             let start = CFAbsoluteTimeGetCurrent()
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(), method: method, path: path,
                 statusCode: nil, isSuccess: true,
                 durationMs: 0, responseSize: 0,
@@ -215,7 +217,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 let shouldRetryHTTP = status.map { Self.retryableHTTPStatusCodes.contains($0) } ?? false
 
                 if shouldRetryHTTP && attempt < Self.maxAttempts {
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(), method: method, path: path,
                         statusCode: status, isSuccess: false,
                         durationMs: ms, responseSize: data.count,
@@ -226,7 +228,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     continue
                 }
 
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(), method: method, path: path,
                     statusCode: status, isSuccess: ok,
                     durationMs: ms, responseSize: data.count,
@@ -239,7 +241,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
                 let isTransient = isRetryableNetworkError(error)
                 let willRetry = isTransient && attempt < Self.maxAttempts
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(), method: method, path: path,
                     statusCode: nil, isSuccess: false,
                     durationMs: ms, responseSize: 0,
@@ -291,7 +293,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             isConnecting = true
             defer { isConnecting = false }
 
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/dispatcharr/api-key",
@@ -302,7 +304,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 errorDetail: "Starting Dispatcharr API key authentication against \(baseURL)"
             ))
 
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "INFO",
                 path: "/dispatcharr/api-key",
@@ -315,7 +317,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
             // Probe /api/accounts/users/me/ — accessible to all authenticated users regardless of role
             guard let url = URL(string: "\(baseURL)/api/accounts/users/me/") else {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/api-key",
@@ -335,7 +337,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             do {
                 let (_, response) = try await loggedData(for: request)
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
                         method: "AUTH",
                         path: "/dispatcharr/api-key",
@@ -348,7 +350,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     throw PVRClientError.invalidResponse
                 }
                 if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
                         method: "AUTH",
                         path: "/dispatcharr/api-key",
@@ -361,7 +363,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     throw PVRClientError.authenticationFailed
                 }
                 guard (200...299).contains(httpResponse.statusCode) else {
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
                         method: "AUTH",
                         path: "/dispatcharr/api-key",
@@ -377,7 +379,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 refreshToken = nil
                 useApiKeyAuth = true
                 isAuthenticated = true
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/api-key",
@@ -388,7 +390,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     errorDetail: "API key authentication succeeded"
                 ))
             } catch let error as PVRClientError {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/api-key",
@@ -400,7 +402,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 ))
                 throw error
             } catch {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/api-key",
@@ -418,7 +420,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         isConnecting = true
         defer { isConnecting = false }
 
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "AUTH",
             path: "/dispatcharr/jwt",
@@ -429,7 +431,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             errorDetail: "Starting Dispatcharr JWT authentication against \(baseURL)"
         ))
 
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "INFO",
             path: "/dispatcharr/jwt",
@@ -441,7 +443,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         ))
 
         guard let url = URL(string: "\(baseURL)/api/accounts/token/") else {
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/dispatcharr/jwt",
@@ -468,7 +470,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             let (data, response) = try await loggedData(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/jwt",
@@ -483,7 +485,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
             if httpResponse.statusCode == 401 || httpResponse.statusCode == 400 {
                 // JWT failed — try XC API as fallback (password may be XC, not Django)
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/jwt",
@@ -498,7 +500,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             }
 
             guard httpResponse.statusCode == 200 else {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/dispatcharr/jwt",
@@ -516,7 +518,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             refreshToken = tokenResponse.refresh
             useApiKeyAuth = false
             isAuthenticated = true
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/dispatcharr/jwt",
@@ -527,7 +529,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 errorDetail: "JWT authentication succeeded"
             ))
         } catch let error as PVRClientError {
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/dispatcharr/jwt",
@@ -539,7 +541,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             ))
             throw error
         } catch {
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/dispatcharr/jwt",
@@ -560,7 +562,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         let encodedPass = config.password.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? config.password
         guard let xcURL = URL(string: "\(baseURL)/player_api.php?username=\(encodedUser)&password=\(encodedPass)") else { return false }
 
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "AUTH",
             path: "/dispatcharr/xc",
@@ -574,7 +576,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         let (_, xcResponse) = try await loggedData(from: xcURL)
         guard let httpResponse = xcResponse as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/dispatcharr/xc",
@@ -591,7 +593,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         useApiKeyAuth = false
         useOutputEndpoints = true
         isAuthenticated = true
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "AUTH",
             path: "/dispatcharr/xc",
@@ -722,7 +724,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 let detail = dispatcharrAPIErrorMessage(from: data)
                 let fallbackBody = String(data: Data(data.prefix(512)), encoding: .utf8) ?? ""
                 let message = detail ?? (fallbackBody.isEmpty ? "Request failed with status \(httpResponse.statusCode)" : fallbackBody)
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: method,
                     path: sanitizePath(url),

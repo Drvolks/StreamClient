@@ -33,6 +33,10 @@ struct PlayerView: View {
     let resumePosition: Int?
     let isRecordingInProgress: Bool
 
+    // Injected dependencies (default to app singletons via Dependencies)
+    private let activePlayerSession: any ActivePlayerSessionManaging
+    private let networkEventLogger: any NetworkEventLogging
+
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?
     @State private var isPlaying = true
@@ -88,12 +92,22 @@ struct PlayerView: View {
     @State private var sleepAssertionID: IOPMAssertionID = 0
     #endif
 
-    init(url: URL, title: String, recordingId: Int? = nil, resumePosition: Int? = nil, isRecordingInProgress: Bool = false) {
+    init(
+        url: URL,
+        title: String,
+        recordingId: Int? = nil,
+        resumePosition: Int? = nil,
+        isRecordingInProgress: Bool = false,
+        activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
+        networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
+    ) {
         self.url = url
         self.title = title
         self.recordingId = recordingId
         self.resumePosition = resumePosition
         self.isRecordingInProgress = isRecordingInProgress
+        self.activePlayerSession = activePlayerSession
+        self.networkEventLogger = networkEventLogger
     }
 
     var body: some View {
@@ -112,6 +126,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                activePlayerSession: activePlayerSession,
+                networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
                     savePlaybackPosition()
                     markAsWatched()
@@ -192,6 +208,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                activePlayerSession: activePlayerSession,
+                networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
                     savePlaybackPosition()
                     markAsWatched()
@@ -240,6 +258,7 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
                     savePlaybackPosition()
                     markAsWatched()
@@ -454,7 +473,7 @@ struct PlayerView: View {
             // the MPV view, so the onDismiss callback never fires.
             savePlaybackPosition()
             #if os(iOS)
-            let session = ActivePlayerSession.shared
+            let session = activePlayerSession
             let nativePiPActive = isUsingPixelBufferRenderer && (session.isPiPActive || session.dismissingForPiP)
             if nativePiPActive {
                 // Don't stop player — mpv continues feeding PiP
@@ -845,7 +864,7 @@ struct PlayerView: View {
 
     #if os(iOS)
     private func setupNativePiPIfNeeded() {
-        let session = ActivePlayerSession.shared
+        let session = activePlayerSession
         guard isUsingPixelBufferRenderer,
               session.pipController == nil,
               session.hasActiveSession else { return }
@@ -861,7 +880,7 @@ struct PlayerView: View {
     }
 
     private func toggleNativePiP() {
-        let session = ActivePlayerSession.shared
+        let session = activePlayerSession
         guard let controller = session.pipController else { return }
 
         if controller.isPictureInPictureActive {
@@ -1633,13 +1652,15 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var hasAppliedLiveHLSProfile = false
     private var lastPrintedMPVLog: String?
     private var lastPrintedMPVLogAt: Date = .distantPast
+    private let networkEventLogger: any NetworkEventLogging
 
     // Performance stats accumulation
     private var fpsSamples: [Double] = []
     private var bitrateSamples: [Double] = []
     private var peakAvsync: Double = 0
 
-    override init() {
+    init(networkEventLogger: any NetworkEventLogging) {
+        self.networkEventLogger = networkEventLogger
         super.init()
     }
 
@@ -2039,7 +2060,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             details.append(audio)
         }
 
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "PLAY",
             path: details.joined(separator: " · "),
@@ -2459,7 +2480,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 // Log mpv errors and HTTP warnings to the event log
                 // Skip transient errors during audio/subtitle track changes
                 if (level == "error" || level == "fatal") && !isChangingTrack {
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
                         method: "PLAY",
                         path: currentURLPath ?? "mpv",
@@ -2502,7 +2523,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                     print("MPV: Hardware texture failure — falling back to videotoolbox-copy")
                     mpv_set_property_string(mpv, "hwdec", "videotoolbox-copy")
                     hasLoggedVideoInfo = false  // Re-log video info after hwdec change
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
                         method: "PLAY",
                         path: "hwdec fallback → videotoolbox-copy",
@@ -2585,7 +2606,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                     print("MPV: Playback error: \(errorStr)")
 
                     // Log to event log (no weak self — NetworkEventLog is a singleton)
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
                         method: "PLAY",
                         path: path,
@@ -2657,7 +2678,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             self.failedVariantURLs.removeAll()
             self.recoveryVariantCursor = 0
 
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "PLAY",
                 path: mediaURL.path,
@@ -2992,6 +3013,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
+    let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
@@ -3010,6 +3032,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
         } else {
             controller = MPVPlayerNSOpenGLViewController()
         }
+        controller.networkEventLogger = networkEventLogger
         _ = controller.view
         controller.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
         controller.onPositionUpdate = { position, dur in
@@ -3073,6 +3096,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
 }
 
 protocol MPVPlayerMacOSController: AnyObject {
+    var networkEventLogger: any NetworkEventLogging { get set }
     var onPositionUpdate: ((Double, Double) -> Void)? { get set }
     var onPlaybackEnded: (() -> Void)? { get set }
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)? { get set }
@@ -3095,6 +3119,7 @@ protocol MPVPlayerMacOSController: AnyObject {
 final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSController {
     private var player: MPVPlayerCore?
     private let metalLayer = StableMetalLayer()
+    var networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
@@ -3117,7 +3142,7 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
     }
 
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
-        player = MPVPlayerCore()
+        player = MPVPlayerCore(networkEventLogger: networkEventLogger)
         guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
             return
         }
@@ -3192,6 +3217,7 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
 
 final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMacOSController {
     private var player: MPVPlayerCore?
+    var networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     private var bridge: MPVPixelBufferBridge?
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
@@ -3224,7 +3250,7 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         guard let bridge else { return }
         bridge.attach()
 
-        player = MPVPlayerCore()
+        player = MPVPlayerCore(networkEventLogger: networkEventLogger)
         guard player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress) == true else { return }
         player?.onPositionUpdate = { [weak self] position, duration in
             self?.onPositionUpdate?(position, duration)
@@ -3273,6 +3299,9 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
 
 final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSController {
     private var glView: MPVPlayerMacOGLView!
+    var networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger {
+        didSet { glView?.networkEventLogger = networkEventLogger }
+    }
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
@@ -3281,6 +3310,7 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 720))
         glView = MPVPlayerMacOGLView(frame: view.bounds)
+        glView.networkEventLogger = networkEventLogger
         glView.autoresizingMask = [.width, .height]
         view.addSubview(glView)
     }
@@ -3347,6 +3377,7 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
 
 final class MPVPlayerMacOGLView: NSOpenGLView {
     private var player: MPVPlayerCore?
+    var networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     private var defaultFBO: GLint = -1
     let renderQueue = DispatchQueue(label: "nexuspvr.macos.opengl", qos: .userInteractive)
     var mpvGL: UnsafeMutableRawPointer?
@@ -3407,7 +3438,7 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
         openGLContext?.makeCurrentContext()
         refreshViewport()
-        player = MPVPlayerCore()
+        player = MPVPlayerCore(networkEventLogger: networkEventLogger)
         guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
             return
         }
@@ -3544,6 +3575,8 @@ struct MPVContainerView: UIViewRepresentable {
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
+    let activePlayerSession: any ActivePlayerSessionManaging
+    let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
     var onTogglePlayPause: (() -> Void)?
@@ -3699,7 +3732,7 @@ struct MPVContainerView: UIViewRepresentable {
         let gpuAPI = UserPreferences.load().tvosGPUAPI
 
         if gpuAPI == .pixelbuffer {
-            let view = MPVPlayerPixelBufferView(frame: .zero)
+            let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
             view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
             configureCommonCallbacks(for: view)
             view.loadURL(url)
@@ -3719,7 +3752,7 @@ struct MPVContainerView: UIViewRepresentable {
         }
 
         if gpuAPI == .opengl {
-            let view = MPVPlayerGLView(frame: .zero)
+            let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
             view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
             configureCommonCallbacks(for: view)
             view.loadURL(url)
@@ -3738,7 +3771,7 @@ struct MPVContainerView: UIViewRepresentable {
             return view
         }
 
-        let view = MPVPlayerMetalView(frame: .zero)
+        let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
         view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
         configureCommonCallbacks(for: view)
         view.loadURL(url)
@@ -3969,6 +4002,8 @@ struct MPVContainerView: UIViewRepresentable {
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
+    let activePlayerSession: any ActivePlayerSessionManaging
+    let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
@@ -4073,7 +4108,7 @@ struct MPVContainerView: UIViewRepresentable {
         let gpuAPI = UserPreferences.load().iosGPUAPI
 
         if gpuAPI == .pixelbuffer {
-            let view = MPVPlayerPixelBufferView(frame: .zero)
+            let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
             configureCommonCallbacks(for: view)
             view.loadURL(url)
             view.startPositionPolling()
@@ -4093,7 +4128,7 @@ struct MPVContainerView: UIViewRepresentable {
         }
 
         if gpuAPI == .metal {
-            let view = MPVPlayerMetalView(frame: .zero)
+            let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
             configureCommonCallbacks(for: view)
             view.loadURL(url)
             view.startPositionPolling()
@@ -4111,7 +4146,7 @@ struct MPVContainerView: UIViewRepresentable {
             return view
         }
 
-        let view = MPVPlayerGLView(frame: .zero)
+        let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
         configureCommonCallbacks(for: view)
         view.loadURL(url)
         view.startPositionPolling()
@@ -4170,6 +4205,7 @@ struct MPVContainerView: UIViewRepresentable {
 class MPVPlayerMetalView: UIView {
     private var player: MPVPlayerCore?
     private var metalLayer: CAMetalLayer?
+    private let networkEventLogger: any NetworkEventLogging
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
@@ -4196,12 +4232,14 @@ class MPVPlayerMetalView: UIView {
     override var canBecomeFocused: Bool { true }
     #endif
 
-    override init(frame: CGRect) {
+    init(frame: CGRect, networkEventLogger: any NetworkEventLogging) {
+        self.networkEventLogger = networkEventLogger
         super.init(frame: frame)
         commonInit()
     }
 
     required init?(coder: NSCoder) {
+        self.networkEventLogger = Dependencies.networkEventLogger
         super.init(coder: coder)
         commonInit()
     }
@@ -4260,7 +4298,7 @@ class MPVPlayerMetalView: UIView {
     }
 
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
-        player = MPVPlayerCore()
+        player = MPVPlayerCore(networkEventLogger: networkEventLogger)
         guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
             return
         }
@@ -4437,7 +4475,8 @@ class MPVPlayerMetalView: UIView {
 
 #if os(iOS) || os(tvOS)
 class MPVPlayerPixelBufferView: UIView {
-    private let session = ActivePlayerSession.shared
+    private let session: any ActivePlayerSessionManaging
+    private let networkEventLogger: any NetworkEventLogging
     var isPaused: Bool { session.player?.isPaused ?? true }
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
@@ -4460,12 +4499,16 @@ class MPVPlayerPixelBufferView: UIView {
     override var canBecomeFocused: Bool { true }
     #endif
 
-    override init(frame: CGRect) {
+    init(frame: CGRect, session: any ActivePlayerSessionManaging, networkEventLogger: any NetworkEventLogging) {
+        self.session = session
+        self.networkEventLogger = networkEventLogger
         super.init(frame: frame)
         commonInit()
     }
 
     required init?(coder: NSCoder) {
+        self.session = Dependencies.playerSession
+        self.networkEventLogger = Dependencies.networkEventLogger
         super.init(coder: coder)
         commonInit()
     }
@@ -4516,7 +4559,7 @@ class MPVPlayerPixelBufferView: UIView {
         let bridge = MPVPixelBufferBridge(displayLayer: session.displayLayer)
         bridge.attach()
 
-        let player = MPVPlayerCore()
+        let player = MPVPlayerCore(networkEventLogger: networkEventLogger)
         guard player.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress) else {
             return
         }
@@ -4707,6 +4750,7 @@ class MPVPlayerPixelBufferView: UIView {
 
 class MPVPlayerGLView: GLKView {
     private var player: MPVPlayerCore?
+    private let networkEventLogger: any NetworkEventLogging
     private var defaultFBO: GLint = -1
     nonisolated(unsafe) private var displayLink: CADisplayLink?
     private var resizeDebouncer: DispatchWorkItem?
@@ -4733,7 +4777,8 @@ class MPVPlayerGLView: GLKView {
     override var canBecomeFocused: Bool { true }
     #endif
 
-    override init(frame: CGRect) {
+    init(frame: CGRect, networkEventLogger: any NetworkEventLogging) {
+        self.networkEventLogger = networkEventLogger
         guard let glContext = EAGLContext(api: .openGLES2) else {
             fatalError("Failed to initialize OpenGL ES 2.0 context")
         }
@@ -4742,11 +4787,13 @@ class MPVPlayerGLView: GLKView {
     }
 
     override init(frame: CGRect, context: EAGLContext) {
+        self.networkEventLogger = Dependencies.networkEventLogger
         super.init(frame: frame, context: context)
         commonInit()
     }
 
     required init?(coder: NSCoder) {
+        self.networkEventLogger = Dependencies.networkEventLogger
         super.init(coder: coder)
         commonInit()
     }
@@ -4834,7 +4881,7 @@ class MPVPlayerGLView: GLKView {
     }
 
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
-        player = MPVPlayerCore()
+        player = MPVPlayerCore(networkEventLogger: networkEventLogger)
         guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
             return
         }

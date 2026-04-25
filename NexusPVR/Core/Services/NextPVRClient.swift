@@ -20,11 +20,13 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     private let deviceName = Brand.deviceName
     private let liveClientName: String
     private var authInProgress: Task<Void, Error>?
+    private let networkEventLogger: any NetworkEventLogging
 
     private static let liveClientIDKey = "NextPVRLiveClientID"
 
-    init(config: ServerConfig? = nil) {
+    init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
         self.config = config ?? ServerConfig.load()
+        self.networkEventLogger = networkEventLogger
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
@@ -112,7 +114,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     }
 
     private func isRetryableNSError(_ error: NSError) -> Bool {
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "RETRY",
             path: "/retryability/ns-error",
@@ -140,7 +142,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             return isRetryableNSError(underlying)
         }
 
-        NetworkEventLog.shared.log(NetworkEvent(
+        networkEventLogger.log(NetworkEvent(
             timestamp: Date(),
             method: "RETRY",
             path: "/retryability/ns-error",
@@ -198,7 +200,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
         for attempt in 1...Self.maxAttempts {
             let start = CFAbsoluteTimeGetCurrent()
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(), method: method, path: path,
                 statusCode: nil, isSuccess: true,
                 durationMs: 0, responseSize: 0,
@@ -212,7 +214,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 let shouldRetryHTTP = status.map { Self.retryableHTTPStatusCodes.contains($0) } ?? false
 
                 if shouldRetryHTTP && attempt < Self.maxAttempts {
-                    NetworkEventLog.shared.log(NetworkEvent(
+                    networkEventLogger.log(NetworkEvent(
                         timestamp: Date(), method: method, path: path,
                         statusCode: status, isSuccess: false,
                         durationMs: ms, responseSize: data.count,
@@ -223,7 +225,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                     continue
                 }
 
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(), method: method, path: path,
                     statusCode: status, isSuccess: ok,
                     durationMs: ms, responseSize: data.count,
@@ -236,7 +238,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
                 let isTransient = isRetryableNetworkError(error)
                 let willRetry = isTransient && attempt < Self.maxAttempts
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(), method: method, path: path,
                     statusCode: nil, isSuccess: false,
                     durationMs: ms, responseSize: 0,
@@ -293,7 +295,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         defer { isConnecting = false }
 
         do {
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/session",
@@ -304,7 +306,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 errorDetail: "Starting NextPVR authentication against \(baseURL)"
             ))
 
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "INFO",
                 path: "/session",
@@ -319,7 +321,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             guard let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=\(deviceName)&format=json") else {
                 throw NextPVRError.notConfigured
             }
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/session.initiate",
@@ -333,7 +335,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             let initiateResponse = try JSONDecoder().decode(SessionInitiateResponse.self, from: initiateData)
 
             guard let tempSid = initiateResponse.sid, let salt = initiateResponse.salt else {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/session.initiate",
@@ -346,7 +348,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 throw NextPVRError.invalidResponse
             }
 
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/session.initiate",
@@ -366,7 +368,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             guard let loginURL = URL(string: "\(baseURL)/services/service?method=session.login&sid=\(tempSid)&md5=\(loginHash)&format=json") else {
                 throw NextPVRError.notConfigured
             }
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/session.login",
@@ -382,7 +384,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             if loginResponse.isSuccess {
                 sid = tempSid
                 isAuthenticated = true
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/session.login",
@@ -393,7 +395,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                     errorDetail: "Authentication succeeded"
                 ))
             } else {
-                NetworkEventLog.shared.log(NetworkEvent(
+                networkEventLogger.log(NetworkEvent(
                     timestamp: Date(),
                     method: "AUTH",
                     path: "/session.login",
@@ -407,7 +409,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             }
         } catch let error as NextPVRError {
             lastError = error
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/session",
@@ -421,7 +423,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         } catch {
             let npvrError = NextPVRError.networkError(error)
             lastError = npvrError
-            NetworkEventLog.shared.log(NetworkEvent(
+            networkEventLogger.log(NetworkEvent(
                 timestamp: Date(),
                 method: "AUTH",
                 path: "/session",

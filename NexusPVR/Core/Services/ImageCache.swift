@@ -9,12 +9,10 @@ import SwiftUI
 
 /// Thread-safe in-memory image cache using NSCache
 nonisolated final class ImageCache: @unchecked Sendable {
-    static let shared = ImageCache()
-
     private let cache = NSCache<NSString, PlatformImage>()
     private let lock = NSLock()
 
-    private init() {
+    init() {
         // Limit cache to ~50MB or 100 images
         cache.totalCostLimit = 50 * 1024 * 1024
         cache.countLimit = 100
@@ -76,6 +74,18 @@ nonisolated final class ImageCache: @unchecked Sendable {
         }
     }
 }
+
+// MARK: - ImageCaching Protocol
+
+/// Protocol for image caching — allows test doubles and alternative implementations.
+protocol ImageCaching: Sendable {
+    func image(for url: URL) -> PlatformImage?
+    func setImage(_ image: PlatformImage, for url: URL)
+    func removeImage(for url: URL)
+    func clearCache()
+}
+
+extension ImageCache: ImageCaching {}
 
 // MARK: - Platform Image Type
 

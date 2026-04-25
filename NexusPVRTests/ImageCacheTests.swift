@@ -40,44 +40,49 @@ struct ImageCacheTests {
 
     @Test("image(for:) returns nil for an unknown URL")
     func unknownURLReturnsNil() {
+        let cache = ImageCache()
         let url = uniqueURL("unknown")
-        #expect(ImageCache.shared.image(for: url) == nil)
+        #expect(cache.image(for: url) == nil)
     }
 
     @Test("setImage + image round-trip returns the stored image")
     func setAndGet() {
+        let cache = ImageCache()
         let url = uniqueURL("set-get")
         let img = makeImage()
-        ImageCache.shared.setImage(img, for: url)
-        #expect(ImageCache.shared.image(for: url) != nil)
+        cache.setImage(img, for: url)
+        #expect(cache.image(for: url) != nil)
     }
 
     @Test("removeImage clears a previously cached entry")
     func removeClears() {
+        let cache = ImageCache()
         let url = uniqueURL("remove")
-        ImageCache.shared.setImage(makeImage(), for: url)
-        #expect(ImageCache.shared.image(for: url) != nil)
-        ImageCache.shared.removeImage(for: url)
-        #expect(ImageCache.shared.image(for: url) == nil)
+        cache.setImage(makeImage(), for: url)
+        #expect(cache.image(for: url) != nil)
+        cache.removeImage(for: url)
+        #expect(cache.image(for: url) == nil)
     }
 
     @Test("clearCache removes all previously cached entries")
     func clearWipes() {
+        let cache = ImageCache()
         let a = uniqueURL("clear-a")
         let b = uniqueURL("clear-b")
-        ImageCache.shared.setImage(makeImage(), for: a)
-        ImageCache.shared.setImage(makeImage(), for: b)
-        ImageCache.shared.clearCache()
-        #expect(ImageCache.shared.image(for: a) == nil)
-        #expect(ImageCache.shared.image(for: b) == nil)
+        cache.setImage(makeImage(), for: a)
+        cache.setImage(makeImage(), for: b)
+        cache.clearCache()
+        #expect(cache.image(for: a) == nil)
+        #expect(cache.image(for: b) == nil)
     }
 
     @Test("Different URLs don't collide in the cache")
     func distinctURLsAreSeparate() {
+        let cache = ImageCache()
         let a = uniqueURL("distinct-a")
         let b = uniqueURL("distinct-b")
-        ImageCache.shared.setImage(makeImage(), for: a)
-        #expect(ImageCache.shared.image(for: a) != nil)
-        #expect(ImageCache.shared.image(for: b) == nil)
+        cache.setImage(makeImage(), for: a)
+        #expect(cache.image(for: a) != nil)
+        #expect(cache.image(for: b) == nil)
     }
 }

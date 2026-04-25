@@ -12,9 +12,14 @@ struct EventLogView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingCopied = false
     @State private var snapshot: [NetworkEvent] = []
+    private let eventLog: NetworkEventLog
+
+    init(eventLog: NetworkEventLog = Dependencies.networkEventLog) {
+        self.eventLog = eventLog
+    }
 
     private func reload() {
-        snapshot = NetworkEventLog.shared.events
+        snapshot = eventLog.events
     }
 
     var body: some View {
@@ -58,7 +63,7 @@ struct EventLogView: View {
                     }
 
                     Button(role: .destructive) {
-                        NetworkEventLog.shared.clear()
+                        eventLog.clear()
                         reload()
                     } label: {
                         Label("Clear", systemImage: "trash")
@@ -85,7 +90,7 @@ struct EventLogView: View {
                             HStack {
                                 Spacer()
                                 Button {
-                                    NetworkEventLog.shared.clear()
+                                    eventLog.clear()
                                     reload()
                                 } label: {
                                     Text("Clear")
@@ -166,7 +171,7 @@ struct EventLogView: View {
 
     #if !os(tvOS)
     private func copyLog() {
-        let text = NetworkEventLog.shared.formattedLog
+        let text = eventLog.formattedLog
         #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

@@ -23,7 +23,11 @@ struct SettingsView: View {
     @State private var subtitleMode: SubtitleMode = UserPreferences.load().subtitleMode
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
-    @ObservedObject private var eventLog = NetworkEventLog.shared
+    @ObservedObject private var eventLog: NetworkEventLog
+
+    init(eventLog: NetworkEventLog = Dependencies.networkEventLog) {
+        self._eventLog = ObservedObject(wrappedValue: eventLog)
+    }
     #if os(tvOS)
     @State private var activeTVPopup: TVSettingsPopup?
     @FocusState private var popupFocusedItemID: String?

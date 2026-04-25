@@ -16,12 +16,16 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     @State private var isLoading = false
     @State private var loadFailed = false
 
+    private let imageCache: any ImageCaching
+
     init(
         url: URL?,
+        imageCache: any ImageCaching = Dependencies.imageCache,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
+        self.imageCache = imageCache
         self.content = content
         self.placeholder = placeholder
     }
@@ -54,7 +58,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             isLoading = false
 
             guard let newURL else { return }
-            if let cached = ImageCache.shared.image(for: newURL) {
+            if let cached = imageCache.image(for: newURL) {
                 loadedImage = cached
             } else {
                 loadImage()
@@ -67,7 +71,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         let requestedURL = url
 
         // Check cache first
-        if let cached = ImageCache.shared.image(for: requestedURL) {
+        if let cached = imageCache.image(for: requestedURL) {
             loadedImage = cached
             return
         }
@@ -78,7 +82,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             do {
                 let (data, _) = try await URLSession.shared.data(from: requestedURL)
                 if let image = PlatformImage(data: data) {
-                    ImageCache.shared.setImage(image, for: requestedURL)
+                    imageCache.setImage(image, for: requestedURL)
                     await MainActor.run {
                         guard self.url == requestedURL else { return }
                         loadedImage = image
