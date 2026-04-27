@@ -1177,7 +1177,7 @@ struct TVOSNavigation: View {
                     .foregroundStyle(isSelected ? Theme.accent : .secondary)
 
                 Text(label)
-                    .font(.title3)
+                    .font(.tvSidebar)
                     .lineLimit(1)
 
                 Spacer()
@@ -1210,7 +1210,7 @@ struct TVOSNavigation: View {
                     .frame(width: 44, alignment: .center)
 
                 Text(label.uppercased())
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.tvSidebarSection)
 
                 badge()
             }
@@ -1264,7 +1264,7 @@ struct TVOSNavigation: View {
                     .frame(width: 3, height: 22)
 
                 Text(label)
-                    .font(.title3)
+                    .font(.tvSidebar)
                     .lineLimit(maxLines)
                     .minimumScaleFactor(0.8)
                     .allowsTightening(true)
