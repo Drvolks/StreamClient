@@ -13,6 +13,9 @@ struct SettingsView: View {
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     #endif
+    #if os(iOS) || os(tvOS)
+    @EnvironmentObject private var epgCache: EPGCache
+    #endif
     @State private var showingUnlinkConfirm = false
     @State private var seekBackwardSeconds: Int = UserPreferences.load().seekBackwardSeconds
     @State private var seekForwardSeconds: Int = UserPreferences.load().seekForwardSeconds
@@ -23,6 +26,10 @@ struct SettingsView: View {
     @State private var subtitleMode: SubtitleMode = UserPreferences.load().subtitleMode
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
+    #if DISPATCHERPVR
+    @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
+    @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
+    #endif
     @ObservedObject private var eventLog: NetworkEventLog
 
     init(eventLog: NetworkEventLog = Dependencies.networkEventLog) {
@@ -60,6 +67,9 @@ struct SettingsView: View {
             List {
                 serverSection
                 playbackSection
+                #if DISPATCHERPVR
+                guideSection
+                #endif
                 #if DEBUG
                 debugStreamSection
                 #endif
@@ -794,6 +804,58 @@ struct SettingsView: View {
             return "Legacy OpenGL-based rendering. Broad compatibility but no Picture-in-Picture support."
         }
     }
+
+    #if DISPATCHERPVR
+    private var guideSection: some View {
+        Section {
+            Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
+                .onChange(of: guideShowGroupsInSidebar) { newValue in
+                    var prefs = UserPreferences.load()
+                    prefs.guideShowGroupsInSidebar = newValue
+                    prefs.save()
+                }
+            if guideShowGroupsInSidebar {
+                if epgCache.channelGroups.isEmpty {
+                    Text("No channel groups available")
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    let populatedGroups = epgCache.channelGroups.filter { group in
+                        epgCache.visibleChannels.contains { $0.groupId == group.id }
+                    }
+                    if populatedGroups.isEmpty {
+                        Text("No channels in any group")
+                            .foregroundStyle(Theme.textSecondary)
+                    } else {
+                        ForEach(populatedGroups) { group in
+                            let isSelected = guideGroupIds.contains(group.id)
+                            Button {
+                                if isSelected {
+                                    guideGroupIds.removeAll { $0 == group.id }
+                                } else {
+                                    guideGroupIds.append(group.id)
+                                }
+                                var prefs = UserPreferences.load()
+                                prefs.guideGroupIds = guideGroupIds
+                                prefs.save()
+                            } label: {
+                                HStack {
+                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+                                    Text(group.name)
+                                        .foregroundStyle(Theme.textPrimary)
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Guide")
+        }
+    }
+    #endif
 
     #if DEBUG
     private var debugStreamSection: some View {

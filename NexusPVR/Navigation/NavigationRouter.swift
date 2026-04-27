@@ -556,6 +556,29 @@ struct IOSNavigation: View {
                             ForEach(appState.topicKeywords, id: \.self) { keyword in
                                 sidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
                             }
+                        } else if tab == .guide {
+                            // Guide header (non-tappable on iOS sidebar)
+                            sidebarRow(
+                                icon: tab.icon,
+                                label: tab.label,
+                                isSelected: appState.selectedTab == .guide,
+                                badge: { sidebarTabBadge(for: tab) }
+                            )
+                            .foregroundStyle(Theme.textSecondary)
+
+
+                            // Group sub-items (Dispatcharr only)
+                            #if DISPATCHERPVR
+                            let prefs = UserPreferences.load()
+                            if prefs.guideShowGroupsInSidebar {
+                                let populatedGroups = epgCache.channelGroups.filter { group in
+                                    epgCache.visibleChannels.contains { $0.groupId == group.id }
+                                }
+                                ForEach(populatedGroups.filter { prefs.guideGroupIds.isEmpty || prefs.guideGroupIds.contains($0.id) }) { group in
+                                    sidebarGuideGroupSubRow(group: group)
+                                }
+                            }
+                            #endif
                         } else {
                             Button {
                                 appState.selectedTab = tab
@@ -741,6 +764,36 @@ struct IOSNavigation: View {
         .accessibilityIdentifier("topic-keyword-\(keyword)")
     }
 
+    #if DISPATCHERPVR
+    private func sidebarGuideGroupSubRow(group: ChannelGroup) -> some View {
+        let isSelected = appState.selectedTab == .guide && appState.guideGroupFilter == group.id
+        return Button {
+            appState.guideGroupFilter = group.id
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .guide
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                isSidebarOpen = false
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 28)
+                Text(group.name)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.leading, Theme.spacingSM)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ? Theme.accent.opacity(0.12) : Color.clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+        }
+        .accessibilityIdentifier("guide-group-\(group.id)")
+    }
+    #endif
+
     @ViewBuilder
     private func sidebarTabBadge(for tab: Tab) -> some View {
         if tab == .recordings && appState.recordingsHasActive {
@@ -914,6 +967,7 @@ struct IOSNavigation: View {
 struct TVOSNavigation: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
+    @EnvironmentObject private var epgCache: EPGCache
     @State private var sidebarEnabled = true
     @FocusState private var focusedItem: TVSidebarItem?
 
@@ -1127,6 +1181,29 @@ struct TVOSNavigation: View {
                                     isSelected: appState.selectedTab == .topics && appState.showingKeywordsEditor
                                 ) { EmptyView() }
                             }
+                        } else if tab == .guide {
+                            // Guide — non-tappable header, with group sub-items below
+                            tvOSSidebarSection(icon: tab.icon, label: tab.label) {
+                                EmptyView()
+                            } content: {
+                                #if DISPATCHERPVR
+                                let prefs = UserPreferences.load()
+                                if prefs.guideShowGroupsInSidebar {
+                                    let populatedGroups = epgCache.channelGroups.filter { group in
+                                        epgCache.visibleChannels.contains { $0.groupId == group.id }
+                                    }
+                                    ForEach(populatedGroups.filter { prefs.guideGroupIds.isEmpty || prefs.guideGroupIds.contains($0.id) }) { group in
+                                        tvOSSidebarSubRow(
+                                            label: group.name,
+                                            item: .guideGroup(group.id),
+                                            isSelected: appState.selectedTab == .guide && appState.guideGroupFilter == group.id
+                                        ) {
+                                            EmptyView()
+                                        }
+                                    }
+                                }
+                                #endif
+                            }
                         } else {
                             tvOSSidebarRow(
                                 icon: tab.icon,
@@ -1307,6 +1384,10 @@ struct TVOSNavigation: View {
             return "topic-keyword-\(keyword)"
         case .topicManage:
             return "topic-manage"
+        #if DISPATCHERPVR
+        case .guideGroup(let groupId):
+            return "guide-group-\(groupId)"
+        #endif
         }
     }
 
@@ -1359,6 +1440,9 @@ enum TVSidebarItem: Hashable {
     case recordingsSeriesMore
     case topicKeyword(String)
     case topicManage
+    #if DISPATCHERPVR
+    case guideGroup(Int)
+    #endif
 }
 #endif
 
