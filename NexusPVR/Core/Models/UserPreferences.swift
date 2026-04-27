@@ -126,7 +126,7 @@ nonisolated struct UserPreferences: Codable {
         var prefs = self
         prefs.updatedAt = Date()
         Self.persist(prefs)
-        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+        NotificationCenter.default.post(name: Notification.Name("preferencesDidSync"), object: nil)
     }
 
     static func loadFromAppGroup() -> UserPreferences {
