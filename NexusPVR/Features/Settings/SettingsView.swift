@@ -13,9 +13,7 @@ struct SettingsView: View {
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     #endif
-    #if os(iOS) || os(tvOS)
     @EnvironmentObject private var epgCache: EPGCache
-    #endif
     @State private var showingUnlinkConfirm = false
     @State private var seekBackwardSeconds: Int = UserPreferences.load().seekBackwardSeconds
     @State private var seekForwardSeconds: Int = UserPreferences.load().seekForwardSeconds

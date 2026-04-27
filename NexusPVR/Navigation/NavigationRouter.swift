@@ -1567,6 +1567,9 @@ struct MacOSNavigation: View {
     @State private var matchingGroups: [ChannelGroup] = []
     @State private var searchDebounceTask: Task<Void, Never>?
     @State private var lastSearchedText = ""
+    #if DISPATCHERPVR
+    @State private var guideSidebarPreferences = UserPreferences.load()
+    #endif
 
     var body: some View {
         Group {
@@ -1682,8 +1685,16 @@ struct MacOSNavigation: View {
         }
         .onAppear {
             appState.topicKeywords = UserPreferences.load().keywords
+            #if DISPATCHERPVR
+            guideSidebarPreferences = UserPreferences.load()
+            #endif
             Task { await computeTopicMatchCounts() }
         }
+        #if DISPATCHERPVR
+        .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
+            guideSidebarPreferences = UserPreferences.load()
+        }
+        #endif
         .onChange(of: appState.showingKeywordsEditor) { _ in
             if !appState.showingKeywordsEditor {
                 appState.topicKeywords = UserPreferences.load().keywords
@@ -1735,6 +1746,27 @@ struct MacOSNavigation: View {
                     } header: {
                         macSidebarHeader(icon: tab.icon, label: tab.label)
                     }
+                } else if tab == .guide {
+                    #if DISPATCHERPVR
+                    if guideSidebarPreferences.guideShowGroupsInSidebar {
+                        Section {
+                            macSidebarGuideAllRow()
+
+                            let populatedGroups = epgCache.channelGroups.filter { group in
+                                epgCache.visibleChannels.contains { $0.groupId == group.id }
+                            }
+                            ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
+                                macSidebarGuideGroupSubRow(group: group)
+                            }
+                        } header: {
+                            macSidebarHeader(icon: tab.icon, label: tab.label)
+                        }
+                    } else {
+                        macSidebarRow(tab: tab)
+                    }
+                    #else
+                    macSidebarRow(tab: tab)
+                    #endif
                 } else {
                     macSidebarRow(tab: tab)
                 }
@@ -1850,6 +1882,58 @@ struct MacOSNavigation: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("recordings-series-menu")
     }
+
+    #if DISPATCHERPVR
+    private func macSidebarGuideAllRow() -> some View {
+        let isSelected = appState.selectedTab == .guide && appState.guideGroupFilter == nil
+        return Button {
+            appState.guideGroupFilter = nil
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .guide
+        } label: {
+            HStack {
+                Text("All Channels")
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("guide-all-channels")
+    }
+
+    private func macSidebarGuideGroupSubRow(group: ChannelGroup) -> some View {
+        let isSelected = appState.selectedTab == .guide && appState.guideGroupFilter == group.id
+        return Button {
+            appState.guideGroupFilter = group.id
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .guide
+        } label: {
+            HStack {
+                Text(group.name)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("guide-group-\(group.id)")
+    }
+    #endif
 
     private func macSidebarTopicManageRow() -> some View {
         let isSelected = appState.selectedTab == .topics && appState.showingKeywordsEditor
