@@ -488,7 +488,7 @@ struct IOSNavigation: View {
     // MARK: - Sidebar Content
 
     private func sidebarInner(safeArea: EdgeInsets) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack {
                 Text("Menu")
@@ -1057,7 +1057,7 @@ struct TVOSNavigation: View {
     // MARK: - Sidebar
 
     private var tvOSSidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Tab.tvOSTabs(userLevel: appState.userLevel)) { tab in
@@ -1132,7 +1132,8 @@ struct TVOSNavigation: View {
                                 icon: tab.icon,
                                 label: tab.label,
                                 item: .tab(tab),
-                                isSelected: appState.selectedTab == tab
+                                isSelected: appState.selectedTab == tab,
+                                isCompact: tab == .guide || tab == .settings
                             ) {
                                 appState.selectedTab = tab
                                 sidebarEnabled = false
@@ -1161,15 +1162,20 @@ struct TVOSNavigation: View {
         label: String,
         item: TVSidebarItem,
         isSelected: Bool,
+        isCompact: Bool = false,
         action: @escaping () -> Void,
         @ViewBuilder badge: () -> Badge
     ) -> some View {
-        Button(action: action) {
+        let indicatorHeight: CGFloat = isCompact ? 22 : 28
+        let verticalPadding: CGFloat = isCompact ? 6 : 10
+        let labelFont: Font = isCompact ? .tvSidebarCompact : .tvSidebar
+
+        return Button(action: action) {
             HStack(spacing: 14) {
                 // Selected indicator
                 RoundedRectangle(cornerRadius: 2)
                     .fill(isSelected ? Theme.accent : Color.clear)
-                    .frame(width: 4, height: 28)
+                    .frame(width: 4, height: indicatorHeight)
 
                 Image(systemName: icon)
                     .font(.title3)
@@ -1177,14 +1183,14 @@ struct TVOSNavigation: View {
                     .foregroundStyle(isSelected ? Theme.accent : .secondary)
 
                 Text(label)
-                    .font(.tvSidebar)
+                    .font(labelFont)
                     .lineLimit(1)
 
                 Spacer()
                 badge()
             }
             .padding(.trailing, Theme.spacingMD)
-            .padding(.vertical, 10)
+            .padding(.vertical, verticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.card)
@@ -1198,7 +1204,9 @@ struct TVOSNavigation: View {
         @ViewBuilder badge: () -> Badge,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let iconFont: Font = icon == "recordingtape" ? .tvSidebarRecordingIcon : .title3
+
+        return VStack(alignment: .leading, spacing: 0) {
             // Section header — plain HStack, aligned with sidebar rows
             HStack(spacing: 14) {
                 // Spacer matching the selected indicator width
@@ -1206,10 +1214,10 @@ struct TVOSNavigation: View {
                     .frame(width: 4, height: 1)
 
                 Image(systemName: icon)
-                    .font(.title3)
+                    .font(iconFont)
                     .frame(width: 44, alignment: .center)
 
-                Text(label.uppercased())
+                Text(label)
                     .font(.tvSidebarSection)
 
                 badge()
