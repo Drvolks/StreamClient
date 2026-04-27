@@ -458,6 +458,10 @@ extension Font {
     static let tvHeadline = Font.system(size: 32, weight: .semibold)
     static let tvBody = Font.system(size: 28, weight: .regular)
     static let tvCaption = Font.system(size: 24, weight: .regular)
+    static let tvSidebar = Font.system(size: 30, weight: .regular)
+    static let tvSidebarCompact = Font.system(size: 32, weight: .regular)
+    static let tvSidebarRecordingIcon = Font.system(size: 32, weight: .bold)
+    static let tvSidebarSection = Font.system(size: 32, weight: .regular)
     #endif
 }
 
