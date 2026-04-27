@@ -204,6 +204,12 @@ struct SettingsView: View {
                     }
                     .focusSection()
 
+                #if DISPATCHERPVR
+                    tvOSGuideSettingsSection
+                        .focusSection()
+
+                #endif
+
                 #if DEBUG
                     TVSettingsSection(
                         title: "Debug",
@@ -403,6 +409,107 @@ struct SettingsView: View {
         }
         .buttonStyle(TVSettingsRowButtonStyle())
     }
+
+    #if DISPATCHERPVR
+    private var tvOSGuideSettingsSection: some View {
+        TVSettingsSection(
+            title: "Guide",
+            icon: "rectangle.grid.1x2"
+        ) {
+            VStack(spacing: Theme.spacingMD) {
+                Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
+                    .font(.system(size: 24, weight: .semibold))
+                    .padding(.horizontal, Theme.spacingMD)
+                    .padding(.vertical, Theme.spacingSM)
+                    .background(Theme.guideNowPlaying.opacity(0.78))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+                    .onChange(of: guideShowGroupsInSidebar) { newValue in
+                        var prefs = UserPreferences.load()
+                        prefs.guideShowGroupsInSidebar = newValue
+                        prefs.save()
+                        if !newValue {
+                            appState.guideGroupFilter = nil
+                            appState.guideChannelFilter = ""
+                        }
+                        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                    }
+
+                if guideShowGroupsInSidebar {
+                    if epgCache.channelGroups.isEmpty {
+                        tvOSGuideStatusRow("No channel groups available")
+                    } else {
+                        let populatedGroups = epgCache.channelGroups.filter { group in
+                            epgCache.visibleChannels.contains { $0.groupId == group.id }
+                        }
+                        if populatedGroups.isEmpty {
+                            tvOSGuideStatusRow("No channels in any group")
+                        } else {
+                            Text("Included Groups")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(Theme.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, Theme.spacingMD)
+
+                            ForEach(populatedGroups) { group in
+                                tvOSGuideGroupToggleRow(group: group)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func tvOSGuideStatusRow(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 20, weight: .regular))
+            .foregroundStyle(Theme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.spacingMD)
+            .padding(.vertical, Theme.spacingMD)
+            .background(Theme.guideNowPlaying.opacity(0.78))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+    }
+
+    private func tvOSGuideGroupToggleRow(group: ChannelGroup) -> some View {
+        let isSelected = guideGroupIds.contains(group.id)
+
+        return Button {
+            if isSelected {
+                guideGroupIds.removeAll { $0 == group.id }
+            } else {
+                guideGroupIds.append(group.id)
+            }
+
+            var prefs = UserPreferences.load()
+            prefs.guideGroupIds = guideGroupIds
+            prefs.save()
+            if !guideGroupIds.isEmpty, appState.guideGroupFilter == group.id, !guideGroupIds.contains(group.id) {
+                appState.guideGroupFilter = nil
+                appState.guideChannelFilter = ""
+            }
+            NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+        } label: {
+            HStack(spacing: Theme.spacingMD) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+
+                Text(group.name)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, Theme.spacingMD)
+            .padding(.vertical, Theme.spacingMD)
+            .background(Theme.guideNowPlaying.opacity(0.78))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+        }
+        .buttonStyle(TVSettingsRowButtonStyle())
+    }
+    #endif
 
     private var serverSummaryValue: String {
         let host = client.config.displayAddress.isEmpty ? "Not configured" : client.config.displayAddress

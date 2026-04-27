@@ -969,6 +969,9 @@ struct TVOSNavigation: View {
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var epgCache: EPGCache
     @State private var sidebarEnabled = true
+    #if DISPATCHERPVR
+    @State private var guideSidebarPreferences = UserPreferences.load()
+    #endif
     @FocusState private var focusedItem: TVSidebarItem?
 
     private let sidebarWidth: CGFloat = 440
@@ -1035,7 +1038,15 @@ struct TVOSNavigation: View {
         .onAppear {
             focusedItem = preferredSidebarFocusItem()
             appState.topicKeywords = UserPreferences.load().keywords
+            #if DISPATCHERPVR
+            guideSidebarPreferences = UserPreferences.load()
+            #endif
         }
+        #if DISPATCHERPVR
+        .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
+            guideSidebarPreferences = UserPreferences.load()
+        }
+        #endif
         .onChange(of: focusedItem) { _, newItem in
             if newItem == nil {
                 // When sidebar loses focus, disable it so content can receive focus
@@ -1103,6 +1114,16 @@ struct TVOSNavigation: View {
                 return .topicKeyword(first)
             }
             return .topicManage
+        case .guide:
+            #if DISPATCHERPVR
+            if guideSidebarPreferences.guideShowGroupsInSidebar {
+                if let groupId = appState.guideGroupFilter {
+                    return .guideGroup(groupId)
+                }
+                return .guideAll
+            }
+            #endif
+            return .tab(.guide)
         default:
             return .tab(appState.selectedTab)
         }
@@ -1182,17 +1203,24 @@ struct TVOSNavigation: View {
                                 ) { EmptyView() }
                             }
                         } else if tab == .guide {
-                            // Guide — non-tappable header, with group sub-items below
-                            tvOSSidebarSection(icon: tab.icon, label: tab.label) {
-                                EmptyView()
-                            } content: {
-                                #if DISPATCHERPVR
-                                let prefs = UserPreferences.load()
-                                if prefs.guideShowGroupsInSidebar {
+                            #if DISPATCHERPVR
+                            if guideSidebarPreferences.guideShowGroupsInSidebar {
+                                // Guide section with an "All" row plus optional group shortcuts.
+                                tvOSSidebarSection(icon: tab.icon, label: tab.label) {
+                                    EmptyView()
+                                } content: {
+                                    tvOSSidebarSubRow(
+                                        label: "All Channels",
+                                        item: .guideAll,
+                                        isSelected: appState.selectedTab == .guide && appState.guideGroupFilter == nil
+                                    ) {
+                                        EmptyView()
+                                    }
+
                                     let populatedGroups = epgCache.channelGroups.filter { group in
                                         epgCache.visibleChannels.contains { $0.groupId == group.id }
                                     }
-                                    ForEach(populatedGroups.filter { prefs.guideGroupIds.isEmpty || prefs.guideGroupIds.contains($0.id) }) { group in
+                                    ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
                                         tvOSSidebarSubRow(
                                             label: group.name,
                                             item: .guideGroup(group.id),
@@ -1202,8 +1230,34 @@ struct TVOSNavigation: View {
                                         }
                                     }
                                 }
-                                #endif
+                            } else {
+                                tvOSSidebarRow(
+                                    icon: tab.icon,
+                                    label: tab.label,
+                                    item: .tab(tab),
+                                    isSelected: appState.selectedTab == tab,
+                                    isCompact: true
+                                ) {
+                                    appState.guideGroupFilter = nil
+                                    appState.guideChannelFilter = ""
+                                    appState.selectedTab = tab
+                                    sidebarEnabled = false
+                                    focusedItem = nil
+                                } badge: { tvOSSidebarBadge(for: tab) }
                             }
+                            #else
+                            tvOSSidebarRow(
+                                icon: tab.icon,
+                                label: tab.label,
+                                item: .tab(tab),
+                                isSelected: appState.selectedTab == tab,
+                                isCompact: true
+                            ) {
+                                appState.selectedTab = tab
+                                sidebarEnabled = false
+                                focusedItem = nil
+                            } badge: { tvOSSidebarBadge(for: tab) }
+                            #endif
                         } else {
                             tvOSSidebarRow(
                                 icon: tab.icon,
@@ -1336,6 +1390,16 @@ struct TVOSNavigation: View {
             case .topicManage:
                 appState.showingKeywordsEditor = true
                 appState.selectedTab = .topics
+            #if DISPATCHERPVR
+            case .guideAll:
+                appState.guideGroupFilter = nil
+                appState.guideChannelFilter = ""
+                appState.selectedTab = .guide
+            case .guideGroup(let groupId):
+                appState.guideGroupFilter = groupId
+                appState.guideChannelFilter = ""
+                appState.selectedTab = .guide
+            #endif
             default:
                 break
             }
@@ -1385,6 +1449,8 @@ struct TVOSNavigation: View {
         case .topicManage:
             return "topic-manage"
         #if DISPATCHERPVR
+        case .guideAll:
+            return "guide-all"
         case .guideGroup(let groupId):
             return "guide-group-\(groupId)"
         #endif
@@ -1441,6 +1507,7 @@ enum TVSidebarItem: Hashable {
     case topicKeyword(String)
     case topicManage
     #if DISPATCHERPVR
+    case guideAll
     case guideGroup(Int)
     #endif
 }
