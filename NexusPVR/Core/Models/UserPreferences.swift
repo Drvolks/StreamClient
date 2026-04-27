@@ -19,6 +19,8 @@ nonisolated struct UserPreferences: Codable {
     var subtitleSize: SubtitleSize = .medium
     var subtitleBackground: Bool = true
     var preferredSubtitleLanguage: String? = nil
+    var guideShowGroupsInSidebar: Bool = false
+    var guideGroupIds: [Int] = []
     var updatedAt: Date = .distantPast
 
     /// The GPU API for the current platform.
@@ -46,6 +48,8 @@ nonisolated struct UserPreferences: Codable {
         case subtitleSize
         case subtitleBackground
         case preferredSubtitleLanguage
+        case guideShowGroupsInSidebar
+        case guideGroupIds
         case updatedAt
     }
 
@@ -71,6 +75,8 @@ nonisolated struct UserPreferences: Codable {
         subtitleSize = try container.decodeIfPresent(SubtitleSize.self, forKey: .subtitleSize) ?? .medium
         subtitleBackground = try container.decodeIfPresent(Bool.self, forKey: .subtitleBackground) ?? true
         preferredSubtitleLanguage = try container.decodeIfPresent(String.self, forKey: .preferredSubtitleLanguage)
+        guideShowGroupsInSidebar = try container.decodeIfPresent(Bool.self, forKey: .guideShowGroupsInSidebar) ?? false
+        guideGroupIds = try container.decodeIfPresent([Int].self, forKey: .guideGroupIds) ?? []
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
@@ -87,6 +93,8 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(subtitleSize, forKey: .subtitleSize)
         try container.encode(subtitleBackground, forKey: .subtitleBackground)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
+        try container.encode(guideShowGroupsInSidebar, forKey: .guideShowGroupsInSidebar)
+        try container.encode(guideGroupIds, forKey: .guideGroupIds)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 

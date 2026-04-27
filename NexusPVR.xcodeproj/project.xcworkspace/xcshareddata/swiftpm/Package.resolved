@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Drvolks/MPVKit",
       "state" : {
-        "revision" : "a625a03c8c74e9b55857cf50f49e7ef652b6e4bb",
+        "revision" : "1de0ac9c1603036702213321773c7c94d0fd8ac7",
         "version" : "0.41.0-drvolks.6"
       }
     }

@@ -101,14 +101,12 @@ struct GuideView: View {
                 keywords = UserPreferences.load().keywords
                 await viewModel.loadData(using: client, epgCache: epgCache)
                 viewModel.updateKeywordMatches(keywords: keywords)
-                #if !os(tvOS)
                 if !appState.guideChannelFilter.isEmpty {
                     viewModel.channelSearchText = appState.guideChannelFilter
                 }
                 if let groupId = appState.guideGroupFilter {
                     viewModel.selectedGroupId = groupId
                 }
-                #endif
             }
             .onChange(of: viewModel.channelSearchText) {
                 Task { viewModel.updateKeywordMatches(keywords: keywords) }
@@ -116,14 +114,12 @@ struct GuideView: View {
             .onChange(of: epgCache.isFullyLoaded) {
                 Task { viewModel.updateKeywordMatches(keywords: keywords) }
             }
-            #if !os(tvOS)
             .onChange(of: appState.guideChannelFilter) {
                 Task { viewModel.channelSearchText = appState.guideChannelFilter }
             }
             .onChange(of: appState.guideGroupFilter) {
                 Task { viewModel.selectedGroupId = appState.guideGroupFilter }
             }
-            #endif
             .onChange(of: scenePhase) {
                 if scenePhase == .active {
                     Task { await refreshRecordings() }
