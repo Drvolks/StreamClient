@@ -539,9 +539,16 @@ struct PlayerView: View {
                 }
             }
         }
-        .onChange(of: isPlaying) { _ in
+        .onChange(of: isPlaying) { newValue in
             if !isPlaying {
                 savePlaybackPosition()
+                #if os(macOS)
+                enableScreenSaver()
+                #endif
+            } else {
+                #if os(macOS)
+                disableScreenSaver()
+                #endif
             }
         }
         .task(id: isPlayerReady) {
