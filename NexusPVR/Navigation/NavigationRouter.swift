@@ -557,15 +557,25 @@ struct IOSNavigation: View {
                                 sidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
                             }
                         } else if tab == .guide {
-                            // Guide header (non-tappable on iOS sidebar)
-                            sidebarRow(
-                                icon: tab.icon,
-                                label: tab.label,
-                                isSelected: appState.selectedTab == .guide,
-                                badge: { sidebarTabBadge(for: tab) }
-                            )
-                            .foregroundStyle(Theme.textSecondary)
-
+                            // Guide header (tappable) + optional group sub-items
+                            Button {
+                                #if DISPATCHERPVR
+                                appState.guideGroupFilter = nil
+                                appState.guideChannelFilter = ""
+                                #endif
+                                appState.selectedTab = .guide
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    isSidebarOpen = false
+                                }
+                            } label: {
+                                sidebarRow(
+                                    icon: tab.icon,
+                                    label: tab.label,
+                                    isSelected: appState.selectedTab == .guide,
+                                    badge: { sidebarTabBadge(for: tab) }
+                                )
+                            }
+                            .accessibilityIdentifier("tab-\(tab.rawValue)")
 
                             // Group sub-items (Dispatcharr only)
                             #if DISPATCHERPVR
