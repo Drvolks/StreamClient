@@ -225,10 +225,6 @@ struct CalendarView: View {
                 .environmentObject(client)
                 .environmentObject(appState)
             }
-            #if os(iOS)
-            .presentationDetents([.large])
-            .modifier(IOSCalendarPresentationSizingCompat())
-            #endif
         }
         .task {
             await loadScheduledRecordings()
@@ -650,19 +646,6 @@ struct CalendarView: View {
         }
     }
 }
-
-#if os(iOS)
-private struct IOSCalendarPresentationSizingCompat: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.presentationSizing(.page)
-        } else {
-            content
-        }
-    }
-}
-#endif
 
 /// Standalone calendar tab for macOS sidebar — loads its own topic data
 struct CalendarTabView: View {

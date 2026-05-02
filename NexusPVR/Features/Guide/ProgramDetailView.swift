@@ -26,6 +26,10 @@ struct ProgramDetailView: View {
     @State private var recurringParentId: Int?
     @State private var completedRecording: Recording?
     @State private var didChangeRecording = false
+    #if os(iOS)
+    @State private var selectedDetent: PresentationDetent
+    @State private var measuredContentHeight: CGFloat = 0
+    #endif
 
     var onRecordingChanged: (() -> Void)? = nil
 
@@ -36,6 +40,9 @@ struct ProgramDetailView: View {
         _isScheduled = State(initialValue: initialRecordingId != nil)
         _existingRecordingId = State(initialValue: initialRecordingId)
         _completedRecording = State(initialValue: initialCompletedRecording)
+        #if os(iOS)
+        _selectedDetent = State(initialValue: .large)
+        #endif
     }
 
     var body: some View {
@@ -51,55 +58,19 @@ struct ProgramDetailView: View {
             .task {
                 await checkIfScheduled()
             }
+        #elseif os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            iPadSheetContent
+        } else {
+            iPhoneSheetContent
+        }
         #else
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.spacingMD) {
-                    #if os(macOS)
-                    HStack {
-                        Spacer()
-                        Button("Done") { dismiss() }
-                            .keyboardShortcut(.cancelAction)
-                    }
-                    #endif
-                    // Content area with sport icon behind
-                    ZStack(alignment: .trailing) {
-                        // Sport icon background
-                        if let sport = SportDetector.detect(from: program) {
-                            Image(systemName: sport.sfSymbol)
-                                .font(.system(size: 200))
-                                .foregroundStyle(Theme.textTertiary.opacity(0.15))
-                        }
-
-                        VStack(alignment: .leading, spacing: Theme.spacingMD) {
-                            headerSection
-                            infoSection
-                            if let desc = program.desc, !desc.isEmpty {
-                                descriptionSection(desc)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    actionSection
-                }
-                .padding()
-                .padding(.bottom, Theme.spacingLG)
+                programDetailContent
             }
             .background(Theme.background)
-            #if os(macOS)
             .fixedSize(horizontal: false, vertical: true)
-            #endif
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            #if !os(macOS)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            #endif
             .alert("Error", isPresented: .constant(scheduleError != nil)) {
                 Button("OK") { scheduleError = nil }
             } message: {
@@ -108,18 +79,143 @@ struct ProgramDetailView: View {
                 }
             }
         }
-        #if os(macOS)
-        .frame(minWidth: 500, idealWidth: 560, maxWidth: 700)
+        .frame(minWidth: 320, idealWidth: 460, maxWidth: 700)
         .fixedSize(horizontal: false, vertical: true)
-        #endif
-        #if os(iOS)
-        .presentationDetents([.large])
-        .modifier(IOSPresentationSizingCompat())
-        #endif
         .task {
             await checkIfScheduled()
         }
         #endif
+    }
+
+    #if os(iOS)
+    private var iPadSheetContent: some View {
+        let screenHeight = UIScreen.main.bounds.height
+
+        return VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal)
+            }
+            .padding(.top, 8)
+
+            Divider()
+
+            Group {
+                if measuredContentHeight > screenHeight * 0.85 {
+                    ScrollView {
+                        programDetailContent
+                    }
+                } else {
+                    programDetailContent
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Theme.background)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: ProgramDetailFullHeightPreferenceKey.self, value: proxy.size.height)
+            }
+        )
+        .alert("Error", isPresented: .constant(scheduleError != nil)) {
+            Button("OK") { scheduleError = nil }
+        } message: {
+            if let error = scheduleError {
+                Text(error)
+            }
+        }
+        .presentationDetents(Set([detentHeight, .large]), selection: $selectedDetent)
+        .modifier(IOSPresentationSizingCompat())
+        .onChange(of: isScheduled) { resizeiPadDetent() }
+        .onChange(of: isSeriesScheduled) { resizeiPadDetent() }
+        .onChange(of: completedRecording?.id) { resizeiPadDetent() }
+        .onPreferenceChange(ProgramDetailFullHeightPreferenceKey.self) { fullHeight in
+            measuredContentHeight = fullHeight
+            resizeiPadDetent()
+        }
+        .task {
+            await checkIfScheduled()
+        }
+    }
+
+    private var detentHeight: PresentationDetent {
+        let h = measuredContentHeight > 0 ? measuredContentHeight : UIScreen.main.bounds.height
+        return .height(min(h, UIScreen.main.bounds.height * 0.88))
+    }
+
+    private func resizeiPadDetent() {
+        let screenHeight = UIScreen.main.bounds.height
+        let cap = screenHeight * 0.88
+        if measuredContentHeight > cap {
+            selectedDetent = .large
+        } else if measuredContentHeight > 0 {
+            selectedDetent = .height(measuredContentHeight)
+        }
+    }
+
+    private var iPhoneSheetContent: some View {
+        NavigationStack {
+            ScrollView {
+                programDetailContent
+            }
+            .background(Theme.background)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .alert("Error", isPresented: .constant(scheduleError != nil)) {
+                Button("OK") { scheduleError = nil }
+            } message: {
+                if let error = scheduleError {
+                    Text(error)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .modifier(IOSPresentationSizingCompat())
+        .task {
+            await checkIfScheduled()
+        }
+    }
+    #endif
+
+    private var programDetailContent: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingMD) {
+            #if os(macOS)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            #endif
+            // Content area with sport icon behind
+            ZStack(alignment: .trailing) {
+                // Sport icon background
+                if let sport = SportDetector.detect(from: program) {
+                    Image(systemName: sport.sfSymbol)
+                        .font(.system(size: 200))
+                        .foregroundStyle(Theme.textTertiary.opacity(0.15))
+                }
+
+                VStack(alignment: .leading, spacing: Theme.spacingMD) {
+                    headerSection
+                    infoSection
+                    if let desc = program.desc, !desc.isEmpty {
+                        descriptionSection(desc)
+                    }
+                }
+                .frame(maxWidth: 700, alignment: .leading)
+            }
+
+            actionSection
+        }
+        .padding()
+        .padding(.bottom, Theme.spacingLG)
     }
 
     #if os(tvOS)
@@ -788,16 +884,27 @@ struct ProgramDetailView: View {
 }
 
 #if os(iOS)
+private struct ProgramDetailFullHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+#endif
+
+#if os(iOS)
 private struct IOSPresentationSizingCompat: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
+        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom != .pad {
             content.presentationSizing(.page)
         } else {
             content
         }
     }
 }
+
 #endif
 
 #if os(tvOS)
