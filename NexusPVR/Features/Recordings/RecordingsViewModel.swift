@@ -1247,7 +1247,10 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     func playRecording(_ recording: Recording) async throws -> URL {
-        try await client.recordingStreamURL(recordingId: recording.id)
+        if recording.recordingStatus == .recording {
+            return try await client.hlsStreamURL(recordingId: recording.id)
+        }
+        return try await client.recordingStreamURL(recordingId: recording.id)
     }
 
     func resetPlaybackPosition(for recordingId: Int) {

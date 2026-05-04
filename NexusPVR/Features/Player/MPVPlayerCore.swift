@@ -21,6 +21,10 @@ import OpenGLES
 #endif
 
 nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
+    #if DISPATCHERPVR
+    nonisolated(unsafe) static var streamHeaders: [String: String] = [:]
+    #endif
+
     /// Helper to schedule work safely onto the main dispatch queue from any thread (including mpv render callbacks).
     /// Uses DispatchQueue.main.async to satisfy queue-assertion APIs (e.g. OpenGL) that crash on non-main-queue invocation.
     internal nonisolated static func scheduleOnMain(_ closure: @MainActor @escaping () -> Void) {
@@ -700,6 +704,15 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             applyLiveHLSProfileIfNeeded(mpv: mpv)
         }
         print("MPV: Loading URL: \(urlString)")
+
+        #if DISPATCHERPVR
+        let headers = Self.streamHeaders
+        if !headers.isEmpty {
+            let headerString = headers.map { "\($0.key): \($0.value)" }.joined(separator: "\r\n")
+            mpv_set_option_string(mpv, "http-header-fields", headerString)
+            print("MPV: Set http-header-fields \(headerString)")
+        }
+        #endif
 
         // Fix TS timing issues (genpts regenerates PTS, igndts ignores broken DTS)
         if url.pathExtension.lowercased() == "ts" {

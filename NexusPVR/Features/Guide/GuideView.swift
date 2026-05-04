@@ -1594,22 +1594,23 @@ struct GuideView: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     if program.isCurrentlyAiring, let recId = viewModel.activeRecordingId(for: program, channelId: channel.id) {
-                        #if !DISPATCHERPVR
-                        let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
                         Button {
                             Task {
                                 do {
-                                    let url = try await client.recordingStreamURL(recordingId: recId)
-                                    appState.playStream(url: url, title: program.name, recordingId: recId)
+                                    let url: URL
+                                    #if DISPATCHERPVR
+                                    url = try await client.hlsStreamURL(recordingId: recId)
+                                    #else
+                                    url = try await client.recordingStreamURL(recordingId: recId)
+                                    #endif
+                                    appState.playStream(url: url, title: program.name, recordingId: recId, isRecordingInProgress: true)
                                 } catch {
                                     streamError = error.localizedDescription
                                 }
                             }
                         } label: {
-                            Label(canPlay ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)", systemImage: "play.fill")
+                            Label("Watch from Beginning", systemImage: "play.fill")
                         }
-                        .disabled(!canPlay)
-                        #endif
 
                         Button {
                             playLiveChannel(channel)

@@ -13,7 +13,12 @@ struct RecordingDetailView: View {
     @EnvironmentObject private var appState: AppState
 
     let recording: Recording
+    #if DISPATCHERPVR
+    @State private var hlsStreamAvailable = false
+    private var canPlayInProgress: Bool { hlsStreamAvailable }
+    #else
     private var canPlayInProgress: Bool { UserPreferences.load().currentGPUAPI == .pixelbuffer }
+    #endif
 
     @State private var isDeleting = false
     @State private var deleteError: String?
@@ -40,6 +45,7 @@ struct RecordingDetailView: View {
     var body: some View {
         #if os(tvOS)
         tvOSContent
+            .task(loadHLSStatus)
             .alert("Error", isPresented: .constant(deleteError != nil)) {
                 Button("OK") { deleteError = nil }
             } message: {
@@ -48,13 +54,17 @@ struct RecordingDetailView: View {
                 }
             }
         #elseif os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            iPadSheetContent
-        } else {
-            iPhoneSheetContent
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                iPadSheetContent
+            } else {
+                iPhoneSheetContent
+            }
         }
+        .task(loadHLSStatus)
         #else
         macOSContent
+            .task(loadHLSStatus)
         #endif
     }
 
@@ -268,7 +278,7 @@ struct RecordingDetailView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "play.fill")
-                                    Text(canPlayInProgress ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)")
+                                    Text(canPlayInProgressText("Play from Beginning"))
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -281,7 +291,7 @@ struct RecordingDetailView: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: "arrow.clockwise")
-                                        Text(canPlayInProgress ? "Resume" : "Resume (requires PixelBuffer)")
+                                        Text(canPlayInProgressText("Resume"))
                                     }
                                     .frame(maxWidth: .infinity)
                                 }
@@ -503,13 +513,12 @@ struct RecordingDetailView: View {
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
             if recording.recordingStatus == .recording {
-                #if !DISPATCHERPVR
                 Button {
                     playFromBeginning()
                 } label: {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text(canPlayInProgress ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)")
+                        Text(canPlayInProgressText("Play from Beginning"))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -522,14 +531,13 @@ struct RecordingDetailView: View {
                     } label: {
                         HStack {
                             Image(systemName: "arrow.clockwise")
-                            Text(canPlayInProgress ? "Resume" : "Resume (requires PixelBuffer)")
+                            Text(canPlayInProgressText("Resume"))
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(AccentButtonStyle())
                     .disabled(!canPlayInProgress)
                 }
-                #endif
 
                 if recording.channelId != nil {
                     Button {
@@ -624,6 +632,25 @@ struct RecordingDetailView: View {
     private var statusColor: Color {
         recording.recordingStatus.statusColor
     }
+
+    private func canPlayInProgressText(_ label: String) -> String {
+        #if DISPATCHERPVR
+        canPlayInProgress ? label : "\(label) (HLS unavailable)"
+        #else
+        canPlayInProgress ? label : "\(label) (requires PixelBuffer)"
+        #endif
+    }
+
+    #if DISPATCHERPVR
+    @Sendable
+    private func loadHLSStatus() async {
+        guard recording.recordingStatus == .recording else { return }
+        hlsStreamAvailable = (try? await client.hasHLSRecordingStream(recordingId: recording.id)) ?? false
+    }
+    #else
+    @Sendable
+    private func loadHLSStatus() async {}
+    #endif
 
     private func playRecording() {
         if recording.isWatched {

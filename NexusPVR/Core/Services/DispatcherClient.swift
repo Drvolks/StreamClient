@@ -1514,6 +1514,46 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return url
     }
 
+    func hlsStreamURL(recordingId: Int) async throws -> URL {
+        guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
+        if !isAuthenticated {
+            try await authenticate()
+        }
+
+        guard let url = URL(string: "\(baseURL)/api/channels/recordings/\(recordingId)/hls/index.m3u8") else {
+            throw PVRClientError.invalidResponse
+        }
+
+        return url
+    }
+
+    func hasHLSRecordingStream(recordingId: Int) async throws -> Bool {
+        guard !config.isDemoMode else { return false }
+        if !isAuthenticated {
+            try await authenticate()
+        }
+
+        guard let url = URL(string: "\(baseURL)/api/channels/recordings/\(recordingId)/hls/index.m3u8") else {
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        let headers = streamAuthHeaders()
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            return (200...399).contains(httpResponse.statusCode)
+        } catch {
+            return false
+        }
+    }
+
     func streamAuthHeaders() -> [String: String] {
         guard let token = accessToken else { return [:] }
         if useApiKeyAuth {

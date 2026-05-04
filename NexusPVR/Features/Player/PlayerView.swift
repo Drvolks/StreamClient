@@ -110,6 +110,9 @@ struct PlayerView: View {
     }
 
     var body: some View {
+        #if DISPATCHERPVR
+        let _ = MPVPlayerCore.streamHeaders = client.streamAuthHeaders()
+        #endif
         ZStack {
             // MPV Video player
             #if os(tvOS)

@@ -33,6 +33,8 @@ protocol PVRClientProtocol: ObservableObject {
     func setRecordingPosition(recordingId: Int, positionSeconds: Int) async throws
     func liveStreamURL(channelId: Int) async throws -> URL
     func recordingStreamURL(recordingId: Int) async throws -> URL
+    func hlsStreamURL(recordingId: Int) async throws -> URL
+    func hasHLSRecordingStream(recordingId: Int) async throws -> Bool
     func streamAuthHeaders() -> [String: String]
     func channelIconURL(channelId: Int) throws -> URL?
     func recordingArtworkURL(recordingId: Int, fanart: Bool) -> URL?
@@ -46,5 +48,13 @@ extension PVRClientProtocol {
 
     func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
         try await getAllListings(for: channels)
+    }
+
+    func hlsStreamURL(recordingId: Int) async throws -> URL {
+        try await recordingStreamURL(recordingId: recordingId)
+    }
+
+    func hasHLSRecordingStream(recordingId: Int) async throws -> Bool {
+        true
     }
 }
