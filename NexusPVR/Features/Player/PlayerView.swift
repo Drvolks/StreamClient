@@ -1486,14 +1486,14 @@ struct PlayerView: View {
             .filter { !$0.isEmpty }
 
             if let matched = candidates.first(where: { channel in
-                names.contains(where: { matchesStreamName(channel.streamName, $0) })
+                names.contains(where: { matchesStreamName(channel.displayName, $0) })
             }) {
-                return shortDispatchProfileName(from: matched.m3uProfileName)
+                return matched.profileLabel
             }
 
             // If only one active stream exists, use its profile as a fallback.
             if candidates.count == 1 {
-                return shortDispatchProfileName(from: candidates[0].m3uProfileName)
+                return candidates[0].profileLabel
             }
         } catch {
             return nil
@@ -1516,13 +1516,6 @@ struct PlayerView: View {
             .joined()
     }
 
-    private func shortDispatchProfileName(from profile: String?) -> String? {
-        guard let profile else { return nil }
-        let shortProfile = profile
-            .replacingOccurrences(of: "Default", with: "")
-            .trimmingCharacters(in: .whitespaces)
-        return shortProfile.isEmpty ? nil : shortProfile
-    }
     #endif
 
 

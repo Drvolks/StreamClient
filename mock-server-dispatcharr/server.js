@@ -438,6 +438,52 @@ function hslToRgb(h, s, l) {
 }
 
 // ---------------------------------------------------------------------------
+// Mock Proxy Status (0.24.0+ shape)
+// ---------------------------------------------------------------------------
+
+function generateMockProxyStatus() {
+  // Pick a few channels to simulate as active proxy streams
+  const active = CHANNELS.slice(0, Math.min(5, CHANNELS.length));
+  const now = Date.now() / 1000; // epoch seconds
+
+  return active.map((ch, i) => ({
+    channel_id: `00000000-0000-0000-0000-${String(ch.id).padStart(12, "0")}`,
+    state: i < 3 ? "active" : "idle",
+    url: `http://localhost:${PORT}/proxy/ts/stream/${ch.id}`,
+    stream_profile: String((i % 3) + 1),
+    owner: "",
+    buffer_index: 400 + i * 10,
+    client_count: i < 3 ? 1 : 0,
+    uptime: 60 + i * 30,
+    channel_name: `${ch.name} (${ch.number})`,
+    stream_id: 340000 + ch.id,
+    total_bytes: (100 + i * 50) * 1024 * 1024,
+    avg_bitrate_kbps: 9574.21 - i * 1000,
+    avg_bitrate: `${(9.57 - i).toFixed(2)} Mbps`,
+    healthy: i < 3,
+    clients: i < 3
+      ? [
+          {
+            client_id: `client_${i + 1}`,
+            user_agent: "Dispatcharr-DVR/recording-173",
+            ip_address: `127.0.0.${i + 2}`,
+            connected_at: now - (i * 120),
+            user_id: "0",
+          },
+        ]
+      : [],
+    m3u_profile_id: 7,
+    video_codec: "h264",
+    resolution: i === 0 ? "1920x1080" : i === 1 ? "1280x720" : "720x480",
+    source_fps: 50 - i * 5,
+    ffmpeg_speed: 1.16,
+    audio_codec: "eac3",
+    audio_channels: i === 0 ? "5.1" : "2.0",
+    stream_type: "mpegts",
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Pagination
 // ---------------------------------------------------------------------------
 
@@ -590,9 +636,10 @@ function handleRequest(req, res) {
     return json(res, { detail: "Mock server does not provide streams." }, 404);
   }
 
-  // Proxy status
+  // Proxy status (0.24.0+ shape)
   if (path === "/proxy/ts/status") {
-    return json(res, { count: 0, channels: [] });
+    const proxyChannels = generateMockProxyStatus();
+    return json(res, { count: proxyChannels.length, channels: proxyChannels });
   }
 
   notFound(res);

@@ -327,12 +327,9 @@ struct ChannelStatusCard: View {
     }
 
     private var displayName: String {
-        guard let profile = channel.m3uProfileName else { return channel.streamName }
-        let shortProfile = profile
-            .replacingOccurrences(of: "Default", with: "")
-            .trimmingCharacters(in: .whitespaces)
-        if shortProfile.isEmpty { return channel.streamName }
-        return "\(channel.streamName) [\(shortProfile)]"
+        let name = channel.displayName
+        guard let profile = channel.profileLabel else { return name }
+        return "\(name) [\(profile)]"
     }
 
     private var codecString: String {
@@ -427,7 +424,7 @@ struct ClientRow: View {
                     .lineLimit(1)
             }
             Spacer()
-            if let since = client.connectedSince {
+            if let since = client.connectedTime {
                 Text(formatDuration(since))
                     .font(.caption)
                     .foregroundStyle(Theme.accent)
