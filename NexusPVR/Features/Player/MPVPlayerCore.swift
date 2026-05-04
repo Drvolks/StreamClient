@@ -40,6 +40,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     let recordingMonitor = MPVRecordingMonitor()
     var isRecordingInProgress = false
+    var recordingStartTime: Date?
     private var lastCodec: String?
     private var lastHeight: Int?
     private var lastHwdec: String?
@@ -48,6 +49,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var currentURLPath: String?
     private var currentURL: URL?
     private var sourceURL: URL?
+    private var streamHeaders: [String: String] = [:]
     private var lastPlaybackError: String?
     private var hasTriedMasterPlaylistFallback = false
     private var masterVariantCandidates: [URL] = []
@@ -256,12 +258,19 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     func seek(seconds: Int) {
         guard let mpv = mpv else { return }
         var actualSeconds = seconds
-        // Clamp forward seeks to the reported duration (which has 15s margin)
-        if isRecordingInProgress && seconds > 0 && reportedDuration > 0 {
-            let position = getTimePosition()
-            let maxSeek = Int(reportedDuration - position)
-            if maxSeek <= 0 { return }
-            actualSeconds = min(seconds, maxSeek)
+        if isRecordingInProgress {
+            let mpvDuration = getDuration()
+            if mpvDuration > 0 {
+                let position = getTimePosition()
+                if seconds > 0 {
+                    let maxSeek = Int(mpvDuration - position)
+                    if maxSeek <= 0 { return }
+                    actualSeconds = min(seconds, maxSeek)
+                } else if seconds < 0 {
+                    let minSeek = Int(-position)
+                    actualSeconds = max(seconds, minSeek)
+                }
+            }
         }
         let command = "seek \(actualSeconds) relative"
         let result = mpv_command_string(mpv, command)
@@ -273,9 +282,14 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     func seekTo(position: Double) {
         guard let mpv = mpv else { return }
         var target = position
-        // Clamp to the reported duration (which has 15s margin)
-        if isRecordingInProgress && reportedDuration > 0 {
-            target = min(target, reportedDuration)
+        // Clamp to mpv's actual available duration, not the UI-reported
+        // duration. HLS streams only have a small segment window available
+        // even though the display shows the full recording length.
+        if isRecordingInProgress {
+            let mpvDuration = getDuration()
+            if mpvDuration > 0 {
+                target = min(target, mpvDuration)
+            }
         }
         let command = "seek \(target) absolute"
         let result = mpv_command_string(mpv, command)
@@ -478,9 +492,10 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         ))
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) -> Bool {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) -> Bool {
         self.errorBinding = errorBinding
         self.isRecordingInProgress = isRecordingInProgress
+        self.recordingStartTime = recordingStartTime
 
         // Create MPV
         mpv = mpv_create()
@@ -600,13 +615,14 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         mpv_set_option_string(mpv, "network-timeout", "30")
         mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3")
         if isRecordingInProgress {
-            // Growing file: when the stream hits EOF, close and reopen the
-            // HTTP connection to get a fresh Content-Length with new data.
-            // Combined with demuxer-force-retry-eof, this lets mpv seamlessly
-            // play a file that's still being written to.
-            mpv_set_option_string(mpv, "stream-lavf-growing-file", "yes")
+            // Demuxer retries on EOF so playback continues past the current
+            // write edge (TS recordings). Harmless for HLS (native handling).
             mpv_set_option_string(mpv, "demuxer-force-retry-eof", "yes")
             mpv_set_option_string(mpv, "cache-pause-initial", "no")
+            // HLS live playlists are marked non-seekable by the demuxer.
+            // Force-seekable enables seeking within the available segment
+            // window for in-progress recordings.
+            mpv_set_option_string(mpv, "force-seekable", "yes")
         }
 
         // Audio
@@ -680,6 +696,11 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         loadURL(url, isFallbackAttempt: false)
     }
 
+    func setStreamHeaders(_ headers: [String: String]) {
+        streamHeaders = headers
+        applyHTTPHeaders()
+    }
+
     private func loadURL(_ url: URL, isFallbackAttempt: Bool) {
         guard let mpv = mpv else {
             print("MPV: No context available")
@@ -699,16 +720,21 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         if isLikelyUnstableLiveHLS(url) {
             applyLiveHLSProfileIfNeeded(mpv: mpv)
         }
+        applyHTTPHeaders()
         print("MPV: Loading URL: \(urlString)")
 
-        // Fix TS timing issues (genpts regenerates PTS, igndts ignores broken DTS)
         if url.pathExtension.lowercased() == "ts" {
             mpv_set_property_string(mpv, "demuxer-lavf-o", "fflags=+genpts+igndts")
+            if isRecordingInProgress {
+                mpv_set_property_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3,growing_file=1")
+            }
+        } else if isRecordingInProgress && url.pathExtension.lowercased() == "m3u8" {
+            mpv_set_property_string(mpv, "demuxer-lavf-o", "live_start_index=0")
+            mpv_set_property_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3")
         } else {
             mpv_set_property_string(mpv, "demuxer-lavf-o", "")
         }
 
-        // Use mpv_command_string for simpler string-based command
         let command = "loadfile \"\(urlString)\" replace"
         let result = mpv_command_string(mpv, command)
         if result < 0 {
@@ -717,6 +743,14 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         } else {
             print("MPV: loadfile command sent successfully")
         }
+    }
+
+    private func applyHTTPHeaders() {
+        guard let mpv else { return }
+        let headerString = streamHeaders
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: ",")
+        mpv_set_property_string(mpv, "http-header-fields", headerString)
     }
 
     func play() {

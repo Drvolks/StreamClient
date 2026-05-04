@@ -106,9 +106,9 @@ class MPVPlayerMetalView: UIView {
         }
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
             return
         }
         if let metalLayer = metalLayer {
@@ -127,6 +127,10 @@ class MPVPlayerMetalView: UIView {
 
     func loadURL(_ url: URL) {
         player?.loadURL(url)
+    }
+
+    func setStreamHeaders(_ headers: [String: String]) {
+        player?.setStreamHeaders(headers)
     }
 
     func play() {

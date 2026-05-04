@@ -31,6 +31,7 @@ struct PlayerView: View {
     let recordingId: Int?
     let resumePosition: Int?
     let isRecordingInProgress: Bool
+    let recordingStartTime: Date?
 
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
@@ -97,6 +98,7 @@ struct PlayerView: View {
         recordingId: Int? = nil,
         resumePosition: Int? = nil,
         isRecordingInProgress: Bool = false,
+        recordingStartTime: Date? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
         networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     ) {
@@ -105,6 +107,7 @@ struct PlayerView: View {
         self.recordingId = recordingId
         self.resumePosition = resumePosition
         self.isRecordingInProgress = isRecordingInProgress
+        self.recordingStartTime = recordingStartTime
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
     }
@@ -125,6 +128,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                recordingStartTime: recordingStartTime,
+                streamHeaders: client.streamAuthHeaders(),
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
@@ -207,6 +212,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                recordingStartTime: recordingStartTime,
+                streamHeaders: client.streamAuthHeaders(),
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
@@ -257,6 +264,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                recordingStartTime: recordingStartTime,
+                streamHeaders: client.streamAuthHeaders(),
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
                     savePlaybackPosition()
@@ -683,9 +692,7 @@ struct PlayerView: View {
                 Button {
                     seekBackward?()
                 } label: {
-                    Image(systemName: "gobackward.\(seekBackwardTime)")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.white)
+                    playerControlIcon(systemName: "gobackward.\(seekBackwardTime)", size: 40)
                 }
                 .buttonStyle(.plain)
             }
@@ -694,9 +701,7 @@ struct PlayerView: View {
             Button {
                 isPlaying.toggle()
             } label: {
-                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.white)
+                playerControlIcon(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill", size: 64)
             }
             .buttonStyle(.plain)
 
@@ -705,13 +710,25 @@ struct PlayerView: View {
                 Button {
                     seekForward?()
                 } label: {
-                    Image(systemName: "goforward.\(seekForwardTime)")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.white)
+                    playerControlIcon(systemName: "goforward.\(seekForwardTime)", size: 40)
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func playerControlIcon(systemName: String, size: CGFloat, padding: CGFloat = 10) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: size))
+            .foregroundStyle(.white)
+            .padding(padding)
+            .background(.black.opacity(0.35), in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(.white.opacity(0.15), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.85), radius: 4, x: 0, y: 1)
+            .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 2)
     }
 
     private var bottomControls: some View {

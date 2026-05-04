@@ -19,6 +19,11 @@ struct RecordingDetailView: View {
     @State private var deleteError: String?
     @State private var isCancellingSeries = false
 
+    #if os(iOS)
+    @State private var measuredContentHeight: CGFloat = 0
+    @State private var selectedDetent: PresentationDetent = .large
+    #endif
+
     #if !DISPATCHERPVR
     private var seriesParentId: Int? {
         if let parent = recording.recurringParent, parent != 0 { return parent }
@@ -42,7 +47,120 @@ struct RecordingDetailView: View {
                     Text(error)
                 }
             }
+        #elseif os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            iPadSheetContent
+        } else {
+            iPhoneSheetContent
+        }
         #else
+        macOSContent
+        #endif
+    }
+
+    #if os(iOS)
+    private var iPadSheetContent: some View {
+        let screenHeight = UIScreen.main.bounds.height
+
+        return VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal)
+            }
+            .padding(.top, 8)
+
+            Divider()
+
+            Group {
+                if measuredContentHeight > screenHeight * 0.85 {
+                    ScrollView {
+                        recordingDetailContent
+                    }
+                } else {
+                    recordingDetailContent
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Theme.background)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: RecordingFullHeightPreferenceKey.self, value: proxy.size.height)
+            }
+        )
+        .alert("Error", isPresented: .constant(deleteError != nil)) {
+            Button("OK") { deleteError = nil }
+        } message: {
+            if let error = deleteError {
+                Text(error)
+            }
+        }
+        .presentationDetents(Set([detentHeight, .large]), selection: $selectedDetent)
+        .modifier(RecordingPresentationSizingCompat())
+        .onPreferenceChange(RecordingFullHeightPreferenceKey.self) { fullHeight in
+            measuredContentHeight = fullHeight
+            resizeiPadDetent()
+        }
+    }
+
+    private var detentHeight: PresentationDetent {
+        let h = measuredContentHeight > 0 ? measuredContentHeight : UIScreen.main.bounds.height
+        return .height(min(h, UIScreen.main.bounds.height * 0.88))
+    }
+
+    private func resizeiPadDetent() {
+        let screenHeight = UIScreen.main.bounds.height
+        let cap = screenHeight * 0.88
+        if measuredContentHeight > cap {
+            selectedDetent = .large
+        } else if measuredContentHeight > 0 {
+            selectedDetent = .height(measuredContentHeight)
+        }
+    }
+
+    private var iPhoneSheetContent: some View {
+        NavigationStack {
+            ScrollView {
+                recordingDetailContent
+            }
+            .background(Theme.background)
+            .navigationTitle("Recording Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .alert("Error", isPresented: .constant(deleteError != nil)) {
+                Button("OK") { deleteError = nil }
+            } message: {
+                if let error = deleteError {
+                    Text(error)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .modifier(RecordingPresentationSizingCompat())
+    }
+
+    private var recordingDetailContent: some View {
+        VStack(alignment: .leading, spacing: Theme.spacingLG) {
+            headerSection
+            infoSection
+            if recording.desc != nil || recording.seriesInfo != nil {
+                descriptionSection
+            }
+            actionSection
+        }
+        .padding()
+    }
+    #endif
+
+    #if os(macOS)
+    private var macOSContent: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.spacingLG) {
@@ -57,9 +175,6 @@ struct RecordingDetailView: View {
             }
             .background(Theme.background)
             .navigationTitle("Recording Details")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -73,8 +188,10 @@ struct RecordingDetailView: View {
                 }
             }
         }
-        #endif
+        .frame(minWidth: 320, idealWidth: 460, maxWidth: 700)
+        .fixedSize(horizontal: false, vertical: true)
     }
+    #endif
 
     #if os(tvOS)
     private var tvOSContent: some View {
@@ -146,19 +263,23 @@ struct RecordingDetailView: View {
                     // Action buttons
                     VStack(spacing: Theme.spacingMD) {
                         if recording.recordingStatus == .recording {
-                            Button {
-                                playRecording()
-                            } label: {
-                                HStack {
-                                    Image(systemName: "play.fill")
-                                    Text(canPlayInProgress ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)")
+                            let streamAvailable = recording.file != nil
+                            if streamAvailable {
+                                Button {
+                                    playRecording()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "play.fill")
+                                        Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
+                                    }
+                                    .frame(maxWidth: .infinity)
                                 }
-                                .frame(maxWidth: .infinity)
+                                .buttonStyle(TVPopupActionButtonStyle(variant: .accent))
+                                .disabled(!canPlayInProgress)
                             }
-                            .buttonStyle(TVPopupActionButtonStyle(variant: .accent))
-                            .disabled(!canPlayInProgress)
 
-                            if let position = recording.playbackPosition, position > 10 {
+                            #if !DISPATCHERPVR
+                            if streamAvailable, let position = recording.playbackPosition, position > 10 {
                                 Button {
                                     playRecording()
                                 } label: {
@@ -171,6 +292,7 @@ struct RecordingDetailView: View {
                                 .buttonStyle(TVPopupActionButtonStyle(variant: .secondary))
                                 .disabled(!canPlayInProgress)
                             }
+                            #endif
 
                             if recording.channelId != nil {
                                 Button {
@@ -386,19 +508,19 @@ struct RecordingDetailView: View {
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
             if recording.recordingStatus == .recording {
-                #if !DISPATCHERPVR
                 Button {
                     playFromBeginning()
                 } label: {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text(canPlayInProgress ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)")
+                        Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(AccentButtonStyle())
                 .disabled(!canPlayInProgress)
 
+                #if !DISPATCHERPVR
                 if let position = recording.playbackPosition, position > 10 {
                     Button {
                         playRecording()
@@ -581,6 +703,26 @@ struct RecordingDetailView: View {
         }
     }
 }
+
+#if os(iOS)
+private struct RecordingFullHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct RecordingPresentationSizingCompat: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom != .pad {
+            content.presentationSizing(.page)
+        } else {
+            content
+        }
+    }
+}
+#endif
 
 #if os(tvOS)
 private struct TVPopupActionButtonStyle: ButtonStyle {

@@ -35,6 +35,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     private var outputChannelGroups: [ChannelGroup] = []
     /// In-memory map of synthetic recurring IDs -> Dispatcharr series rule, used for cancel.
     private var seriesRuleIndex: [Int: DispatcharrSeriesRuleResponseItem] = [:]
+    /// In-memory map of recording id -> playback URL path from Dispatcharr custom_properties.file_url.
+    private var recordingIdToPlaybackPath: [Int: String] = [:]
 
     init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
         self.config = config ?? ServerConfig.load()
@@ -1072,6 +1074,15 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         }
 
         let items: [DispatcharrRecording] = try await fetchAllPages(url)
+        recordingIdToPlaybackPath = Dictionary(
+            uniqueKeysWithValues: items.compactMap { item in
+                guard let path = item.customProperties?.fileURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !path.isEmpty else {
+                    return nil
+                }
+                return (item.id, path)
+            }
+        )
         let recordings = items.map { $0.toRecording() }
 
         var completed: [Recording] = []
@@ -1507,11 +1518,39 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             try await authenticate()
         }
 
+        if let cachedPath = recordingIdToPlaybackPath[recordingId],
+           let cachedURL = makeAbsoluteURL(from: cachedPath) {
+            return cachedURL
+        }
+
+        if let detailsURL = URL(string: "\(baseURL)/api/channels/recordings/\(recordingId)/") {
+            do {
+                let details: DispatcharrRecording = try await authenticatedRequest(detailsURL)
+                if let path = details.customProperties?.fileURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !path.isEmpty,
+                   let resolved = makeAbsoluteURL(from: path) {
+                    recordingIdToPlaybackPath[recordingId] = path
+                    return resolved
+                }
+            } catch {
+                // Fall back to /file/ endpoint below.
+            }
+        }
+
         guard let url = URL(string: "\(baseURL)/api/channels/recordings/\(recordingId)/file/") else {
             throw PVRClientError.invalidResponse
         }
 
         return url
+    }
+
+    private func makeAbsoluteURL(from pathOrURL: String) -> URL? {
+        if let url = URL(string: pathOrURL), url.scheme != nil {
+            return url
+        }
+        let normalized = pathOrURL.hasPrefix("/") ? pathOrURL : "/\(pathOrURL)"
+        guard let base = URL(string: baseURL) else { return nil }
+        return URL(string: normalized, relativeTo: base)?.absoluteURL
     }
 
     func streamAuthHeaders() -> [String: String] {

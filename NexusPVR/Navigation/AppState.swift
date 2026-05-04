@@ -48,6 +48,7 @@ final class AppState: ObservableObject {
     @Published var currentlyPlayingChannelId: Int?
     @Published var currentlyPlayingChannelName: String?
     @Published var currentlyPlayingIsRecordingInProgress = false
+    @Published var currentlyPlayingRecordingStartTime: Date?
 
     // Navigation state
     @Published var selectedChannel: Channel?
@@ -225,7 +226,8 @@ final class AppState: ObservableObject {
         resumePosition: Int? = nil,
         channelId: Int? = nil,
         channelName: String? = nil,
-        isRecordingInProgress: Bool = false
+        isRecordingInProgress: Bool = false,
+        recordingStartTime: Date? = nil
     ) {
         #if DEBUG
         let effectiveURL: URL
@@ -247,6 +249,7 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelId = channelId
         currentlyPlayingChannelName = channelName
         currentlyPlayingIsRecordingInProgress = isRecordingInProgress
+        currentlyPlayingRecordingStartTime = recordingStartTime
         isShowingPlayer = true
     }
 
@@ -273,6 +276,7 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelId = nil
         currentlyPlayingChannelName = nil
         currentlyPlayingIsRecordingInProgress = false
+        currentlyPlayingRecordingStartTime = nil
     }
 
     /// Dismiss the player UI without clearing playback state (used for PiP).

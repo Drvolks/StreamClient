@@ -26,6 +26,8 @@ struct MPVContainerView: UIViewRepresentable {
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
+    let recordingStartTime: Date?
+    let streamHeaders: [String: String]
     let activePlayerSession: any ActivePlayerSessionManaging
     let networkEventLogger: any NetworkEventLogging
 
@@ -39,7 +41,7 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var getSubtitleTextFunc: (() -> String?)?
 
     private func configureCommonCallbacks(for view: MPVPlayerGLView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -51,7 +53,7 @@ struct MPVContainerView: UIViewRepresentable {
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -63,7 +65,7 @@ struct MPVContainerView: UIViewRepresentable {
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerPixelBufferView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -134,6 +136,7 @@ struct MPVContainerView: UIViewRepresentable {
         if gpuAPI == .pixelbuffer {
             let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
             configureCommonCallbacks(for: view)
+            view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
             view.startPositionPolling()
             if isRecordingInProgress {
@@ -154,6 +157,7 @@ struct MPVContainerView: UIViewRepresentable {
         if gpuAPI == .metal {
             let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
             configureCommonCallbacks(for: view)
+            view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
             view.startPositionPolling()
             if isRecordingInProgress {
@@ -172,6 +176,7 @@ struct MPVContainerView: UIViewRepresentable {
 
         let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
         configureCommonCallbacks(for: view)
+        view.setStreamHeaders(streamHeaders)
         view.loadURL(url)
         view.startPositionPolling()
         if isRecordingInProgress {

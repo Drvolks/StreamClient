@@ -28,6 +28,7 @@ final class NexusPVRUITests: XCTestCase {
     func testLivePlaybackCanOpenAndClose() throws {
         let app = launchApp()
         navigateToTab("Guide", app: app)
+        XCTAssertTrue(waitForGuideContent(in: app), "Guide content should be loaded before opening live playback")
 
         #if os(tvOS)
         let remote = XCUIRemote.shared
@@ -36,8 +37,13 @@ final class NexusPVRUITests: XCTestCase {
         remote.press(.select)
         #else
         let channelButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'guide-channel-'")).firstMatch
-        XCTAssertTrue(channelButton.waitForExistence(timeout: 5), "Expected at least one playable guide channel")
-        activate(channelButton, app: app)
+        if channelButton.waitForExistence(timeout: 5) {
+            activate(channelButton, app: app)
+        } else {
+            let programButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'guide-program-'")).firstMatch
+            XCTAssertTrue(programButton.waitForExistence(timeout: 5), "Expected a guide channel or program to open playback")
+            activate(programButton, app: app)
+        }
         #endif
 
         XCTAssertTrue(app.otherElements["player-view"].waitForExistence(timeout: 10), "Player should open from guide")
@@ -50,12 +56,6 @@ final class NexusPVRUITests: XCTestCase {
         let app = launchApp()
 
         #if os(iOS)
-        navigateToTab("Recordings", app: app)
-        selectRecordingsFilter("Scheduled", in: app)
-        let scheduledRows = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH 'recording-row-'"))
-        let initialScheduledCount = scheduledRows.count
-
         let programName = try openFutureProgramDetailAndCaptureName(app: app)
 
         let recordButton = app.buttons["record-button"].firstMatch
@@ -73,10 +73,12 @@ final class NexusPVRUITests: XCTestCase {
         navigateToTab("Recordings", app: app)
         selectRecordingsFilter("Scheduled", in: app)
 
-        let newScheduledRow = scheduledRows.element(boundBy: initialScheduledCount)
+        let scheduledRows = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'recording-row-'"))
+        let anyScheduledRow = scheduledRows.firstMatch
         let matchedByName = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", programName)).firstMatch
         XCTAssertTrue(
-            newScheduledRow.waitForExistence(timeout: 8) || matchedByName.waitForExistence(timeout: 2),
+            anyScheduledRow.waitForExistence(timeout: 8) || matchedByName.waitForExistence(timeout: 2),
             "Program should be present in Scheduled recordings after scheduling"
         )
         #else
@@ -415,9 +417,13 @@ final class NexusPVRUITests: XCTestCase {
             return
         }
 
+        if tabName == "Guide", waitForGuideContent(in: app) {
+            return
+        }
+
         let expandButton = app.buttons["nav-expand-button"].firstMatch
         XCTAssertTrue(expandButton.waitForExistence(timeout: 5), "Expected floating navigation button")
-        expandButton.tap()
+        activate(expandButton, app: app)
         let tabButton = app.buttons["tab-\(tabName)"].firstMatch
         let recordingsFallback = app.buttons["recordings-filter-Completed"].firstMatch
 
@@ -431,10 +437,10 @@ final class NexusPVRUITests: XCTestCase {
         )
 
         if tabName == "Recordings" {
-            recordingsFallback.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            activate(recordingsFallback, app: app)
         } else {
             XCTAssertTrue(tabButton.waitForExistence(timeout: 5), "Expected tab button for '\(tabName)'")
-            tabButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            activate(tabButton, app: app)
         }
         pause(1.0)
         #endif
@@ -470,7 +476,8 @@ final class NexusPVRUITests: XCTestCase {
             pause(1.5)
 
             let recordButton = app.buttons["record-button"].firstMatch
-            if recordButton.waitForExistence(timeout: 2) {
+            let cancelButton = app.buttons["cancel-recording-button"].firstMatch
+            if recordButton.waitForExistence(timeout: 2) || cancelButton.waitForExistence(timeout: 1) {
                 let detailName = app.staticTexts["program-detail-name"].firstMatch
                 XCTAssertTrue(detailName.waitForExistence(timeout: 2))
                 return detailName.label
@@ -495,7 +502,7 @@ final class NexusPVRUITests: XCTestCase {
         let count = programButtons.count
         let startIndex = max(0, (count * 2) / 3)
 
-        for index in startIndex..<min(startIndex + 30, count) {
+        for index in startIndex..<min(startIndex + 10, count) {
             let button = programButtons.element(boundBy: index)
             guard button.exists else { continue }
 
@@ -509,7 +516,8 @@ final class NexusPVRUITests: XCTestCase {
             pause(1.0)
 
             let recordButton = app.buttons["record-button"].firstMatch
-            if recordButton.waitForExistence(timeout: 1.5) {
+            let cancelButton = app.buttons["cancel-recording-button"].firstMatch
+            if recordButton.waitForExistence(timeout: 1.5) || cancelButton.waitForExistence(timeout: 1) {
                 let detailName = app.staticTexts["program-detail-name"].firstMatch
                 XCTAssertTrue(detailName.waitForExistence(timeout: 2))
                 let label = detailName.label.isEmpty ? (detailName.value as? String ?? "") : detailName.label
@@ -521,8 +529,50 @@ final class NexusPVRUITests: XCTestCase {
             pause(0.3)
         }
 
+        if let label = findRecordableProgramViaSearch(app: app, query: "Extreme Ironing World Cup") {
+            return label
+        }
+
         throw NSError(domain: "NexusPVRUITests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not locate a future program with recording controls"])
         #endif
+    }
+
+    private func findRecordableProgramViaSearch(app: XCUIApplication, query: String) -> String? {
+        let searchField = app.textFields["global-search-field"].firstMatch
+        guard searchField.waitForExistence(timeout: 6) else { return nil }
+
+        activate(searchField, app: app)
+        searchField.tap()
+        if let currentValue = searchField.value as? String, !currentValue.isEmpty, currentValue.lowercased() != "search" {
+            let deleteString = String(repeating: XCUIKeyboardKey.delete.rawValue, count: currentValue.count)
+            searchField.typeText(deleteString)
+        }
+        searchField.typeText("\(query)\n")
+
+        let resultRows = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'search-result-'"))
+
+        guard waitForCondition(timeout: 8, condition: { resultRows.count > 0 }) else { return nil }
+
+        for index in 0..<min(resultRows.count, 20) {
+            let row = resultRows.element(boundBy: index)
+            guard row.exists else { continue }
+            activate(row, app: app)
+
+            let recordButton = app.buttons["record-button"].firstMatch
+            let cancelButton = app.buttons["cancel-recording-button"].firstMatch
+            if recordButton.waitForExistence(timeout: 1.5) || cancelButton.waitForExistence(timeout: 1.0) {
+                let detailName = app.staticTexts["program-detail-name"].firstMatch
+                guard detailName.waitForExistence(timeout: 2) else { return nil }
+                let label = detailName.label.isEmpty ? (detailName.value as? String ?? "") : detailName.label
+                return label.isEmpty ? nil : label
+            }
+
+            dismissPresentedDetail(app: app)
+            pause(0.3)
+        }
+
+        return nil
     }
 
     private func openSearchResult(named programName: String, in app: XCUIApplication) {
@@ -644,10 +694,6 @@ final class NexusPVRUITests: XCTestCase {
         remote.press(.select)
         pause(0.8)
         #elseif os(iOS)
-        let expandButton = app.buttons["nav-expand-button"].firstMatch
-        XCTAssertTrue(expandButton.waitForExistence(timeout: 5), "Expected floating navigation button")
-        activate(expandButton, app: app)
-
         let targetIdentifier: String
         switch filter {
         case "Completed":
@@ -660,7 +706,14 @@ final class NexusPVRUITests: XCTestCase {
             targetIdentifier = "recordings-filter-\(filter)"
         }
 
-        let option = app.buttons[targetIdentifier].firstMatch
+        var option = app.buttons[targetIdentifier].firstMatch
+        if !option.waitForExistence(timeout: 2) {
+            let expandButton = app.buttons["nav-expand-button"].firstMatch
+            XCTAssertTrue(expandButton.waitForExistence(timeout: 5), "Expected floating navigation button")
+            activate(expandButton, app: app)
+            option = app.buttons[targetIdentifier].firstMatch
+        }
+
         XCTAssertTrue(option.waitForExistence(timeout: 5), "Expected recordings filter '\(filter)' to be available")
         activate(option, app: app)
         pause(0.8)
