@@ -26,6 +26,8 @@ struct MPVContainerView: UIViewRepresentable {
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
+    let recordingStartTime: Date?
+    let streamHeaders: [String: String]
     let activePlayerSession: any ActivePlayerSessionManaging
     let networkEventLogger: any NetworkEventLogging
 
@@ -178,8 +180,9 @@ struct MPVContainerView: UIViewRepresentable {
 
         if gpuAPI == .pixelbuffer {
             let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
             configureCommonCallbacks(for: view)
+            view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
             view.startPositionPolling()
             if isRecordingInProgress {
@@ -198,8 +201,9 @@ struct MPVContainerView: UIViewRepresentable {
 
         if gpuAPI == .opengl {
             let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
             configureCommonCallbacks(for: view)
+            view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
             view.startPositionPolling()
             if isRecordingInProgress {
@@ -219,6 +223,7 @@ struct MPVContainerView: UIViewRepresentable {
         let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
         view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
         configureCommonCallbacks(for: view)
+        view.setStreamHeaders(streamHeaders)
         view.loadURL(url)
         view.startPositionPolling()
         if isRecordingInProgress {

@@ -24,6 +24,7 @@ struct ProgramDetailView: View {
     @State private var isSeriesScheduled = false
     @State private var existingRecordingId: Int?
     @State private var recurringParentId: Int?
+    @State private var inProgressRecording: Recording?
     @State private var completedRecording: Recording?
     @State private var didChangeRecording = false
     #if os(iOS)
@@ -464,6 +465,49 @@ struct ProgramDetailView: View {
             }
 
             if program.isCurrentlyAiring {
+                if let recording = inProgressRecording {
+                    let canPlayInProgress = UserPreferences.load().currentGPUAPI == .pixelbuffer
+                    let streamAvailable = recording.file != nil
+
+                    if streamAvailable {
+                        Button {
+                            playRecordingFromBeginning(recording)
+                        } label: {
+                            HStack {
+                                Image(systemName: "play.fill")
+                                Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        #if os(tvOS)
+                        .buttonStyle(TVProgramPopupButtonStyle(variant: .accent))
+                        #else
+                        .buttonStyle(AccentButtonStyle())
+                        #endif
+                        .disabled(!canPlayInProgress)
+                    }
+
+                    #if !DISPATCHERPVR
+                    if streamAvailable, let position = recording.playbackPosition, position > 10 {
+                        Button {
+                            playRecording(recording)
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text(canPlayInProgress ? "Resume" : "Resume (requires PixelBuffer)")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        #if os(tvOS)
+                        .buttonStyle(TVProgramPopupButtonStyle(variant: .accent))
+                        #else
+                        .buttonStyle(AccentButtonStyle())
+                        #endif
+                        .disabled(!canPlayInProgress)
+                    }
+                    #endif
+                }
+
                 Button {
                     watchLive()
                 } label: {
@@ -674,6 +718,26 @@ struct ProgramDetailView: View {
         }
     }
 
+    private func playRecordingFromBeginning(_ recording: Recording) {
+        Task {
+            do {
+                try await client.setRecordingPosition(recordingId: recording.id, positionSeconds: 0)
+                let url = try await client.recordingStreamURL(recordingId: recording.id)
+                appState.playStream(
+                    url: url,
+                    title: recording.name,
+                    recordingId: recording.id,
+                    resumePosition: 0,
+                    isRecordingInProgress: true,
+                    recordingStartTime: recording.startDate
+                )
+                dismiss()
+            } catch {
+                scheduleError = error.localizedDescription
+            }
+        }
+    }
+
     private func watchLive() {
         Task {
             do {
@@ -696,6 +760,7 @@ struct ProgramDetailView: View {
             existingRecordingId = nil
             isSeriesScheduled = false
             recurringParentId = nil
+            inProgressRecording = nil
 
             // Match by epgEventId first, then fallback to name + start time
             let matched = allRecordings.first(where: { $0.epgEventId == program.id })
@@ -706,6 +771,9 @@ struct ProgramDetailView: View {
             if let recording = matched {
                 isScheduled = true
                 existingRecordingId = recording.id
+                if recording.recordingStatus == .recording {
+                    inProgressRecording = recording
+                }
                 #if DISPATCHERPVR
                 isSeriesScheduled = program.seriesInfo != nil
                 #else

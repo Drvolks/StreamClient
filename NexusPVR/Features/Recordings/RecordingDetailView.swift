@@ -263,19 +263,23 @@ struct RecordingDetailView: View {
                     // Action buttons
                     VStack(spacing: Theme.spacingMD) {
                         if recording.recordingStatus == .recording {
-                            Button {
-                                playRecording()
-                            } label: {
-                                HStack {
-                                    Image(systemName: "play.fill")
-                                    Text(canPlayInProgress ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)")
+                            let streamAvailable = recording.file != nil
+                            if streamAvailable {
+                                Button {
+                                    playRecording()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "play.fill")
+                                        Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
+                                    }
+                                    .frame(maxWidth: .infinity)
                                 }
-                                .frame(maxWidth: .infinity)
+                                .buttonStyle(TVPopupActionButtonStyle(variant: .accent))
+                                .disabled(!canPlayInProgress)
                             }
-                            .buttonStyle(TVPopupActionButtonStyle(variant: .accent))
-                            .disabled(!canPlayInProgress)
 
-                            if let position = recording.playbackPosition, position > 10 {
+                            #if !DISPATCHERPVR
+                            if streamAvailable, let position = recording.playbackPosition, position > 10 {
                                 Button {
                                     playRecording()
                                 } label: {
@@ -288,6 +292,7 @@ struct RecordingDetailView: View {
                                 .buttonStyle(TVPopupActionButtonStyle(variant: .secondary))
                                 .disabled(!canPlayInProgress)
                             }
+                            #endif
 
                             if recording.channelId != nil {
                                 Button {
@@ -503,19 +508,19 @@ struct RecordingDetailView: View {
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
             if recording.recordingStatus == .recording {
-                #if !DISPATCHERPVR
                 Button {
                     playFromBeginning()
                 } label: {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text(canPlayInProgress ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)")
+                        Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(AccentButtonStyle())
                 .disabled(!canPlayInProgress)
 
+                #if !DISPATCHERPVR
                 if let position = recording.playbackPosition, position > 10 {
                     Button {
                         playRecording()

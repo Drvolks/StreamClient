@@ -11,12 +11,14 @@ nonisolated struct DispatcharrCustomProperties: Codable {
     let program: DispatcharrProgramRef?
     let season: Int?
     let episode: Int?
+    let fileURL: String?
     let seriesBannerURL: String?
 
-    init(program: DispatcharrProgramRef?, season: Int? = nil, episode: Int? = nil, seriesBannerURL: String? = nil) {
+    init(program: DispatcharrProgramRef?, season: Int? = nil, episode: Int? = nil, fileURL: String? = nil, seriesBannerURL: String? = nil) {
         self.program = program
         self.season = season
         self.episode = episode
+        self.fileURL = fileURL
         self.seriesBannerURL = seriesBannerURL
     }
 
@@ -24,6 +26,7 @@ nonisolated struct DispatcharrCustomProperties: Codable {
         case program
         case season
         case episode
+        case fileURL = "file_url"
     }
 
     init(from decoder: Decoder) throws {
@@ -31,6 +34,7 @@ nonisolated struct DispatcharrCustomProperties: Codable {
         program = try container.decodeIfPresent(DispatcharrProgramRef.self, forKey: .program)
         season = try container.decodeIfPresent(Int.self, forKey: .season)
         episode = try container.decodeIfPresent(Int.self, forKey: .episode)
+        fileURL = try container.decodeIfPresent(String.self, forKey: .fileURL)
 
         let dynamic = try decoder.container(keyedBy: DispatcharrDynamicCodingKey.self)
         seriesBannerURL = decodeFirstDispatcharrImageField(

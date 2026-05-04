@@ -184,14 +184,17 @@ private struct RecordingsListContentView: View {
                     .environmentObject(appState)
             }
             .confirmationDialog("Play Recording", isPresented: .constant(inProgressRecording != nil), presenting: inProgressRecording) { recording in
-                #if !DISPATCHERPVR
                 let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
-                Button(canPlay ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)") {
-                    playRecordingFromBeginning(recording)
-                    inProgressRecording = nil
+                let streamAvailable = recording.file != nil
+                if streamAvailable {
+                    Button(canPlay ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)") {
+                        playRecordingFromBeginning(recording)
+                        inProgressRecording = nil
+                    }
+                    .disabled(!canPlay)
                 }
-                .disabled(!canPlay)
-                if let position = recording.playbackPosition, position > 10 {
+                #if !DISPATCHERPVR
+                if streamAvailable, let position = recording.playbackPosition, position > 10 {
                     Button(canPlay ? "Resume" : "Resume (requires PixelBuffer)") {
                         playRecording(recording)
                         inProgressRecording = nil
@@ -413,15 +416,17 @@ private struct RecordingsListContentView: View {
     @ViewBuilder
     private func recordingContextMenu(for recording: Recording) -> some View {
         if recording.recordingStatus == .recording {
-            #if !DISPATCHERPVR
             let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
-            Button {
-                playRecordingFromBeginning(recording)
-            } label: {
-                Label(canPlay ? "Play from Beginning" : "Play from Beginning (requires PixelBuffer)", systemImage: "play.fill")
+            if recording.file != nil {
+                Button {
+                    playRecordingFromBeginning(recording)
+                } label: {
+                    Label(canPlay ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)", systemImage: "play.fill")
+                }
+                .disabled(!canPlay)
             }
-            .disabled(!canPlay)
-            if let position = recording.playbackPosition, position > 10 {
+            #if !DISPATCHERPVR
+            if recording.file != nil, let position = recording.playbackPosition, position > 10 {
                 Button {
                     playRecording(recording)
                 } label: {
@@ -1602,7 +1607,8 @@ private struct RecordingsListContentView: View {
                     title: recording.name,
                     recordingId: recording.id,
                     resumePosition: recording.playbackPosition,
-                    isRecordingInProgress: recording.recordingStatus == .recording
+                    isRecordingInProgress: recording.recordingStatus == .recording,
+                    recordingStartTime: recording.startDate
                 )
             } catch {
                 deleteError = error.localizedDescription

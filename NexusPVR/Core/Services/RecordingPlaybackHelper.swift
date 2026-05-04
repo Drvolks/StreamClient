@@ -21,7 +21,8 @@ enum RecordingPlaybackHelper {
             title: recording.name,
             recordingId: recording.id,
             resumePosition: recording.playbackPosition,
-            isRecordingInProgress: recording.recordingStatus == .recording
+            isRecordingInProgress: recording.recordingStatus == .recording,
+            recordingStartTime: recording.startDate
         )
         dismiss?()
     }
@@ -39,7 +40,8 @@ enum RecordingPlaybackHelper {
             title: recording.name,
             recordingId: recording.id,
             resumePosition: 0,
-            isRecordingInProgress: recording.recordingStatus == .recording
+            isRecordingInProgress: recording.recordingStatus == .recording,
+            recordingStartTime: recording.startDate
         )
         NotificationCenter.default.post(name: .recordingsDidChange, object: nil)
         dismiss?()

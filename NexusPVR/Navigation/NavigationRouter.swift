@@ -327,7 +327,8 @@ struct IOSNavigation: View {
                     title: appState.currentlyPlayingTitle ?? "",
                     recordingId: appState.currentlyPlayingRecordingId,
                     resumePosition: appState.currentlyPlayingResumePosition,
-                    isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress
+                    isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
+                    recordingStartTime: appState.currentlyPlayingRecordingStartTime
                 )
                 .statusBarHidden()
             }
@@ -1071,13 +1072,14 @@ struct TVOSNavigation: View {
             }
         }
         .fullScreenCover(isPresented: $appState.isShowingPlayer) {
-            if let url = appState.currentlyPlayingURL {
+             if let url = appState.currentlyPlayingURL {
                 PlayerView(
                     url: url,
                     title: appState.currentlyPlayingTitle ?? "",
                     recordingId: appState.currentlyPlayingRecordingId,
                     resumePosition: appState.currentlyPlayingResumePosition,
-                    isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress
+                    isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
+                    recordingStartTime: appState.currentlyPlayingRecordingStartTime
                 )
             }
         }
@@ -1590,7 +1592,8 @@ struct MacOSNavigation: View {
                     title: appState.currentlyPlayingTitle ?? "",
                     recordingId: appState.currentlyPlayingRecordingId,
                     resumePosition: appState.currentlyPlayingResumePosition,
-                    isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress
+                    isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
+                    recordingStartTime: appState.currentlyPlayingRecordingStartTime
                 )
             } else {
                 // Show regular navigation with sidebar

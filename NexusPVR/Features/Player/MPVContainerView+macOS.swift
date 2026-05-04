@@ -32,6 +32,8 @@ struct MPVContainerView: NSViewControllerRepresentable {
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
+    let recordingStartTime: Date?
+    let streamHeaders: [String: String]
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
@@ -53,7 +55,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
         }
         controller.networkEventLogger = networkEventLogger
         _ = controller.view
-        controller.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+        controller.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
         controller.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -62,6 +64,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
         }
         controller.onPlaybackEnded = onPlaybackEnded
         controller.onVideoInfoUpdate = onVideoInfoUpdate
+        controller.setStreamHeaders(streamHeaders)
         controller.loadURL(url)
         controller.startPositionPolling()
         if isRecordingInProgress {
@@ -122,7 +125,8 @@ protocol MPVPlayerMacOSController: AnyObject {
     var onPlaybackEnded: (() -> Void)? { get set }
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)? { get set }
     var recordingMonitor: MPVRecordingMonitor? { get }
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool)
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool, recordingStartTime: Date?)
+    func setStreamHeaders(_ headers: [String: String])
     func loadURL(_ url: URL)
     func play()
     func pause()
@@ -164,9 +168,9 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
         updateRenderSurface()
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
             return
         }
         player?.setWindowID(metalLayer)
@@ -183,6 +187,10 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
 
     func loadURL(_ url: URL) {
         player?.loadURL(url)
+    }
+
+    func setStreamHeaders(_ headers: [String: String]) {
+        player?.setStreamHeaders(headers)
     }
 
     func play() {
@@ -271,12 +279,12 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         bridge?.displayLayer.frame = view.bounds
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
         guard let bridge else { return }
         bridge.attach()
 
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress) == true else { return }
+        guard player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime) == true else { return }
         player?.onPositionUpdate = { [weak self] position, duration in
             self?.onPositionUpdate?(position, duration)
         }
@@ -289,6 +297,7 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
     }
 
     func loadURL(_ url: URL) { player?.loadURL(url) }
+    func setStreamHeaders(_ headers: [String: String]) { player?.setStreamHeaders(headers) }
     func play() { player?.play() }
     func pause() { player?.pause() }
 
@@ -348,8 +357,8 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
         glView.handleContainerLayout()
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
-        glView.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress)
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+        glView.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
         glView.onPositionUpdate = { [weak self] position, duration in
             self?.onPositionUpdate?(position, duration)
         }
@@ -363,6 +372,10 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
 
     func loadURL(_ url: URL) {
         glView.loadURL(url)
+    }
+
+    func setStreamHeaders(_ headers: [String: String]) {
+        glView.setStreamHeaders(headers)
     }
 
     func play() {
@@ -464,11 +477,11 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         handleContainerLayout()
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
         openGLContext?.makeCurrentContext()
         refreshViewport()
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
             return
         }
         player?.createRenderContext(view: self)
@@ -516,6 +529,10 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
 
     func loadURL(_ url: URL) {
         player?.loadURL(url)
+    }
+
+    func setStreamHeaders(_ headers: [String: String]) {
+        player?.setStreamHeaders(headers)
     }
 
     func play() {

@@ -31,6 +31,7 @@ struct PlayerView: View {
     let recordingId: Int?
     let resumePosition: Int?
     let isRecordingInProgress: Bool
+    let recordingStartTime: Date?
 
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
@@ -97,6 +98,7 @@ struct PlayerView: View {
         recordingId: Int? = nil,
         resumePosition: Int? = nil,
         isRecordingInProgress: Bool = false,
+        recordingStartTime: Date? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
         networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     ) {
@@ -105,6 +107,7 @@ struct PlayerView: View {
         self.recordingId = recordingId
         self.resumePosition = resumePosition
         self.isRecordingInProgress = isRecordingInProgress
+        self.recordingStartTime = recordingStartTime
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
     }
@@ -125,6 +128,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                recordingStartTime: recordingStartTime,
+                streamHeaders: client.streamAuthHeaders(),
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
@@ -207,6 +212,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                recordingStartTime: recordingStartTime,
+                streamHeaders: client.streamAuthHeaders(),
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
@@ -257,6 +264,8 @@ struct PlayerView: View {
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
+                recordingStartTime: recordingStartTime,
+                streamHeaders: client.streamAuthHeaders(),
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
                     savePlaybackPosition()

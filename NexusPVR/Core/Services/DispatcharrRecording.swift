@@ -78,6 +78,9 @@ nonisolated struct DispatcharrRecording: Decodable {
         // Check for locally stored playback position
         let playbackPosition = UserDefaults.standard.integer(forKey: "recording_position_\(id)")
 
+        let fileURL = customProperties?.fileURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedFile = fileURL.flatMap { $0.isEmpty ? nil : $0 }
+
         return Recording(
             id: id,
             name: name,
@@ -88,7 +91,7 @@ nonisolated struct DispatcharrRecording: Decodable {
             channel: nil,
             channelId: channel,
             status: status,
-            file: nil,
+            file: resolvedFile,
             recurring: 0,
             recurringParent: nil,
             epgEventId: epgEventId,
