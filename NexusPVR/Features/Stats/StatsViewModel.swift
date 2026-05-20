@@ -34,6 +34,15 @@ final class StatsViewModel: ObservableObject {
         refreshTask = nil
     }
 
+    func profileName(forId id: Int) -> String? {
+        for account in m3uAccounts {
+            if let match = account.profiles.first(where: { $0.id == id }) {
+                return match.name
+            }
+        }
+        return nil
+    }
+
     func refresh(client: DispatcherClient, appState: AppState) async {
         if channels.isEmpty && m3uAccounts.isEmpty {
             isLoading = true
