@@ -259,11 +259,22 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         guard let mpv = mpv else { return }
         var actualSeconds = seconds
         if isRecordingInProgress {
+            // Use the smaller of mpv's available duration and the UI-reported
+            // duration (which already has the 15s safety margin applied). HLS
+            // streams only expose a small segment window even though the UI
+            // shows the full length; TS growing-file streams expose the full
+            // file but need the 15s margin to avoid rebuffering at the edge.
             let mpvDuration = getDuration()
-            if mpvDuration > 0 {
+            let safeDuration: Double
+            if mpvDuration > 0 && reportedDuration > 0 {
+                safeDuration = min(mpvDuration, reportedDuration)
+            } else {
+                safeDuration = max(mpvDuration, reportedDuration)
+            }
+            if safeDuration > 0 {
                 let position = getTimePosition()
                 if seconds > 0 {
-                    let maxSeek = Int(mpvDuration - position)
+                    let maxSeek = Int(safeDuration - position)
                     if maxSeek <= 0 { return }
                     actualSeconds = min(seconds, maxSeek)
                 } else if seconds < 0 {
@@ -282,13 +293,20 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     func seekTo(position: Double) {
         guard let mpv = mpv else { return }
         var target = position
-        // Clamp to mpv's actual available duration, not the UI-reported
-        // duration. HLS streams only have a small segment window available
-        // even though the display shows the full recording length.
+        // Clamp to the smaller of mpv's available duration and the UI-reported
+        // duration. HLS streams only expose a small segment window even though
+        // the UI shows the full length; TS growing-file streams need the 15s
+        // safety margin baked into reportedDuration to avoid edge rebuffering.
         if isRecordingInProgress {
             let mpvDuration = getDuration()
-            if mpvDuration > 0 {
-                target = min(target, mpvDuration)
+            let safeDuration: Double
+            if mpvDuration > 0 && reportedDuration > 0 {
+                safeDuration = min(mpvDuration, reportedDuration)
+            } else {
+                safeDuration = max(mpvDuration, reportedDuration)
+            }
+            if safeDuration > 0 {
+                target = min(target, safeDuration)
             }
         }
         let command = "seek \(target) absolute"
@@ -615,14 +633,18 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         mpv_set_option_string(mpv, "network-timeout", "30")
         mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3")
         if isRecordingInProgress {
+            // Growing file: reopen HTTP connection on EOF to pick up new bytes
+            // (NextPVR TS). Equivalent to growing_file=1 in stream-lavf-o but
+            // applies regardless of URL extension.
+            mpv_set_option_string(mpv, "stream-lavf-growing-file", "yes")
             // Demuxer retries on EOF so playback continues past the current
             // write edge (TS recordings). Harmless for HLS (native handling).
             mpv_set_option_string(mpv, "demuxer-force-retry-eof", "yes")
             mpv_set_option_string(mpv, "cache-pause-initial", "no")
-            // HLS live playlists are marked non-seekable by the demuxer.
-            // Force-seekable enables seeking within the available segment
-            // window for in-progress recordings.
-            mpv_set_option_string(mpv, "force-seekable", "yes")
+            // force-seekable is applied per-URL inside loadURL() — only HLS
+            // needs it (playlists are marked non-seekable by the demuxer).
+            // Applying it globally caused TS growing-file streams to stall at
+            // the write edge waiting for bytes that hadn't been written yet.
         }
 
         // Audio
@@ -723,16 +745,21 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         applyHTTPHeaders()
         print("MPV: Loading URL: \(urlString)")
 
-        if url.pathExtension.lowercased() == "ts" {
-            mpv_set_property_string(mpv, "demuxer-lavf-o", "fflags=+genpts+igndts")
-            if isRecordingInProgress {
-                mpv_set_property_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3,growing_file=1")
-            }
-        } else if isRecordingInProgress && url.pathExtension.lowercased() == "m3u8" {
+        let ext = url.pathExtension.lowercased()
+        if isRecordingInProgress && ext == "m3u8" {
             mpv_set_property_string(mpv, "demuxer-lavf-o", "live_start_index=0")
             mpv_set_property_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3")
+            // HLS playlists are marked non-seekable by the demuxer; enable
+            // seeking within the available segment window.
+            mpv_set_property_string(mpv, "force-seekable", "yes")
+        } else if ext == "ts" || (isRecordingInProgress && ext != "m3u8") {
+            // .ts or any non-HLS in-progress stream (e.g. NextPVR's extensionless
+            // /live?recording=X endpoint serves MPEG-TS). Treat as growing file.
+            mpv_set_property_string(mpv, "demuxer-lavf-o", "fflags=+genpts+igndts")
+            mpv_set_property_string(mpv, "force-seekable", "no")
         } else {
             mpv_set_property_string(mpv, "demuxer-lavf-o", "")
+            mpv_set_property_string(mpv, "force-seekable", "no")
         }
 
         let command = "loadfile \"\(urlString)\" replace"
