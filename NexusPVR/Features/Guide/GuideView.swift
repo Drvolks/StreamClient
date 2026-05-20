@@ -1376,6 +1376,9 @@ struct GuideView: View {
                 timeOffset -= 1
                 let newPrograms = tvOSVisiblePrograms(for: channels[focusedRow])
                 focusedColumn = newPrograms.isEmpty ? 0 : newPrograms.count - 1
+            } else {
+                // Already on leftmost program of the row — open the nav bar
+                onRequestNavBarFocus?()
             }
         case .right:
             if focusedRow == filterRowIndex {

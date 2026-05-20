@@ -115,6 +115,9 @@ struct StatsView: View {
         .onExitCommand {
             requestSidebarFocus()
         }
+        .onMoveCommand { direction in
+            if direction == .left { requestSidebarFocus() }
+        }
         .task {
             vm.startRefreshing(client: client, appState: appState)
         }

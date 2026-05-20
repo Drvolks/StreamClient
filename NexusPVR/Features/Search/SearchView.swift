@@ -59,6 +59,9 @@ struct SearchView: View {
         }
         #if os(tvOS)
         .background(.ultraThinMaterial)
+        .onMoveCommand { direction in
+            if direction == .left { requestSidebarFocus() }
+        }
         #else
         .background(Theme.background)
         #endif
@@ -94,7 +97,7 @@ struct SearchView: View {
         .padding(.vertical, Theme.spacingMD)
         .background(Theme.surface)
         .onMoveCommand { direction in
-            if direction == .up {
+            if direction == .up || direction == .left {
                 requestSidebarFocus()
             }
         }

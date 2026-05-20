@@ -126,6 +126,9 @@ struct LiveTVView: View {
         .onExitCommand {
             requestSidebarFocus()
         }
+        .onMoveCommand { direction in
+            if direction == .left { requestSidebarFocus() }
+        }
         #endif
     }
 

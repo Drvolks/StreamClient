@@ -230,6 +230,9 @@ private struct RecordingsListContentView: View {
             .onExitCommand {
                 requestSidebarFocus()
             }
+            .onMoveCommand { direction in
+                if direction == .left { requestSidebarFocus() }
+            }
             #endif
         #if os(tvOS)
         .background(.ultraThinMaterial)
@@ -507,6 +510,9 @@ private struct RecordingsListContentView: View {
         }
         .onExitCommand {
             requestSidebarFocus()
+        }
+        .onMoveCommand { direction in
+            if direction == .left { requestSidebarFocus() }
         }
         #else
         List {
