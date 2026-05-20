@@ -487,37 +487,48 @@ struct GuideView: View {
     }
 
     private var emptyView: some View {
-        VStack(spacing: Theme.spacingMD) {
+        Group {
             if viewModel.hasActiveFilters || !viewModel.channelSearchText.isEmpty {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 48))
-                    .foregroundStyle(Theme.textTertiary)
-                Text("No channels match filters")
-                    .font(.headline)
-                    .foregroundStyle(Theme.textPrimary)
-                Button("Clear Filters") {
-                    viewModel.selectedGroupId = nil
-                    viewModel.selectedProfileId = nil
-                    viewModel.channelSearchText = ""
+                VStack(spacing: Theme.spacingMD) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 48))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text("No channels match filters")
+                        .font(.headline)
+                        .foregroundStyle(Theme.textPrimary)
+                    Button("Clear Filters") {
+                        viewModel.selectedGroupId = nil
+                        viewModel.selectedProfileId = nil
+                        viewModel.channelSearchText = ""
+                    }
+                    .buttonStyle(AccentButtonStyle())
                 }
-                .buttonStyle(AccentButtonStyle())
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Image(systemName: "tv")
-                    .font(.system(size: 48))
-                    .foregroundStyle(Theme.textTertiary)
-                Text("No channels available")
-                    .font(.headline)
-                    .foregroundStyle(Theme.textPrimary)
-                Text(Brand.configureServerMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textSecondary)
+                VStack(spacing: Theme.spacingMD) {
+                    Image(systemName: "tv")
+                        .font(.system(size: 48))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text("No channels available")
+                        .font(.headline)
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(Brand.configureServerMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .tvOSFocusableEmptyState()
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .tvOSFocusableEmptyState()
         #if os(tvOS)
         .onExitCommand {
             requestSidebarFocus()
+        }
+        .onMoveCommand { direction in
+            if direction == .left {
+                onRequestNavBarFocus?()
+                requestSidebarFocus()
+            }
         }
         #endif
     }
