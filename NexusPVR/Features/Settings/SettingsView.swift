@@ -326,6 +326,12 @@ struct SettingsView: View {
                 requestSidebarFocus()
             }
         }
+        .onMoveCommand { direction in
+            guard direction == .left,
+                  activeTVPopup == nil,
+                  !showingTVEventLog else { return }
+            requestSidebarFocus()
+        }
     }
 
     private func tvSettingsRow(

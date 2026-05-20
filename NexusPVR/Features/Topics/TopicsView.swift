@@ -79,6 +79,12 @@ struct TopicsView: View {
         }
         #if os(tvOS)
         .background(.ultraThinMaterial)
+        .onMoveCommand { direction in
+            if direction == .left { requestSidebarFocus() }
+        }
+        .onExitCommand {
+            requestSidebarFocus()
+        }
         #else
         .background(Theme.background)
         #endif
@@ -291,11 +297,6 @@ struct TopicsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .tvOSFocusableEmptyState()
         .accessibilityIdentifier("topics-empty")
-        #if os(tvOS)
-        .onExitCommand {
-            requestSidebarFocus()
-        }
-        #endif
     }
 
     private var programsList: some View {
