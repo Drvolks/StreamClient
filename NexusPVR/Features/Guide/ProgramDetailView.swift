@@ -763,10 +763,13 @@ struct ProgramDetailView: View {
             inProgressRecording = nil
 
             // Match by epgEventId first, then fallback to name + start time
-            let matched = allRecordings.first(where: { $0.epgEventId == program.id })
+            let matched = allRecordings.first(where: {
+                $0.epgEventId == program.id && $0.recordingStatus.isActiveOrScheduled
+            })
                 ?? allRecordings.first(where: {
                     $0.name.lowercased() == program.name.lowercased() &&
-                    $0.startTime == program.start
+                    $0.startTime == program.start &&
+                    $0.recordingStatus.isActiveOrScheduled
                 })
             if let recording = matched {
                 isScheduled = true
@@ -804,7 +807,8 @@ struct ProgramDetailView: View {
             let programName = program.name.lowercased().trimmingCharacters(in: .whitespaces)
             if let existing = completed.first(where: {
                 $0.recordingStatus == .ready &&
-                $0.name.lowercased().trimmingCharacters(in: .whitespaces) == programName
+                $0.name.lowercased().trimmingCharacters(in: .whitespaces) == programName &&
+                ($0.channelId == nil || $0.channelId == channel.id)
             }) {
                 completedRecording = existing
             }

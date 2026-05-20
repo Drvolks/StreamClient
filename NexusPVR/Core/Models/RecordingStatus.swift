@@ -37,4 +37,8 @@ nonisolated enum RecordingStatus: String, Codable {
     var isScheduled: Bool {
         self == .pending
     }
+
+    var isActiveOrScheduled: Bool {
+        self == .pending || self == .recording
+    }
 }
