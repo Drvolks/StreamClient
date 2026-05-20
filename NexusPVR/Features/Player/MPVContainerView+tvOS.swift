@@ -59,12 +59,12 @@ struct MPVContainerView: UIViewRepresentable {
         view.onPlaybackEnded = onPlaybackEnded
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
-        view.onSeekForward = {
-            view.seek(seconds: self.seekForwardTime)
+        view.onSeekForward = { multiplier in
+            view.seek(seconds: self.seekForwardTime * multiplier)
             self.onShowControls?()
         }
-        view.onSeekBackward = {
-            view.seek(seconds: -self.seekBackwardTime)
+        view.onSeekBackward = { multiplier in
+            view.seek(seconds: -self.seekBackwardTime * multiplier)
             self.onShowControls?()
         }
         view.onSelect = onToggleControls
@@ -81,12 +81,12 @@ struct MPVContainerView: UIViewRepresentable {
         view.onPlaybackEnded = onPlaybackEnded
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
-        view.onSeekForward = {
-            view.seek(seconds: self.seekForwardTime)
+        view.onSeekForward = { multiplier in
+            view.seek(seconds: self.seekForwardTime * multiplier)
             self.onShowControls?()
         }
-        view.onSeekBackward = {
-            view.seek(seconds: -self.seekBackwardTime)
+        view.onSeekBackward = { multiplier in
+            view.seek(seconds: -self.seekBackwardTime * multiplier)
             self.onShowControls?()
         }
         view.onSelect = onToggleControls
@@ -103,12 +103,12 @@ struct MPVContainerView: UIViewRepresentable {
         view.onPlaybackEnded = onPlaybackEnded
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
-        view.onSeekForward = {
-            view.seek(seconds: self.seekForwardTime)
+        view.onSeekForward = { multiplier in
+            view.seek(seconds: self.seekForwardTime * multiplier)
             self.onShowControls?()
         }
-        view.onSeekBackward = {
-            view.seek(seconds: -self.seekBackwardTime)
+        view.onSeekBackward = { multiplier in
+            view.seek(seconds: -self.seekBackwardTime * multiplier)
             self.onShowControls?()
         }
         view.onSelect = onToggleControls
