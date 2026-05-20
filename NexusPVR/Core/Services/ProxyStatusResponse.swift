@@ -95,7 +95,12 @@ nonisolated struct ProxyClientInfo: Decodable, Identifiable {
     let connectedSince: Double?
     let connectedAt: Double?
 
-    var connectedTime: Double? { connectedAt ?? connectedSince }
+    var connectedTime: Double? {
+        if let connectedAt {
+            return max(0, Date().timeIntervalSince1970 - connectedAt)
+        }
+        return connectedSince
+    }
 
     enum CodingKeys: String, CodingKey {
         case ipAddress = "ip_address"
