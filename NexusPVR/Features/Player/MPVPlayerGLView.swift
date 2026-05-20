@@ -29,8 +29,8 @@ class MPVPlayerGLView: GLKView {
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
     #if os(tvOS)
     var onPlayPause: (() -> Void)?
-    var onSeekForward: (() -> Void)?
-    var onSeekBackward: (() -> Void)?
+    var onSeekForward: ((Int) -> Void)?
+    var onSeekBackward: ((Int) -> Void)?
     var onSelect: (() -> Void)?
     var onMenu: (() -> Void)?
     var onUpArrow: (() -> Void)?
@@ -218,22 +218,33 @@ class MPVPlayerGLView: GLKView {
     #if os(tvOS)
     private var seekTimer: Timer?
     private var seekDirection: Int = 0
+    private var seekTickCount: Int = 0
+
+    private func seekMultiplier(for tick: Int) -> Int {
+        // Hold-to-scrub acceleration: longer holds take bigger steps.
+        if tick < 8 { return 1 }
+        if tick < 16 { return 2 }
+        if tick < 28 { return 4 }
+        return 8
+    }
+
+    private func fireHoldSeek() {
+        let multiplier = seekMultiplier(for: seekTickCount)
+        if seekDirection < 0 {
+            onSeekBackward?(multiplier)
+        } else {
+            onSeekForward?(multiplier)
+        }
+        seekTickCount += 1
+    }
 
     private func startSeeking(direction: Int) {
         stopSeeking()
         seekDirection = direction
-        if direction < 0 {
-            onSeekBackward?()
-        } else {
-            onSeekForward?()
-        }
+        seekTickCount = 0
+        fireHoldSeek()
         seekTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            if self.seekDirection < 0 {
-                self.onSeekBackward?()
-            } else {
-                self.onSeekForward?()
-            }
+            self?.fireHoldSeek()
         }
     }
 
@@ -241,17 +252,18 @@ class MPVPlayerGLView: GLKView {
         seekTimer?.invalidate()
         seekTimer = nil
         seekDirection = 0
+        seekTickCount = 0
     }
 
     @objc private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
         switch gesture.direction {
         case .left:
             if onLeftArrow?() != true {
-                onSeekBackward?()
+                onSeekBackward?(1)
             }
         case .right:
             if onRightArrow?() != true {
-                onSeekForward?()
+                onSeekForward?(1)
             }
         case .up:
             onUpArrow?()
