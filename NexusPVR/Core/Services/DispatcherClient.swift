@@ -37,6 +37,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     private var seriesRuleIndex: [Int: DispatcharrSeriesRuleResponseItem] = [:]
     /// In-memory map of recording id -> playback URL path from Dispatcharr custom_properties.file_url.
     private var recordingIdToPlaybackPath: [Int: String] = [:]
+    /// Cache of M3U profile id -> profile name, populated by `getM3UAccounts()`.
+    /// Dispatcharr 0.24.0 stopped sending `m3u_profile_name` in /proxy/ts/status,
+    /// so we resolve names client-side from the M3U accounts endpoint.
+    private var m3uProfileNameCache: [Int: String] = [:]
 
     init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
         self.config = config ?? ServerConfig.load()
@@ -1599,7 +1603,25 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             throw PVRClientError.invalidResponse
         }
         let items: [M3UAccount] = try await fetchAllPages(url)
+        var cache: [Int: String] = [:]
+        for account in items {
+            for profile in account.profiles {
+                cache[profile.id] = profile.name
+            }
+        }
+        m3uProfileNameCache = cache
         return items
+    }
+
+    /// Resolves an M3U profile ID to its display name using the cache populated by `getM3UAccounts()`.
+    func m3uProfileName(forId id: Int) -> String? {
+        m3uProfileNameCache[id]
+    }
+
+    /// Ensures the profile-name cache is populated, fetching M3U accounts if needed.
+    func ensureM3UProfileNamesLoaded() async {
+        guard m3uProfileNameCache.isEmpty else { return }
+        _ = try? await getM3UAccounts()
     }
 
     // MARK: - M3U / XC / XMLTV Parsers (Streamer endpoints)

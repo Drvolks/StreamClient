@@ -8,6 +8,11 @@
 import Foundation
 
 nonisolated struct M3UAccount: Decodable, Identifiable {
+    nonisolated struct Profile: Decodable, Identifiable {
+        let id: Int
+        let name: String
+    }
+
     let id: Int
     let name: String
     let serverUrl: String
@@ -16,9 +21,10 @@ nonisolated struct M3UAccount: Decodable, Identifiable {
     let isActive: Bool
     let locked: Bool
     let accountType: String?
+    let profiles: [Profile]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, status, locked
+        case id, name, status, locked, profiles
         case serverUrl = "server_url"
         case updatedAt = "updated_at"
         case isActive = "is_active"
@@ -62,5 +68,7 @@ nonisolated struct M3UAccount: Decodable, Identifiable {
         } else {
             locked = false
         }
+
+        profiles = (try? container.decode([Profile].self, forKey: .profiles)) ?? []
     }
 }

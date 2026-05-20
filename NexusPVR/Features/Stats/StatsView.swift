@@ -44,7 +44,7 @@ struct StatsView: View {
                 } else {
                     LazyVStack(spacing: Theme.spacingMD) {
                         ForEach(vm.channels) { channel in
-                            ChannelStatusCard(channel: channel)
+                            ChannelStatusCard(channel: channel, profileNameLookup: { vm.profileName(forId: $0) })
                         }
                     }
                     .padding(.horizontal)
@@ -89,7 +89,7 @@ struct StatsView: View {
                 } else {
                     LazyVStack(spacing: Theme.spacingLG) {
                         ForEach(vm.channels) { channel in
-                            ChannelStatusCard(channel: channel)
+                            ChannelStatusCard(channel: channel, profileNameLookup: { vm.profileName(forId: $0) })
                         }
                     }
                     .padding(.horizontal, 80)
@@ -265,6 +265,7 @@ struct M3UAccountRow: View {
 
 struct ChannelStatusCard: View {
     let channel: ProxyChannelStatus
+    var profileNameLookup: ((Int) -> String?)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacingMD) {
@@ -331,7 +332,7 @@ struct ChannelStatusCard: View {
 
     private var displayName: String {
         let name = channel.displayName
-        guard let profile = channel.profileLabel else { return name }
+        guard let profile = channel.profileLabel(nameLookup: profileNameLookup) else { return name }
         return "\(name) [\(profile)]"
     }
 

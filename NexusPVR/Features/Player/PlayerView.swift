@@ -1477,6 +1477,10 @@ struct PlayerView: View {
             let activeChannels = channels.filter { $0.state.lowercased() == "active" }
             let candidates = activeChannels.isEmpty ? channels : activeChannels
 
+            // Dispatcharr 0.24.0 stopped sending m3u_profile_name; resolve id → name client-side.
+            await client.ensureM3UProfileNamesLoaded()
+            let lookup: (Int) -> String? = { [client] id in client.m3uProfileName(forId: id) }
+
             let names = [
                 appState.currentlyPlayingChannelName,
                 appState.currentlyPlayingTitle,
@@ -1488,12 +1492,12 @@ struct PlayerView: View {
             if let matched = candidates.first(where: { channel in
                 names.contains(where: { matchesStreamName(channel.displayName, $0) })
             }) {
-                return matched.profileLabel
+                return matched.profileLabel(nameLookup: lookup)
             }
 
             // If only one active stream exists, use its profile as a fallback.
             if candidates.count == 1 {
-                return candidates[0].profileLabel
+                return candidates[0].profileLabel(nameLookup: lookup)
             }
         } catch {
             return nil

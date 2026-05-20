@@ -47,15 +47,27 @@ nonisolated struct ProxyChannelStatus: Decodable, Identifiable {
         return channelId ?? "Unknown"
     }
 
-    var profileLabel: String? {
+    var profileLabel: String? { profileLabel(nameLookup: nil) }
+
+    /// Returns a short, user-friendly profile label.
+    /// Dispatcharr 0.24.0 dropped `m3u_profile_name` from /proxy/ts/status, so callers
+    /// should pass a `nameLookup` (typically `client.m3uProfileName(forId:)`) to resolve
+    /// `m3u_profile_id` to a name. The bare id is intentionally not used as a fallback
+    /// because it's meaningless to users.
+    func profileLabel(nameLookup: ((Int) -> String?)?) -> String? {
+        let resolved: String?
         if let name = m3uProfileName, !name.isEmpty {
-            let short = name
-                .replacingOccurrences(of: "Default", with: "")
-                .trimmingCharacters(in: .whitespaces)
-            if !short.isEmpty { return short }
+            resolved = name
+        } else if let id = m3uProfileId, let lookup = nameLookup {
+            resolved = lookup(id)
+        } else {
+            resolved = nil
         }
-        if let id = m3uProfileId { return String(id) }
-        return nil
+        guard let name = resolved else { return nil }
+        let short = name
+            .replacingOccurrences(of: "Default", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return short.isEmpty ? nil : short
     }
 
     enum CodingKeys: String, CodingKey {
