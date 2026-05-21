@@ -294,6 +294,22 @@ struct PlayerView: View {
                 .onTapGesture {
                     toggleControls()
                 }
+                #if os(macOS)
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active:
+                        if !showControls {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showControls = true
+                            }
+                        }
+                        NSCursor.setHiddenUntilMouseMoves(false)
+                        scheduleHideControls()
+                    case .ended:
+                        break
+                    }
+                }
+                #endif
             #endif
 
             // Loading overlay - hide video until ready (prevents seeing start before resume)
@@ -508,6 +524,8 @@ struct PlayerView: View {
                 }
             }
             #if os(macOS)
+            // Ensure cursor is visible when leaving the player
+            NSCursor.setHiddenUntilMouseMoves(false)
             // Re-enable display sleep
             enableScreenSaver()
             #else
@@ -1612,6 +1630,9 @@ struct PlayerView: View {
         }
 
         if showControls {
+            #if os(macOS)
+            NSCursor.setHiddenUntilMouseMoves(false)
+            #endif
             scheduleHideControls()
         }
     }
@@ -1626,6 +1647,9 @@ struct PlayerView: View {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showControls = false
                     }
+                    #if os(macOS)
+                    NSCursor.setHiddenUntilMouseMoves(true)
+                    #endif
                 }
             }
         }
