@@ -42,6 +42,8 @@ struct MPVContainerView: NSViewControllerRepresentable {
     @Binding var setAudioTrackFunc: ((Int) -> Void)?
     @Binding var setSubtitleTrackFunc: ((Int?) -> Void)?
     @Binding var getSubtitleTextFunc: (() -> String?)?
+    @Binding var setMutedFunc: ((Bool) -> Void)?
+    @Binding var isMuted: Bool
 
     func makeNSViewController(context: Context) -> NSViewController {
         let controller: NSViewController & MPVPlayerMacOSController
@@ -90,6 +92,8 @@ struct MPVContainerView: NSViewControllerRepresentable {
             self.setAudioTrackFunc = { controller.setAudioTrack($0) }
             self.setSubtitleTrackFunc = { controller.setSubtitleTrack($0) }
             self.getSubtitleTextFunc = { controller.getSubtitleText() }
+            self.setMutedFunc = { controller.setMuted($0) }
+            self.isMuted = controller.isMuted
         }
 
         return controller
@@ -139,6 +143,8 @@ protocol MPVPlayerMacOSController: AnyObject {
     func setAudioTrack(_ trackId: Int)
     func setSubtitleTrack(_ trackId: Int?)
     func getSubtitleText() -> String?
+    func setMuted(_ muted: Bool)
+    var isMuted: Bool { get }
 }
 
 // MARK: - MPVPlayerNSViewController (Metal)
@@ -221,6 +227,8 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
     func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
     func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
     func getSubtitleText() -> String? { player?.getSubtitleText() }
+    func setMuted(_ muted: Bool) { player?.setMuted(muted) }
+    var isMuted: Bool { player?.isMuted ?? false }
 
     func cleanup() {
         player?.destroy()
@@ -321,6 +329,8 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
     func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
     func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
     func getSubtitleText() -> String? { player?.getSubtitleText() }
+    func setMuted(_ muted: Bool) { player?.setMuted(muted) }
+    var isMuted: Bool { player?.isMuted ?? false }
 
     func cleanup() {
         player?.destroy()
@@ -406,6 +416,8 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
     func setAudioTrack(_ trackId: Int) { glView.setAudioTrack(trackId) }
     func setSubtitleTrack(_ trackId: Int?) { glView.setSubtitleTrack(trackId) }
     func getSubtitleText() -> String? { glView.getSubtitleText() }
+    func setMuted(_ muted: Bool) { glView.setMuted(muted) }
+    var isMuted: Bool { glView.isMuted }
 
     func cleanup() {
         glView.cleanup()
@@ -563,6 +575,8 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
     func setAudioTrack(_ trackId: Int) { player?.setAudioTrack(trackId) }
     func setSubtitleTrack(_ trackId: Int?) { player?.setSubtitleTrack(trackId) }
     func getSubtitleText() -> String? { player?.getSubtitleText() }
+    func setMuted(_ muted: Bool) { player?.setMuted(muted) }
+    var isMuted: Bool { player?.isMuted ?? false }
 
     func cleanup() {
         needsDrawing = false

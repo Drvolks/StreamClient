@@ -166,6 +166,9 @@ class MPVPlayerGLView: GLKView {
         player?.loadURL(url)
     }
 
+    func setMuted(_ muted: Bool) { player?.setMuted(muted) }
+    var isMuted: Bool { player?.isMuted ?? false }
+
     func setStreamHeaders(_ headers: [String: String]) {
         player?.setStreamHeaders(headers)
     }
