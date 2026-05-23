@@ -123,6 +123,9 @@ class MPVPlayerPixelBufferView: UIView {
         session.player?.loadURL(url)
     }
 
+    func setMuted(_ muted: Bool) { session.player?.setMuted(muted) }
+    var isMuted: Bool { session.player?.isMuted ?? false }
+
     func setStreamHeaders(_ headers: [String: String]) {
         session.player?.setStreamHeaders(headers)
     }

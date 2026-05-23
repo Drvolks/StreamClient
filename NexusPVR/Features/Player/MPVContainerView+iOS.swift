@@ -39,6 +39,8 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var setAudioTrackFunc: ((Int) -> Void)?
     @Binding var setSubtitleTrackFunc: ((Int?) -> Void)?
     @Binding var getSubtitleTextFunc: (() -> String?)?
+    @Binding var setMutedFunc: ((Bool) -> Void)?
+    @Binding var isMuted: Bool
 
     private func configureCommonCallbacks(for view: MPVPlayerGLView) {
         view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
@@ -91,6 +93,8 @@ struct MPVContainerView: UIViewRepresentable {
             self.setAudioTrackFunc = { view.setAudioTrack($0) }
             self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
             self.getSubtitleTextFunc = { view.getSubtitleText() }
+            self.setMutedFunc = { view.setMuted($0) }
+            self.isMuted = view.isMuted
         }
     }
 
@@ -109,6 +113,8 @@ struct MPVContainerView: UIViewRepresentable {
             self.setAudioTrackFunc = { view.setAudioTrack($0) }
             self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
             self.getSubtitleTextFunc = { view.getSubtitleText() }
+            self.setMutedFunc = { view.setMuted($0) }
+            self.isMuted = view.isMuted
         }
     }
 
@@ -127,6 +133,8 @@ struct MPVContainerView: UIViewRepresentable {
             self.setAudioTrackFunc = { view.setAudioTrack($0) }
             self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
             self.getSubtitleTextFunc = { view.getSubtitleText() }
+            self.setMutedFunc = { view.setMuted($0) }
+            self.isMuted = view.isMuted
         }
     }
 

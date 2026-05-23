@@ -68,6 +68,10 @@ struct PlayerView: View {
     @State private var setSubtitleTrackFunc: ((Int?) -> Void)?
     @State private var getSubtitleTextFunc: (() -> String?)?
     @State private var currentSubtitleText: String?
+    #if os(iOS) || os(macOS)
+    @State private var setMutedFunc: ((Bool) -> Void)?
+    @State private var isMuted = false
+    #endif
     #if os(tvOS)
     @State private var tvFocusedTrackIndex: Int = -1  // -1 = tabs focused, 0+ = track list index
     #endif
@@ -239,7 +243,9 @@ struct PlayerView: View {
                 getTrackListFunc: $getTrackListFunc,
                 setAudioTrackFunc: $setAudioTrackFunc,
                 setSubtitleTrackFunc: $setSubtitleTrackFunc,
-                getSubtitleTextFunc: $getSubtitleTextFunc
+                getSubtitleTextFunc: $getSubtitleTextFunc,
+                setMutedFunc: $setMutedFunc,
+                isMuted: $isMuted
             )
                 .ignoresSafeArea()
                 .onTapGesture {
@@ -288,7 +294,9 @@ struct PlayerView: View {
                 getTrackListFunc: $getTrackListFunc,
                 setAudioTrackFunc: $setAudioTrackFunc,
                 setSubtitleTrackFunc: $setSubtitleTrackFunc,
-                getSubtitleTextFunc: $getSubtitleTextFunc
+                getSubtitleTextFunc: $getSubtitleTextFunc,
+                setMutedFunc: $setMutedFunc,
+                isMuted: $isMuted
             )
                 .ignoresSafeArea()
                 .onTapGesture {
@@ -981,6 +989,21 @@ struct PlayerView: View {
                 .layoutPriority(0)
 
             Spacer()
+
+            #if os(iOS) || os(macOS)
+            Button {
+                isMuted.toggle()
+                setMutedFunc?(isMuted)
+                scheduleHideControls()
+            } label: {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .padding(8)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("player-mute-button")
+            #endif
 
             #if os(iOS)
             if isUsingPixelBufferRenderer && pipIsSupported {

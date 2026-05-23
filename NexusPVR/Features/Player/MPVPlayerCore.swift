@@ -323,6 +323,22 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
 
 
+    func setMuted(_ muted: Bool) {
+        guard let mpv = mpv else { return }
+        var flag: Int32 = muted ? 1 : 0
+        let result = mpv_set_property(mpv, "mute", MPV_FORMAT_FLAG, &flag)
+        if result < 0 {
+            print("MPV: Failed to set mute: \(result)")
+        }
+    }
+
+    var isMuted: Bool {
+        guard let mpv = mpv else { return false }
+        var flag: Int32 = 0
+        mpv_get_property(mpv, "mute", MPV_FORMAT_FLAG, &flag)
+        return flag != 0
+    }
+
     func getVideoInfo() -> (codec: String?, width: Int?, height: Int?, hwdec: String?, audioChannels: String?, droppedFrames: Int64, gamma: String?, fps: Double) {
         guard let mpv = mpv else { return (nil, nil, nil, nil, nil, 0, nil, 0) }
 
