@@ -200,7 +200,11 @@ struct PlayerView: View {
                 settingsTab: $settingsTab,
                 tvFocusedTrackIndex: $tvFocusedTrackIndex,
                 tvTrackCountProvider: { tvTrackCount },
-                tvSelectTrack: { tvSelectFocusedTrack() }
+                tvSelectTrack: { tvSelectFocusedTrack() },
+                onDismissSettingsPanel: {
+                    dismissSettingsPanel()  // sets showSettingsPanel = false AND re-schedules hide
+                    tvFocusedTrackIndex = -1
+                }
             )
                 .ignoresSafeArea()
             #elseif os(iOS)
@@ -607,6 +611,9 @@ struct PlayerView: View {
         #if os(tvOS)
         .onChange(of: showSettingsPanel) { _ in
             appState.tvosPlayerSettingsPanelOpen = showSettingsPanel
+            if !showSettingsPanel {
+                scheduleHideControls()  // always re-arm auto-hide when the panel closes
+            }
         }
         #endif
         .onChange(of: duration) { _ in

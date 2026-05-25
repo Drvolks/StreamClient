@@ -48,6 +48,7 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var tvFocusedTrackIndex: Int
     var tvTrackCountProvider: (() -> Int)?
     var tvSelectTrack: (() -> Void)?
+    var onDismissSettingsPanel: (() -> Void)?
 
     private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
         view.onPositionUpdate = { position, dur in
@@ -274,36 +275,40 @@ struct MPVContainerView: UIViewRepresentable {
         let focusBinding = $tvFocusedTrackIndex
         let openSettings = onOpenSettings
         view.onUpArrow = openSettings
+        let dismissPanel = onDismissSettingsPanel
         view.onMenuOverride = {
             print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
-            focusBinding.wrappedValue = -1
+            withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
             return true
         }
         view.onLeftArrow = {
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                switch tabBinding.wrappedValue {
-                case .video:
-                    withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
-                case .audio: tabBinding.wrappedValue = .video
-                case .subtitles: tabBinding.wrappedValue = .audio
-                }
+            switch tabBinding.wrappedValue {
+            case .video:
+                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
+            case .audio:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .video }
+                focusBinding.wrappedValue = -1
+            case .subtitles:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
+                focusBinding.wrappedValue = -1
             }
-            focusBinding.wrappedValue = -1
             return true
         }
         view.onRightArrow = {
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                switch tabBinding.wrappedValue {
-                case .video: tabBinding.wrappedValue = .audio
-                case .audio: tabBinding.wrappedValue = .subtitles
-                case .subtitles: break
-                }
+            switch tabBinding.wrappedValue {
+            case .video:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
+                focusBinding.wrappedValue = -1
+            case .audio:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .subtitles }
+                focusBinding.wrappedValue = -1
+            case .subtitles:
+                // Right-click on the last tab dismisses the panel (mirrors left-click on .video)
+                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
             }
-            focusBinding.wrappedValue = -1
             return true
         }
         view.onDownArrow = {
@@ -327,36 +332,40 @@ struct MPVContainerView: UIViewRepresentable {
         let focusBinding = $tvFocusedTrackIndex
         let openSettings = onOpenSettings
         view.onUpArrow = openSettings
+        let dismissPanel = onDismissSettingsPanel
         view.onMenuOverride = {
             print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
-            focusBinding.wrappedValue = -1
+            withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
             return true
         }
         view.onLeftArrow = {
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                switch tabBinding.wrappedValue {
-                case .video:
-                    withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
-                case .audio: tabBinding.wrappedValue = .video
-                case .subtitles: tabBinding.wrappedValue = .audio
-                }
+            switch tabBinding.wrappedValue {
+            case .video:
+                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
+            case .audio:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .video }
+                focusBinding.wrappedValue = -1
+            case .subtitles:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
+                focusBinding.wrappedValue = -1
             }
-            focusBinding.wrappedValue = -1
             return true
         }
         view.onRightArrow = {
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                switch tabBinding.wrappedValue {
-                case .video: tabBinding.wrappedValue = .audio
-                case .audio: tabBinding.wrappedValue = .subtitles
-                case .subtitles: break
-                }
+            switch tabBinding.wrappedValue {
+            case .video:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
+                focusBinding.wrappedValue = -1
+            case .audio:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .subtitles }
+                focusBinding.wrappedValue = -1
+            case .subtitles:
+                // Right-click on the last tab dismisses the panel (mirrors left-click on .video)
+                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
             }
-            focusBinding.wrappedValue = -1
             return true
         }
         view.onDownArrow = {
@@ -380,36 +389,40 @@ struct MPVContainerView: UIViewRepresentable {
         let focusBinding = $tvFocusedTrackIndex
         let openSettings = onOpenSettings
         view.onUpArrow = openSettings
+        let dismissPanel = onDismissSettingsPanel
         view.onMenuOverride = {
             print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
-            focusBinding.wrappedValue = -1
+            withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
             return true
         }
         view.onLeftArrow = {
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                switch tabBinding.wrappedValue {
-                case .video:
-                    withAnimation(.easeInOut(duration: 0.25)) { panelBinding.wrappedValue = false }
-                case .audio: tabBinding.wrappedValue = .video
-                case .subtitles: tabBinding.wrappedValue = .audio
-                }
+            switch tabBinding.wrappedValue {
+            case .video:
+                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
+            case .audio:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .video }
+                focusBinding.wrappedValue = -1
+            case .subtitles:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
+                focusBinding.wrappedValue = -1
             }
-            focusBinding.wrappedValue = -1
             return true
         }
         view.onRightArrow = {
             guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                switch tabBinding.wrappedValue {
-                case .video: tabBinding.wrappedValue = .audio
-                case .audio: tabBinding.wrappedValue = .subtitles
-                case .subtitles: break
-                }
+            switch tabBinding.wrappedValue {
+            case .video:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
+                focusBinding.wrappedValue = -1
+            case .audio:
+                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .subtitles }
+                focusBinding.wrappedValue = -1
+            case .subtitles:
+                // Right-click on the last tab dismisses the panel (mirrors left-click on .video)
+                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
             }
-            focusBinding.wrappedValue = -1
             return true
         }
         view.onDownArrow = {
