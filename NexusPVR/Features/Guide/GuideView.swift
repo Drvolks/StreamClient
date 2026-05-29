@@ -126,18 +126,23 @@ struct GuideView: View {
                     #if os(tvOS)
                     // Resync the guide start time so the visible window matches
                     // the ViewModel's timelineStart (which uses current time)
-                    let now = Date()
-                    let calendar = Calendar.current
-                    let minute = calendar.component(.minute, from: now)
-                    let roundedMinute = (minute / 30) * 30
-                    if let newStart = calendar.date(bySettingHour: calendar.component(.hour, from: now),
-                                                    minute: roundedMinute, second: 0, of: now) {
-                        guideStartTime = newStart
-                        timeOffset = 0
-                    }
+                    resyncGuideStartToNow()
                     #endif
                 }
             }
+            #if os(tvOS)
+            .onChange(of: appState.isShowingPlayer) { _, isShowing in
+                // The player is presented as a .fullScreenCover, which keeps
+                // scenePhase == .active, so the scenePhase resync never fires on
+                // dismissal. Re-anchor the guide on "now" here so the visible
+                // window doesn't drift into the past during long sessions.
+                if !isShowing {
+                    resyncGuideStartToNow()
+                    viewModel.scrollToNow()
+                    Task { await refreshRecordings() }
+                }
+            }
+            #endif
     }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -574,6 +579,19 @@ struct GuideView: View {
 
     private var visibleEnd: Date {
         visibleStart.addingTimeInterval(visibleMinutes * 60)
+    }
+
+    // Re-anchor the visible timeline on the current half-hour bucket.
+    private func resyncGuideStartToNow() {
+        let now = Date()
+        let calendar = Calendar.current
+        let minute = calendar.component(.minute, from: now)
+        let roundedMinute = (minute / 30) * 30
+        if let newStart = calendar.date(bySettingHour: calendar.component(.hour, from: now),
+                                        minute: roundedMinute, second: 0, of: now) {
+            guideStartTime = newStart
+            timeOffset = 0
+        }
     }
     #endif
 
