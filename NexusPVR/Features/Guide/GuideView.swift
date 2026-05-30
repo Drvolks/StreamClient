@@ -867,10 +867,10 @@ struct GuideView: View {
                 handleTVSelect()
             }
         }
-        .onChange(of: viewModel.selectedDate) {
+        .onChange(of: viewModel.selectedDate) { oldDate, newDate in
             // Reset grid time window when date changes
             let calendar = Calendar.current
-            if calendar.isDateInToday(viewModel.selectedDate) {
+            if calendar.isDateInToday(newDate) {
                 // Today: start from current time rounded to 30 min
                 let now = Date()
                 let minute = calendar.component(.minute, from: now)
@@ -879,12 +879,22 @@ struct GuideView: View {
                                                minute: roundedMinute, second: 0, of: now) ?? now
             } else {
                 // Other days: start from midnight
-                guideStartTime = calendar.startOfDay(for: viewModel.selectedDate)
+                guideStartTime = calendar.startOfDay(for: newDate)
             }
             timeOffset = 0
-            focusedRow = 0
-            focusedColumn = 0
-            scrollTopRow = 0
+            if calendar.isDate(oldDate, inSameDayAs: newDate) {
+                // Same-day refresh (e.g. returning from the player via
+                // scrollToNow()): keep focus on the previously focused channel
+                // row instead of jumping back to the first channel. The time
+                // window was re-anchored to now, so the old column index no
+                // longer maps to the same program — reset it to the leftmost.
+                focusedColumn = 0
+            } else {
+                // Real day change: start fresh at the top of the grid.
+                focusedRow = 0
+                focusedColumn = 0
+                scrollTopRow = 0
+            }
             endTVSearchEditing()
             #if DISPATCHERPVR
             closeHeaderDrawer()
