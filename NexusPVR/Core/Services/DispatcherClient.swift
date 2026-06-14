@@ -940,6 +940,84 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return items.map { $0.toChannel() }
     }
 
+    func getChannelSummary(profileId: Int? = nil) async throws -> [Channel] {
+        guard !config.isDemoMode else { return DemoDataProvider.channels }
+        if useOutputEndpoints {
+            return try await getChannels()
+        }
+
+        var components = URLComponents(string: "\(baseURL)/api/channels/channels/summary/")!
+        var queryItems = [URLQueryItem(name: "page_size", value: "10000")]
+        if let profileId {
+            queryItems.append(URLQueryItem(name: "channel_profile_id", value: String(profileId)))
+        }
+        components.queryItems = queryItems
+        guard let url = components.url else {
+            throw PVRClientError.invalidResponse
+        }
+
+        let channelsStart = CFAbsoluteTimeGetCurrent()
+        let items: [DispatcharrChannel] = try await fetchAllPages(url)
+        print("[Dispatcharr] Fetched \(items.count) channel summaries in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - channelsStart) * 1000))ms")
+
+        tvgIdToChannelId = [:]
+        channelIdToLogoId = [:]
+        channelIdToUUID = [:]
+        for ch in items {
+            if let logoId = ch.logoId {
+                channelIdToLogoId[ch.id] = logoId
+            }
+            if let uuid = ch.uuid, !uuid.isEmpty {
+                channelIdToUUID[ch.id] = uuid
+            }
+        }
+
+        let epgResolveStart = CFAbsoluteTimeGetCurrent()
+        let channelsNeedingResolve = items.filter { $0.epgDataId != nil }
+        let concurrencyLimit = 20
+        let resolvedMappings = await withTaskGroup(of: (Int, String?).self) { group in
+            var results = [(Int, String?)]()
+            var index = 0
+
+            for ch in channelsNeedingResolve {
+                guard let epgDataId = ch.epgDataId else { continue }
+                guard let epgURL = URL(string: "\(baseURL)/api/epg/epgdata/\(epgDataId)/") else { continue }
+
+                if index >= concurrencyLimit {
+                    if let result = await group.next() {
+                        results.append(result)
+                    }
+                }
+
+                let channelId = ch.id
+                group.addTask { [weak self] in
+                    guard let self else { return (channelId, nil) }
+                    do {
+                        let epgData: DispatcharrEPGData = try await self.authenticatedRequest(epgURL)
+                        return (channelId, epgData.tvgId)
+                    } catch {
+                        return (channelId, nil)
+                    }
+                }
+                index += 1
+            }
+
+            for await result in group {
+                results.append(result)
+            }
+            return results
+        }
+        for (channelId, epgTvgId) in resolvedMappings {
+            if let epgTvgId, !epgTvgId.isEmpty,
+               tvgIdToChannelId[epgTvgId] == nil {
+                tvgIdToChannelId[epgTvgId] = channelId
+            }
+        }
+        print("[Dispatcharr] Resolved \(channelsNeedingResolve.count) summary EPG data mappings in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - epgResolveStart) * 1000))ms")
+
+        return items.map { $0.toChannel() }
+    }
+
     func getChannelProfiles() async throws -> [ChannelProfile] {
         guard !config.isDemoMode else { return DemoDataProvider.channelProfiles }
         if useOutputEndpoints { return [] }
