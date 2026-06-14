@@ -556,6 +556,7 @@ struct GuideView: View {
     @State private var scrollTopRow: Int = 0
     @State private var focusedHeaderItem: TVGuideHeaderItem = .search
     @State private var timeOffset: Int = 0  // 30-minute increments from now
+    @State private var tvKeyboardRepeatDirection: MoveCommandDirection?
     @State private var guideStartTime: Date = {
         // Start from current time, rounded down to nearest 30 minutes
         let now = Date()
@@ -579,6 +580,14 @@ struct GuideView: View {
 
     private var visibleEnd: Date {
         visibleStart.addingTimeInterval(visibleMinutes * 60)
+    }
+
+    private var canRepeatTVGuideNavigation: Bool {
+        #if DISPATCHERPVR
+        gridHasFocus && !isTVSearchFieldFocused && !isHeaderDrawerOpen
+        #else
+        gridHasFocus && !isTVSearchFieldFocused
+        #endif
     }
 
     // Re-anchor the visible timeline on the current half-hour bucket.
@@ -857,11 +866,21 @@ struct GuideView: View {
                 }
             }
             .focused($gridHasFocus)
+            .background(
+                TVGuideRemoteRepeatView(
+                    isEnabled: canRepeatTVGuideNavigation,
+                    keyboardRepeatDirection: canRepeatTVGuideNavigation ? tvKeyboardRepeatDirection : nil,
+                    onRepeat: handleTVNavigation
+                )
+            )
             .onTapGesture {
                 handleTVSelect()
             }
             .onMoveCommand { direction in
                 handleTVNavigation(direction)
+            }
+            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow], phases: .all) { press in
+                handleTVKeyboardNavigationKey(press)
             }
             .onPlayPauseCommand {
                 handleTVSelect()
@@ -1451,6 +1470,55 @@ struct GuideView: View {
         }
     }
 
+    private func handleTVKeyboardNavigationKey(_ press: KeyPress) -> KeyPress.Result {
+        guard let direction = moveDirection(for: press.key) else {
+            return .ignored
+        }
+
+        guard canRepeatTVGuideNavigation else {
+            stopTVKeyboardNavigationRepeat()
+            return .ignored
+        }
+
+        if press.phase.contains(.down) {
+            tvKeyboardRepeatDirection = direction
+            return .ignored
+        }
+
+        if press.phase.contains(.repeat) {
+            tvKeyboardRepeatDirection = direction
+            return .handled
+        }
+
+        if press.phase.contains(.up) {
+            if tvKeyboardRepeatDirection == direction {
+                stopTVKeyboardNavigationRepeat()
+            }
+            return .handled
+        }
+
+        return .ignored
+    }
+
+    private func moveDirection(for key: KeyEquivalent) -> MoveCommandDirection? {
+        switch key {
+        case .upArrow:
+            return .up
+        case .downArrow:
+            return .down
+        case .leftArrow:
+            return .left
+        case .rightArrow:
+            return .right
+        default:
+            return nil
+        }
+    }
+
+    private func stopTVKeyboardNavigationRepeat() {
+        tvKeyboardRepeatDirection = nil
+    }
+
     private func moveHeaderFocusLeft() {
         guard let currentIndex = tvHeaderItems.firstIndex(of: focusedHeaderItem) else { return }
         focusedHeaderItem = tvHeaderItems[max(0, currentIndex - 1)]
@@ -1825,6 +1893,181 @@ private struct TVImmediateSearchField: UIViewRepresentable {
             }
         } else if uiView.isFirstResponder {
             uiView.resignFirstResponder()
+        }
+    }
+}
+
+private struct TVGuideRemoteRepeatView: UIViewRepresentable {
+    let isEnabled: Bool
+    let keyboardRepeatDirection: MoveCommandDirection?
+    let onRepeat: (MoveCommandDirection) -> Void
+
+    func makeUIView(context: Context) -> RemoteRepeatCaptureView {
+        let view = RemoteRepeatCaptureView(frame: .zero)
+        view.onRepeat = onRepeat
+        view.isRepeatEnabled = isEnabled
+        view.keyboardRepeatDirection = keyboardRepeatDirection
+        return view
+    }
+
+    func updateUIView(_ uiView: RemoteRepeatCaptureView, context: Context) {
+        uiView.onRepeat = onRepeat
+        uiView.isRepeatEnabled = isEnabled
+        uiView.keyboardRepeatDirection = keyboardRepeatDirection
+    }
+
+    static func dismantleUIView(_ uiView: RemoteRepeatCaptureView, coordinator: ()) {
+        uiView.stopRepeating()
+    }
+
+    final class RemoteRepeatCaptureView: UIView {
+        var onRepeat: ((MoveCommandDirection) -> Void)?
+
+        var isRepeatEnabled: Bool = false {
+            didSet {
+                guard oldValue != isRepeatEnabled else { return }
+                if isRepeatEnabled {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.isRepeatEnabled, self.window != nil else { return }
+                        self.becomeFirstResponder()
+                    }
+                } else {
+                    stopRepeating()
+                    if isFirstResponder {
+                        resignFirstResponder()
+                    }
+                }
+            }
+        }
+
+        var keyboardRepeatDirection: MoveCommandDirection? {
+            didSet {
+                guard oldValue != keyboardRepeatDirection else { return }
+                guard isRepeatEnabled, let keyboardRepeatDirection else {
+                    stopRepeating()
+                    return
+                }
+                startRepeating(keyboardRepeatDirection)
+            }
+        }
+
+        private let initialDelay: TimeInterval = 0.35
+        private var repeatTimer: Timer?
+        private var currentDirection: MoveCommandDirection?
+        private var repeatTickCount = 0
+
+        override var canBecomeFirstResponder: Bool { true }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil {
+                stopRepeating()
+            } else if isRepeatEnabled {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.isRepeatEnabled else { return }
+                    self.becomeFirstResponder()
+                }
+            }
+        }
+
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            for press in presses {
+                if let direction = moveDirection(for: press) {
+                    startRepeating(direction)
+                }
+            }
+            super.pressesBegan(presses, with: event)
+        }
+
+        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            if keyboardRepeatDirection == nil, presses.contains(where: { moveDirection(for: $0) == currentDirection }) {
+                stopRepeating()
+            }
+            super.pressesEnded(presses, with: event)
+        }
+
+        override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            stopRepeating()
+            super.pressesCancelled(presses, with: event)
+        }
+
+        func stopRepeating() {
+            repeatTimer?.invalidate()
+            repeatTimer = nil
+            currentDirection = nil
+            repeatTickCount = 0
+        }
+
+        private func startRepeating(_ direction: MoveCommandDirection) {
+            guard isRepeatEnabled else { return }
+            if currentDirection == direction, repeatTimer != nil {
+                return
+            }
+
+            stopRepeating()
+            currentDirection = direction
+            scheduleNextTick(after: initialDelay)
+        }
+
+        private func scheduleNextTick(after interval: TimeInterval) {
+            repeatTimer?.invalidate()
+            let timer = Timer(
+                timeInterval: interval,
+                target: self,
+                selector: #selector(handleRepeatTimer),
+                userInfo: nil,
+                repeats: false
+            )
+            RunLoop.main.add(timer, forMode: .common)
+            repeatTimer = timer
+        }
+
+        @objc private func handleRepeatTimer() {
+            guard isRepeatEnabled, let direction = currentDirection else {
+                stopRepeating()
+                return
+            }
+
+            onRepeat?(direction)
+            repeatTickCount += 1
+            scheduleNextTick(after: currentRepeatInterval())
+        }
+
+        private func currentRepeatInterval() -> TimeInterval {
+            if repeatTickCount < 10 { return 0.10 }
+            if repeatTickCount < 20 { return 0.08 }
+            if repeatTickCount < 30 { return 0.06 }
+            return 0.05
+        }
+
+        private func moveDirection(for press: UIPress) -> MoveCommandDirection? {
+            if let key = press.key {
+                switch key.charactersIgnoringModifiers {
+                case UIKeyCommand.inputUpArrow:
+                    return .up
+                case UIKeyCommand.inputDownArrow:
+                    return .down
+                case UIKeyCommand.inputLeftArrow:
+                    return .left
+                case UIKeyCommand.inputRightArrow:
+                    return .right
+                default:
+                    break
+                }
+            }
+
+            switch press.type {
+            case .upArrow:
+                return .up
+            case .downArrow:
+                return .down
+            case .leftArrow:
+                return .left
+            case .rightArrow:
+                return .right
+            default:
+                return nil
+            }
         }
     }
 }
