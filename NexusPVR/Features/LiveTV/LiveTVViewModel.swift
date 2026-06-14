@@ -46,7 +46,11 @@ final class LiveTVViewModel: ObservableObject {
                 try await client.authenticate()
             }
 
+            #if DISPATCHERPVR
+            channels = try await client.getChannelSummary()
+            #else
             channels = try await client.getChannels()
+            #endif
             channels.sort { $0.number < $1.number }
 
             // Load current programs for each channel

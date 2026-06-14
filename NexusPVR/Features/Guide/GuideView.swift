@@ -120,6 +120,15 @@ struct GuideView: View {
             .onChange(of: appState.guideGroupFilter) {
                 Task { viewModel.selectedGroupId = appState.guideGroupFilter }
             }
+            #if DISPATCHERPVR
+            .onChange(of: viewModel.selectedProfileId) { _, profileId in
+                Task {
+                    await epgCache.reloadData(using: client, profileId: profileId)
+                    viewModel.showChannelSearch = epgCache.channels.count > 25
+                    viewModel.updateKeywordMatches(keywords: keywords)
+                }
+            }
+            #endif
             .onChange(of: scenePhase) {
                 if scenePhase == .active {
                     Task { await refreshRecordings() }

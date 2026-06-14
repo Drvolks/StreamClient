@@ -38,7 +38,7 @@ final class EPGCache: ObservableObject {
 
     // MARK: - Loading
 
-    func loadData(using client: PVRClient) async {
+    func loadData(using client: PVRClient, profileId: Int? = nil) async {
         // Prevent concurrent loads
         guard !isLoadInProgress else { return }
         guard client.isConfigured else {
@@ -49,7 +49,11 @@ final class EPGCache: ObservableObject {
         backgroundLoadTask?.cancel()
         isLoadInProgress = true
         isLoading = true
+        hasLoaded = false
+        isFullyLoaded = false
         error = nil
+        epg = [:]
+        loadedDays = []
         let totalStart = CFAbsoluteTimeGetCurrent()
 
         do {
@@ -61,7 +65,11 @@ final class EPGCache: ObservableObject {
 
             // Fetch all channels
             let channelsStart = CFAbsoluteTimeGetCurrent()
+            #if DISPATCHERPVR
+            let loaded = try await client.getChannelSummary(profileId: profileId)
+            #else
             let loaded = try await client.getChannels()
+            #endif
             let sorted = loaded.sorted { $0.number < $1.number }
             channels = sorted
             channelMap = Dictionary(sorted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -151,6 +159,11 @@ final class EPGCache: ObservableObject {
         }
     }
 
+    func reloadData(using client: PVRClient, profileId: Int? = nil) async {
+        invalidate()
+        await loadData(using: client, profileId: profileId)
+    }
+
     /// Ensure EPG data for a specific day is loaded.
     /// If the background full-EPG task is still running, await it instead of issuing a redundant fetch.
     func ensureDay(_ date: Date, using client: PVRClient) async {
@@ -197,6 +210,9 @@ final class EPGCache: ObservableObject {
     // MARK: - Channel Filtering
 
     func channels(inProfile profileId: Int?) -> [Channel] {
+        // When Dispatcharr channels were loaded through the summary endpoint
+        // with a profile id, this should already be narrowed server-side.
+        // Keep this as a screen-level fallback for cached/all-channel data.
         guard let profileId,
               let profile = channelProfiles.first(where: { $0.id == profileId }) else {
             return visibleChannels
