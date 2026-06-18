@@ -211,11 +211,13 @@ enum LiveProgramFetcher {
         let name: String
         let tvgId: String?
         let epgDataId: Int?
+        let uuid: String?
 
         enum CodingKeys: String, CodingKey {
             case id, name
             case tvgId = "tvg_id"
             case epgDataId = "epg_data_id"
+            case uuid
         }
 
         init(from decoder: Decoder) throws {
@@ -229,7 +231,15 @@ enum LiveProgramFetcher {
             }
             name = try container.decode(String.self, forKey: .name)
             tvgId = try container.decodeIfPresent(String.self, forKey: .tvgId)
-            epgDataId = try container.decodeIfPresent(Int.self, forKey: .epgDataId)
+            uuid = try container.decodeIfPresent(String.self, forKey: .uuid)
+            if let intEpgDataId = try? container.decode(Int.self, forKey: .epgDataId) {
+                epgDataId = intEpgDataId
+            } else if let stringEpgDataId = try? container.decode(String.self, forKey: .epgDataId),
+                      let parsed = Int(stringEpgDataId) {
+                epgDataId = parsed
+            } else {
+                epgDataId = nil
+            }
         }
     }
 
@@ -247,6 +257,7 @@ enum LiveProgramFetcher {
         let end: String
         let tvgId: String?
         let channel: Int?
+        let epgDataId: Int?
 
         enum CodingKeys: String, CodingKey {
             case id, title, description
@@ -256,6 +267,7 @@ enum LiveProgramFetcher {
             case start, end
             case tvgId = "tvg_id"
             case channel
+            case epgDataId = "epg_data_id"
         }
 
         init(from decoder: Decoder) throws {
@@ -282,6 +294,14 @@ enum LiveProgramFetcher {
                 channel = parsed
             } else {
                 channel = nil
+            }
+            if let intEpgDataId = try? container.decode(Int.self, forKey: .epgDataId) {
+                epgDataId = intEpgDataId
+            } else if let stringEpgDataId = try? container.decode(String.self, forKey: .epgDataId),
+                      let parsed = Int(stringEpgDataId) {
+                epgDataId = parsed
+            } else {
+                epgDataId = nil
             }
         }
     }
@@ -314,7 +334,7 @@ enum LiveProgramFetcher {
 
     private static func fetchDispatcharrChannelsAndPrograms(
         config: ServerConfig, session: URLSession, token: String
-    ) async throws -> (channels: [SimpleChannel], programs: [SimpleProgram], tvgIdMap: [String: Int]) {
+    ) async throws -> (channels: [SimpleChannel], programs: [SimpleProgram], tvgIdMap: [String: [Int]], epgDataIdMap: [Int: [Int]]) {
         // Fetch channels and EPG in parallel
         async let channelsTask: [SimpleChannel] = {
             guard let url = URL(string: "\(config.baseURL)/api/channels/channels/?page_size=10000") else { return [] }
@@ -337,11 +357,18 @@ enum LiveProgramFetcher {
         let channels = try await channelsTask
         let programs = try await programsTask
 
-        // Build tvg_id → channelId map (from channel's own tvg_id)
-        var tvgIdMap: [String: Int] = [:]
+        // Build tvg_id / epg_data_id → channelIds maps. Live-event dummy sources can be shared.
+        var tvgIdMap: [String: [Int]] = [:]
+        var epgDataIdMap: [Int: [Int]] = [:]
         for ch in channels {
             if let tvgId = ch.tvgId, !tvgId.isEmpty {
-                tvgIdMap[tvgId] = ch.id
+                appendIfMissing(ch.id, to: &tvgIdMap[tvgId, default: []])
+            }
+            if let uuid = ch.uuid, !uuid.isEmpty {
+                appendIfMissing(ch.id, to: &tvgIdMap[uuid, default: []])
+            }
+            if let epgDataId = ch.epgDataId {
+                appendIfMissing(ch.id, to: &epgDataIdMap[epgDataId, default: []])
             }
         }
 
@@ -367,23 +394,31 @@ enum LiveProgramFetcher {
                     }
                 }
                 for await (channelId, epgTvgId) in group {
-                    if let epgTvgId, !epgTvgId.isEmpty, tvgIdMap[epgTvgId] == nil {
-                        tvgIdMap[epgTvgId] = channelId
+                    if let epgTvgId, !epgTvgId.isEmpty {
+                        appendIfMissing(channelId, to: &tvgIdMap[epgTvgId, default: []])
                     }
                 }
             }
         }
 
-        return (channels, programs, tvgIdMap)
+        return (channels, programs, tvgIdMap, epgDataIdMap)
     }
 
     private static func resolveChannelId(
         program: SimpleProgram,
-        tvgIdToChannelId: [String: Int]
+        tvgIdToChannelIds: [String: [Int]],
+        epgDataIdToChannelIds: [Int: [Int]]
     ) -> Int? {
         if let directId = program.channel { return directId }
-        if let tvgId = program.tvgId, let mapped = tvgIdToChannelId[tvgId] { return mapped }
+        if let epgDataId = program.epgDataId, let mapped = epgDataIdToChannelIds[epgDataId]?.first { return mapped }
+        if let tvgId = program.tvgId, let mapped = tvgIdToChannelIds[tvgId]?.first { return mapped }
         return nil
+    }
+
+    private static func appendIfMissing(_ channelId: Int, to channelIds: inout [Int]) {
+        if !channelIds.contains(channelId) {
+            channelIds.append(channelId)
+        }
     }
 
     private static func fetchDispatcharrByKeywords(
@@ -391,7 +426,7 @@ enum LiveProgramFetcher {
         keywords: [String], excludeChannelIds: Set<Int>, limit: Int
     ) async throws -> [TopShelfProgram] {
         let token = try await authenticateDispatcharr(config: config, session: session)
-        let (channels, programs, tvgIdToChannelId) = try await fetchDispatcharrChannelsAndPrograms(config: config, session: session, token: token)
+        let (channels, programs, tvgIdToChannelIds, epgDataIdToChannelIds) = try await fetchDispatcharrChannelsAndPrograms(config: config, session: session, token: token)
 
         let channelMap = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0.name) })
 
@@ -404,7 +439,7 @@ enum LiveProgramFetcher {
         var seenChannels: Set<Int> = []
 
         for program in programs {
-            guard let channelId = resolveChannelId(program: program, tvgIdToChannelId: tvgIdToChannelId) else { continue }
+            guard let channelId = resolveChannelId(program: program, tvgIdToChannelIds: tvgIdToChannelIds, epgDataIdToChannelIds: epgDataIdToChannelIds) else { continue }
             if excludeChannelIds.contains(channelId) || seenChannels.contains(channelId) { continue }
 
             let startDate = formatter.date(from: program.start) ?? fallbackFormatter.date(from: program.start) ?? Date.distantPast
@@ -432,7 +467,7 @@ enum LiveProgramFetcher {
         channelIds: [Int], excludeChannelIds: Set<Int>, limit: Int
     ) async throws -> [TopShelfProgram] {
         let token = try await authenticateDispatcharr(config: config, session: session)
-        let (channels, programs, tvgIdToChannelId) = try await fetchDispatcharrChannelsAndPrograms(config: config, session: session, token: token)
+        let (channels, programs, tvgIdToChannelIds, epgDataIdToChannelIds) = try await fetchDispatcharrChannelsAndPrograms(config: config, session: session, token: token)
 
         let channelMap = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0.name) })
 
@@ -445,7 +480,7 @@ enum LiveProgramFetcher {
         var seenChannels: Set<Int> = []
 
         for program in programs {
-            guard let channelId = resolveChannelId(program: program, tvgIdToChannelId: tvgIdToChannelId) else { continue }
+            guard let channelId = resolveChannelId(program: program, tvgIdToChannelIds: tvgIdToChannelIds, epgDataIdToChannelIds: epgDataIdToChannelIds) else { continue }
             guard targetSet.contains(channelId), !seenChannels.contains(channelId) else { continue }
 
             let startDate = formatter.date(from: program.start) ?? fallbackFormatter.date(from: program.start) ?? Date.distantPast

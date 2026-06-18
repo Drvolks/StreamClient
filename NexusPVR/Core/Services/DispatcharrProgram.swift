@@ -17,6 +17,7 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
     let description: String?
     let tvgId: String?
     let channel: Int?
+    let epgDataId: Int?
     let season: Int?
     let episode: Int?
     let bannerURL: String?
@@ -30,6 +31,7 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
         case description
         case tvgId = "tvg_id"
         case channel
+        case epgDataId = "epg_data_id"
         case season
         case episode
     }
@@ -67,6 +69,15 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
             channel = parsed
         } else {
             channel = nil
+        }
+
+        if let intEpgDataId = try? container.decode(Int.self, forKey: .epgDataId) {
+            epgDataId = intEpgDataId
+        } else if let stringEpgDataId = try? container.decodeIfPresent(String.self, forKey: .epgDataId),
+                  let parsed = Int(stringEpgDataId) {
+            epgDataId = parsed
+        } else {
+            epgDataId = nil
         }
 
         season = try container.decodeIfPresent(Int.self, forKey: .season)
@@ -147,4 +158,69 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
         )
     }
 
+}
+
+nonisolated enum DispatcharrEPGProgramMapper {
+    static func map(
+        programs: [DispatcharrProgram],
+        tvgIdToChannelIds: [String: [Int]],
+        epgDataIdToChannelIds: [Int: [Int]],
+        sortByStart: Bool
+    ) -> [Int: [Program]] {
+        var mapped = [Int: [Program]]()
+
+        for program in programs {
+            let channelIds = resolvedChannelIds(
+                for: program,
+                tvgIdToChannelIds: tvgIdToChannelIds,
+                epgDataIdToChannelIds: epgDataIdToChannelIds
+            )
+            guard !channelIds.isEmpty else { continue }
+
+            for channelId in channelIds {
+                guard let mappedProgram = program.toProgram(channelId: channelId) else { continue }
+                mapped[channelId, default: []].append(mappedProgram)
+            }
+        }
+
+        if sortByStart {
+            for (channelId, programs) in mapped {
+                mapped[channelId] = programs.sorted { $0.start < $1.start }
+            }
+        }
+
+        return mapped
+    }
+
+    private static func resolvedChannelIds(
+        for program: DispatcharrProgram,
+        tvgIdToChannelIds: [String: [Int]],
+        epgDataIdToChannelIds: [Int: [Int]]
+    ) -> [Int] {
+        if let directId = program.channel {
+            return [directId]
+        }
+
+        if let epgDataId = program.epgDataId,
+           let channelIds = epgDataIdToChannelIds[epgDataId],
+           !channelIds.isEmpty {
+            return channelIds
+        }
+
+        if let tvgId = program.tvgId,
+           !tvgId.isEmpty,
+           let channelIds = tvgIdToChannelIds[tvgId] {
+            return channelIds
+        }
+
+        return []
+    }
+}
+
+extension Array where Element: Equatable {
+    mutating func appendIfMissing(_ element: Element) {
+        if !contains(element) {
+            append(element)
+        }
+    }
 }

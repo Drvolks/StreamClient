@@ -23,8 +23,11 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     private var authInProgress: Task<Void, Error>?
     private let session: URLSession
     private let networkEventLogger: any NetworkEventLogging
-    /// Maps tvg_id (e.g. "TSN1.ca") → channel id for EPG lookups
-    private var tvgIdToChannelId: [String: Int] = [:]
+    /// Maps tvg_id (e.g. "TSN1.ca") → channel ids for EPG lookups.
+    /// Multiple live-event channels can share the same dummy EPG source/tvg_id.
+    private var tvgIdToChannelIds: [String: [Int]] = [:]
+    /// Maps Dispatcharr epg_data_id → channel ids for dummy-source EPG lookups.
+    private var epgDataIdToChannelIds: [Int: [Int]] = [:]
     /// Maps channel id → logo id for icon URLs
     private var channelIdToLogoId: [Int: Int] = [:]
     /// Maps channel id → UUID for stream URLs
@@ -66,6 +69,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         refreshToken = nil
         useApiKeyAuth = false
         useOutputEndpoints = false
+        tvgIdToChannelIds = [:]
+        epgDataIdToChannelIds = [:]
         isAuthenticated = false
     }
 
@@ -877,18 +882,23 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         print("[Dispatcharr] Fetched \(items.count) channels in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - channelsStart) * 1000))ms")
 
         // Build lookup maps for EPG, logo, and stream URL resolution
-        tvgIdToChannelId = [:]
+        tvgIdToChannelIds = [:]
+        epgDataIdToChannelIds = [:]
         channelIdToLogoId = [:]
         channelIdToUUID = [:]
         for ch in items {
             if let tvgId = ch.tvgId, !tvgId.isEmpty {
-                tvgIdToChannelId[tvgId] = ch.id
+                tvgIdToChannelIds[tvgId, default: []].appendIfMissing(ch.id)
+            }
+            if let epgDataId = ch.epgDataId {
+                epgDataIdToChannelIds[epgDataId, default: []].appendIfMissing(ch.id)
             }
             if let logoId = ch.logoId {
                 channelIdToLogoId[ch.id] = logoId
             }
             if let uuid = ch.uuid, !uuid.isEmpty {
                 channelIdToUUID[ch.id] = uuid
+                tvgIdToChannelIds[uuid, default: []].appendIfMissing(ch.id)
             }
         }
 
@@ -930,9 +940,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             return results
         }
         for (channelId, epgTvgId) in resolvedMappings {
-            if let epgTvgId, !epgTvgId.isEmpty,
-               tvgIdToChannelId[epgTvgId] == nil {
-                tvgIdToChannelId[epgTvgId] = channelId
+            if let epgTvgId, !epgTvgId.isEmpty {
+                tvgIdToChannelIds[epgTvgId, default: []].appendIfMissing(channelId)
             }
         }
         print("[Dispatcharr] Resolved \(channelsNeedingResolve.count) EPG data mappings in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - epgResolveStart) * 1000))ms")
@@ -960,15 +969,23 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         let items: [DispatcharrChannel] = try await fetchAllPages(url)
         print("[Dispatcharr] Fetched \(items.count) channel summaries in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - channelsStart) * 1000))ms")
 
-        tvgIdToChannelId = [:]
+        tvgIdToChannelIds = [:]
+        epgDataIdToChannelIds = [:]
         channelIdToLogoId = [:]
         channelIdToUUID = [:]
         for ch in items {
+            if let tvgId = ch.tvgId, !tvgId.isEmpty {
+                tvgIdToChannelIds[tvgId, default: []].appendIfMissing(ch.id)
+            }
+            if let epgDataId = ch.epgDataId {
+                epgDataIdToChannelIds[epgDataId, default: []].appendIfMissing(ch.id)
+            }
             if let logoId = ch.logoId {
                 channelIdToLogoId[ch.id] = logoId
             }
             if let uuid = ch.uuid, !uuid.isEmpty {
                 channelIdToUUID[ch.id] = uuid
+                tvgIdToChannelIds[uuid, default: []].appendIfMissing(ch.id)
             }
         }
 
@@ -1008,9 +1025,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             return results
         }
         for (channelId, epgTvgId) in resolvedMappings {
-            if let epgTvgId, !epgTvgId.isEmpty,
-               tvgIdToChannelId[epgTvgId] == nil {
-                tvgIdToChannelId[epgTvgId] = channelId
+            if let epgTvgId, !epgTvgId.isEmpty {
+                tvgIdToChannelIds[epgTvgId, default: []].appendIfMissing(channelId)
             }
         }
         print("[Dispatcharr] Resolved \(channelsNeedingResolve.count) summary EPG data mappings in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - epgResolveStart) * 1000))ms")
@@ -1046,7 +1062,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             throw PVRClientError.invalidResponse
         }
 
-        let tvgId = tvgIdToChannelId.first(where: { $0.value == channelId })?.key
+        let tvgIds = Set(tvgIdToChannelIds.compactMap { $0.value.contains(channelId) ? $0.key : nil })
+        let epgDataIds = Set(epgDataIdToChannelIds.compactMap { $0.value.contains(channelId) ? $0.key : nil })
 
         let allPrograms: [DispatcharrProgram] = try await fetchAllPages(url, maxPages: 50)
         let programs = allPrograms
@@ -1054,7 +1071,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 if let directId = program.channel, directId == channelId {
                     return true
                 }
-                if let tvgId, let programTvgId = program.tvgId, programTvgId == tvgId {
+                if let epgDataId = program.epgDataId, epgDataIds.contains(epgDataId) {
+                    return true
+                }
+                if let programTvgId = program.tvgId, tvgIds.contains(programTvgId) {
                     return true
                 }
                 return false
@@ -1079,28 +1099,16 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         }
         let start = CFAbsoluteTimeGetCurrent()
         let data = try await authenticatedRequestData(url)
-        let tvgMap = tvgIdToChannelId
+        let tvgMap = tvgIdToChannelIds
+        let epgDataMap = epgDataIdToChannelIds
         let result: [Int: [Program]] = try await Task.detached(priority: .userInitiated) {
             let wrapper = try JSONDecoder().decode(EPGGridResponse.self, from: data)
-            var mapped = [Int: [Program]]()
-            for program in wrapper.data {
-                let resolvedId: Int?
-                if let directId = program.channel {
-                    resolvedId = directId
-                } else if let tvgId = program.tvgId, !tvgId.isEmpty {
-                    resolvedId = tvgMap[tvgId]
-                } else {
-                    resolvedId = nil
-                }
-                guard let cid = resolvedId else { continue }
-                guard let p = program.toProgram(channelId: cid) else { continue }
-                mapped[cid, default: []].append(p)
-            }
-            // Sort each channel's programs by start time so cache.programs(for:on:) sees ordered data.
-            for (k, v) in mapped {
-                mapped[k] = v.sorted { $0.start < $1.start }
-            }
-            return mapped
+            return DispatcharrEPGProgramMapper.map(
+                programs: wrapper.data,
+                tvgIdToChannelIds: tvgMap,
+                epgDataIdToChannelIds: epgDataMap,
+                sortByStart: true
+            )
         }.value
         let count = result.values.reduce(0) { $0 + $1.count }
         print("[Dispatcharr] Grid: \(count) programs across \(result.count) channels in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000))ms")
@@ -1124,23 +1132,15 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         let allPrograms: [DispatcharrProgram] = try await fetchAllPages(url, maxPages: 50)
 
 
-        let tvgMap = tvgIdToChannelId
+        let tvgMap = tvgIdToChannelIds
+        let epgDataMap = epgDataIdToChannelIds
         let result = await Task.detached(priority: .userInitiated) {
-            var mapped = [Int: [Program]]()
-            for program in allPrograms {
-                let channelId: Int?
-                if let directId = program.channel {
-                    channelId = directId
-                } else if let tvgId = program.tvgId, !tvgId.isEmpty {
-                    channelId = tvgMap[tvgId]
-                } else {
-                    channelId = nil
-                }
-                guard let resolvedId = channelId else { continue }
-                guard let p = program.toProgram(channelId: resolvedId) else { continue }
-                mapped[resolvedId, default: []].append(p)
-            }
-            return mapped
+            DispatcharrEPGProgramMapper.map(
+                programs: allPrograms,
+                tvgIdToChannelIds: tvgMap,
+                epgDataIdToChannelIds: epgDataMap,
+                sortByStart: false
+            )
         }.value
 
         return result
@@ -1281,7 +1281,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 return tvgId
             }
             if let channelId = program.channel {
-                return tvgIdToChannelId.first(where: { $0.value == channelId })?.key
+                return tvgIdToChannelIds.first(where: { $0.value.contains(channelId) })?.key
             }
             return nil
         }()
@@ -1380,7 +1380,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 RecurringRecording(
                     id: recurringId,
                     name: title,
-                    channelID: tvgIdToChannelId[tvgId],
+                    channelID: tvgIdToChannelIds[tvgId]?.first,
                     channel: nil,
                     enabled: response.success ?? true
                 )
@@ -1417,7 +1417,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         if let directId = program.channel {
             return directId
         }
-        if let tvgId = program.tvgId, let mappedId = tvgIdToChannelId[tvgId] {
+        if let tvgId = program.tvgId, let mappedId = tvgIdToChannelIds[tvgId]?.first {
             return mappedId
         }
         if let fallbackChannelId {
