@@ -218,4 +218,105 @@ struct ProgramTests {
         #expect(p.id == 7)
         #expect(p.name == "Canonical")
     }
+    // MARK: - Dispatcharr EPG mapping
+
+    @Test("Dispatcharr programs decode epg_data_id as int or string")
+    func dispatcharrProgram_decodesEPGDataId() throws {
+        let intJSON = """
+        {"id":1,"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T01:00:00Z","title":"Program","epg_data_id":42}
+        """
+        let stringJSON = """
+        {"id":2,"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T01:00:00Z","title":"Program","epg_data_id":"43"}
+        """
+
+        let intProgram = try JSONDecoder().decode(DispatcharrProgram.self, from: Data(intJSON.utf8))
+        let stringProgram = try JSONDecoder().decode(DispatcharrProgram.self, from: Data(stringJSON.utf8))
+
+        #expect(intProgram.epgDataId == 42)
+        #expect(stringProgram.epgDataId == 43)
+    }
+
+    @Test("Dispatcharr EPG mapper fans dummy epg_data_id programs out to all channels")
+    func dispatcharrMapper_mapsSharedDummyEPGDataIdToAllChannels() throws {
+        let programs = try decodeDispatcharrPrograms("""
+        [
+            {"id":10,"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T01:00:00Z","title":"Live Event","epg_data_id":9001}
+        ]
+        """)
+
+        let mapped = DispatcharrEPGProgramMapper.map(
+            programs: programs,
+            tvgIdToChannelIds: [:],
+            epgDataIdToChannelIds: [9001: [101, 102]],
+            sortByStart: true
+        )
+
+        #expect(mapped[101]?.map(\.name) == ["Live Event"])
+        #expect(mapped[102]?.map(\.name) == ["Live Event"])
+        #expect(mapped[101]?.first?.channelId == 101)
+        #expect(mapped[102]?.first?.channelId == 102)
+    }
+
+    @Test("Dispatcharr EPG mapper fans shared tvg_id programs out to all channels")
+    func dispatcharrMapper_mapsSharedTVGIdToAllChannels() throws {
+        let programs = try decodeDispatcharrPrograms("""
+        [
+            {"id":11,"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T01:00:00Z","title":"Shared TVG Event","tvg_id":"dummy-live"}
+        ]
+        """)
+
+        let mapped = DispatcharrEPGProgramMapper.map(
+            programs: programs,
+            tvgIdToChannelIds: ["dummy-live": [201, 202]],
+            epgDataIdToChannelIds: [:],
+            sortByStart: true
+        )
+
+        #expect(mapped[201]?.map(\.name) == ["Shared TVG Event"])
+        #expect(mapped[202]?.map(\.name) == ["Shared TVG Event"])
+    }
+
+    @Test("Dispatcharr EPG mapper resolves dummy grid programs by channel UUID tvg_id")
+    func dispatcharrMapper_mapsChannelUUIDTVGId() throws {
+        let channelUUID = "5214c69b-97e4-4b79-ade1-18b8a5d4923e"
+        let programs = try decodeDispatcharrPrograms("""
+        [
+            {"id":"dummy-custom-596-17","start_time":"2026-06-18T17:00:00+00:00","end_time":"2026-06-18T20:00:00+00:00","title":" Velenje – Rogaska Slatina  - {date} {starttime24}","tvg_id":"\(channelUUID)"}
+        ]
+        """)
+
+        let mapped = DispatcharrEPGProgramMapper.map(
+            programs: programs,
+            tvgIdToChannelIds: [channelUUID: [596]],
+            epgDataIdToChannelIds: [:],
+            sortByStart: true
+        )
+
+        #expect(mapped[596]?.map(\.name) == [" Velenje – Rogaska Slatina  - {date} {starttime24}"])
+        #expect(mapped[596]?.first?.channelId == 596)
+    }
+
+    @Test("Dispatcharr EPG mapper prefers epg_data_id over colliding tvg_id")
+    func dispatcharrMapper_prefersEPGDataIdOverTVGId() throws {
+        let programs = try decodeDispatcharrPrograms("""
+        [
+            {"id":12,"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T01:00:00Z","title":"Dummy Event","tvg_id":"shared","epg_data_id":77}
+        ]
+        """)
+
+        let mapped = DispatcharrEPGProgramMapper.map(
+            programs: programs,
+            tvgIdToChannelIds: ["shared": [301]],
+            epgDataIdToChannelIds: [77: [302, 303]],
+            sortByStart: true
+        )
+
+        #expect(mapped[301] == nil)
+        #expect(mapped[302]?.map(\.name) == ["Dummy Event"])
+        #expect(mapped[303]?.map(\.name) == ["Dummy Event"])
+    }
+
+    private func decodeDispatcharrPrograms(_ json: String) throws -> [DispatcharrProgram] {
+        try JSONDecoder().decode([DispatcharrProgram].self, from: Data(json.utf8))
+    }
 }
