@@ -57,7 +57,7 @@ struct GuideView: View {
 
     private var hasPopulatedGroups: Bool {
         epgCache.channelGroups.contains { group in
-            epgCache.visibleChannels.contains { $0.groupId == group.id }
+            epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
         }
     }
     #endif
@@ -107,6 +107,9 @@ struct GuideView: View {
                 if let groupId = appState.guideGroupFilter {
                     viewModel.selectedGroupId = groupId
                 }
+                if let profileId = appState.guideProfileFilter {
+                    viewModel.selectedProfileId = profileId
+                }
             }
             .onChange(of: viewModel.channelSearchText) {
                 Task { viewModel.updateKeywordMatches(keywords: keywords) }
@@ -118,14 +121,35 @@ struct GuideView: View {
                 Task { viewModel.channelSearchText = appState.guideChannelFilter }
             }
             .onChange(of: appState.guideGroupFilter) {
-                Task { viewModel.selectedGroupId = appState.guideGroupFilter }
+                let newGroup = appState.guideGroupFilter
+                Task {
+                    viewModel.selectedGroupId = newGroup
+                    if newGroup != nil {
+                        viewModel.selectedProfileId = nil
+                    }
+                }
+            }
+            .onChange(of: appState.guideProfileFilter) {
+                Task { viewModel.selectedProfileId = appState.guideProfileFilter }
             }
             #if DISPATCHERPVR
+            .onChange(of: viewModel.selectedGroupId) { _, groupId in
+                if groupId != nil {
+                    viewModel.selectedProfileId = nil
+                    appState.guideProfileFilter = nil
+                }
+                appState.guideGroupFilter = groupId
+            }
             .onChange(of: viewModel.selectedProfileId) { _, profileId in
                 Task {
                     await epgCache.reloadData(using: client, profileId: profileId)
                     viewModel.showChannelSearch = epgCache.channels.count > 25
                     viewModel.updateKeywordMatches(keywords: keywords)
+                    if profileId != nil {
+                        viewModel.selectedGroupId = nil
+                        appState.guideGroupFilter = nil
+                    }
+                    appState.guideProfileFilter = profileId
                 }
             }
             #endif
@@ -417,7 +441,7 @@ struct GuideView: View {
                 }
             }
             let populatedGroups = epgCache.channelGroups.filter { group in
-                epgCache.visibleChannels.contains { $0.groupId == group.id }
+                epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
             }
             if !populatedGroups.isEmpty {
                 filterRow(label: "Group", items: populatedGroups.map { (id: $0.id, name: $0.name) },
@@ -514,6 +538,9 @@ struct GuideView: View {
                         viewModel.selectedGroupId = nil
                         viewModel.selectedProfileId = nil
                         viewModel.channelSearchText = ""
+                        appState.guideChannelFilter = ""
+                        appState.guideGroupFilter = nil
+                        appState.guideProfileFilter = nil
                     }
                     .buttonStyle(AccentButtonStyle())
                 }
@@ -793,7 +820,7 @@ struct GuideView: View {
         switch headerDrawerKind {
         case .group:
             let populatedGroups = epgCache.channelGroups.filter { group in
-                epgCache.visibleChannels.contains { $0.groupId == group.id }
+                epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
             }
             return [TVGuideDrawerItem(id: "group-all", label: "All Groups", value: nil)] +
                    populatedGroups.map { TVGuideDrawerItem(id: "group-\($0.id)", label: $0.name, value: $0.id) }

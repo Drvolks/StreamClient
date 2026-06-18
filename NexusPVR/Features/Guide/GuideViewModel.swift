@@ -70,11 +70,17 @@ final class GuideViewModel: ObservableObject {
 
     /// Channels to display in the guide (reads from EPGCache, filtered by profile, group, and search)
     /// Uses visibleChannels which starts with first 20, expands to all after EPG loads
+    /// Profile takes precedence over group — when a profile is selected, the group filter is ignored.
     var channels: [Channel] {
         guard let cache = epgCache else { return [] }
-        var result = cache.channels(inProfile: selectedProfileId)
-        if let groupId = selectedGroupId {
-            result = result.filter { $0.groupId == groupId }
+        var result: [Channel]
+        if let profileId = selectedProfileId {
+            result = cache.channels(inProfile: profileId)
+        } else {
+            result = cache.channels(inProfile: nil)
+            if let groupId = selectedGroupId {
+                result = result.filter { $0.groupId == groupId }
+            }
         }
         if !channelSearchText.isEmpty {
             let query = channelSearchText.lowercased()

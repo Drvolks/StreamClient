@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published var searchQuery: String = ""
     @Published var guideChannelFilter: String = ""
     @Published var guideGroupFilter: Int? = nil
+    @Published var guideProfileFilter: Int? = nil
     @Published var isShowingPlayer = false
 
     #if os(iOS)

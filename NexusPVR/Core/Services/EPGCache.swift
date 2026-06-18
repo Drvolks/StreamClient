@@ -16,6 +16,10 @@ final class EPGCache: ObservableObject {
     @Published var channels: [Channel] = []
     /// Channels to display in the guide — first 20 initially, all after EPG loads
     @Published var visibleChannels: [Channel] = []
+    /// Unfiltered channel snapshot used for guide sidebar/filter metadata.
+    /// Dispatcharr profile reloads narrow `channels`/`visibleChannels` server-side;
+    /// this preserves the all-channel list so profile shortcuts don't hide group shortcuts.
+    @Published private(set) var guideSidebarChannels: [Channel] = []
     @Published var channelProfiles: [ChannelProfile] = []
     @Published var channelGroups: [ChannelGroup] = []
     @Published private(set) var isLoading = false
@@ -72,6 +76,9 @@ final class EPGCache: ObservableObject {
             #endif
             let sorted = loaded.sorted { $0.number < $1.number }
             channels = sorted
+            if profileId == nil || guideSidebarChannels.isEmpty {
+                guideSidebarChannels = sorted
+            }
             channelMap = Dictionary(sorted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             print("[EPGCache] Channels: \(sorted.count) in \(ms(since: channelsStart))ms")
 
@@ -160,7 +167,11 @@ final class EPGCache: ObservableObject {
     }
 
     func reloadData(using client: PVRClient, profileId: Int? = nil) async {
+        let sidebarChannels = guideSidebarChannels
         invalidate()
+        if profileId != nil {
+            guideSidebarChannels = sidebarChannels
+        }
         await loadData(using: client, profileId: profileId)
     }
 
@@ -360,6 +371,7 @@ final class EPGCache: ObservableObject {
         backgroundLoadTask = nil
         channels = []
         visibleChannels = []
+        guideSidebarChannels = []
         channelProfiles = []
         channelGroups = []
         channelMap = [:]
