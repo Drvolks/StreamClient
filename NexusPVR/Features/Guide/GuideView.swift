@@ -1994,6 +1994,16 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
 
         override var canBecomeFirstResponder: Bool { true }
 
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            installRemoteLongPressRecognizers()
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            installRemoteLongPressRecognizers()
+        }
+
         override func didMoveToWindow() {
             super.didMoveToWindow()
             if window == nil {
@@ -2010,13 +2020,28 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             for press in presses {
                 if let direction = moveDirection(for: press) {
                     startRepeating(direction)
+                    break
                 }
             }
             super.pressesBegan(presses, with: event)
         }
 
+        override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            for press in presses {
+                if let direction = moveDirection(for: press) {
+                    if currentDirection == nil {
+                        startRepeating(direction)
+                    }
+                    break
+                }
+            }
+            super.pressesChanged(presses, with: event)
+        }
+
         override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            if keyboardRepeatDirection == nil, presses.contains(where: { moveDirection(for: $0) == currentDirection }) {
+            if keyboardRepeatDirection == nil,
+               let currentDirection,
+               presses.contains(where: { moveDirection(for: $0) == currentDirection }) {
                 stopRepeating()
             }
             super.pressesEnded(presses, with: event)
@@ -2043,6 +2068,61 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             stopRepeating()
             currentDirection = direction
             scheduleNextTick(after: initialDelay)
+        }
+
+        private func startRepeatingAfterRecognizedHold(_ direction: MoveCommandDirection) {
+            guard isRepeatEnabled else { return }
+
+            // Siri Remote directional holds are not reliable first-responder
+            // press-repeat sources for a SwiftUI focusable grid.  The long-press
+            // recognizers below are attached to the grid-sized backing view and
+            // fire once the hold threshold has already elapsed, so begin the
+            // repeat cadence immediately instead of adding another delay.
+            if currentDirection == direction, repeatTimer != nil {
+                return
+            }
+
+            stopRepeating()
+            currentDirection = direction
+            onRepeat?(direction)
+            repeatTickCount += 1
+            scheduleNextTick(after: currentRepeatInterval())
+        }
+
+        private func installRemoteLongPressRecognizers() {
+            addRemoteLongPressRecognizer(for: .upArrow, direction: .up)
+            addRemoteLongPressRecognizer(for: .downArrow, direction: .down)
+            addRemoteLongPressRecognizer(for: .leftArrow, direction: .left)
+            addRemoteLongPressRecognizer(for: .rightArrow, direction: .right)
+        }
+
+        private func addRemoteLongPressRecognizer(for pressType: UIPress.PressType, direction: MoveCommandDirection) {
+            let recognizer = RemoteDirectionLongPressGestureRecognizer(
+                target: self,
+                action: #selector(handleRemoteLongPress(_:))
+            )
+            recognizer.direction = direction
+            recognizer.minimumPressDuration = initialDelay
+            recognizer.allowedPressTypes = [NSNumber(value: pressType.rawValue)]
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            addGestureRecognizer(recognizer)
+        }
+
+        @objc private func handleRemoteLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard let directionalRecognizer = recognizer as? RemoteDirectionLongPressGestureRecognizer else { return }
+
+            switch directionalRecognizer.state {
+            case .began:
+                startRepeatingAfterRecognizedHold(directionalRecognizer.direction)
+            case .ended, .cancelled, .failed:
+                if currentDirection == directionalRecognizer.direction {
+                    stopRepeating()
+                }
+            default:
+                break
+            }
         }
 
         private func scheduleNextTick(after interval: TimeInterval) {
@@ -2104,6 +2184,10 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             default:
                 return nil
             }
+        }
+
+        private final class RemoteDirectionLongPressGestureRecognizer: UILongPressGestureRecognizer {
+            var direction: MoveCommandDirection = .down
         }
     }
 }
