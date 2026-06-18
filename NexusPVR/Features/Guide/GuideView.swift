@@ -2077,9 +2077,8 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                         forName: .GCControllerDidConnect,
                         object: nil,
                         queue: .main
-                    ) { [weak self] notification in
-                        guard let controller = notification.object as? GCController else { return }
-                        self?.configure(controller)
+                    ) { [weak self] _ in
+                        self?.refreshConfiguredControllers()
                     }
                 )
 
@@ -2088,14 +2087,13 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                         forName: .GCControllerDidDisconnect,
                         object: nil,
                         queue: .main
-                    ) { [weak self] notification in
-                        guard let controller = notification.object as? GCController else { return }
-                        self?.unconfigure(controller)
+                    ) { [weak self] _ in
+                        self?.refreshConfiguredControllers()
                     }
                 )
             }
 
-            GCController.controllers().forEach(configure)
+            refreshConfiguredControllers()
             GCController.startWirelessControllerDiscovery(completionHandler: nil)
         }
 
@@ -2112,6 +2110,21 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             stopRepeating(source: .remote)
         }
 
+        private func refreshConfiguredControllers() {
+            let controllers = GCController.controllers()
+            let connectedIds = Set(controllers.map(ObjectIdentifier.init))
+            let disconnectedIds = configuredControllers.keys.filter { !connectedIds.contains($0) }
+
+            for id in disconnectedIds {
+                guard let controller = configuredControllers[id] else { continue }
+                controller.microGamepad?.dpad.valueChangedHandler = nil
+                configuredControllers.removeValue(forKey: id)
+                stopRepeating(source: .remote)
+            }
+
+            controllers.forEach(configure)
+        }
+
         private func configure(_ controller: GCController) {
             let id = ObjectIdentifier(controller)
             guard configuredControllers[id] == nil else { return }
@@ -2125,13 +2138,6 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                 }
             }
             configuredControllers[id] = controller
-        }
-
-        private func unconfigure(_ controller: GCController) {
-            let id = ObjectIdentifier(controller)
-            controller.microGamepad?.dpad.valueChangedHandler = nil
-            configuredControllers.removeValue(forKey: id)
-            stopRepeating(source: .remote)
         }
 
         private func handleRemoteDPad(dpad: GCControllerDirectionPad, xValue: Float, yValue: Float) {
