@@ -9,6 +9,9 @@ import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
 #endif
+#if os(tvOS)
+import GameController
+#endif
 
 
 // Helper struct to hold both program and channel for sheet presentation
@@ -1963,15 +1966,10 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             didSet {
                 guard oldValue != isRepeatEnabled else { return }
                 if isRepeatEnabled {
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, self.isRepeatEnabled, self.window != nil else { return }
-                        self.becomeFirstResponder()
-                    }
+                    startMonitoringControllersIfPossible()
                 } else {
+                    stopMonitoringControllers()
                     stopRepeating()
-                    if isFirstResponder {
-                        resignFirstResponder()
-                    }
                 }
             }
         }
@@ -1980,149 +1978,60 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             didSet {
                 guard oldValue != keyboardRepeatDirection else { return }
                 guard isRepeatEnabled, let keyboardRepeatDirection else {
-                    stopRepeating()
+                    stopRepeating(source: .keyboard)
                     return
                 }
-                startRepeating(keyboardRepeatDirection)
+                startRepeating(keyboardRepeatDirection, source: .keyboard)
             }
+        }
+
+        private enum RepeatSource {
+            case keyboard
+            case remote
         }
 
         private let initialDelay: TimeInterval = 0.35
         private var repeatTimer: Timer?
+        private var currentSource: RepeatSource?
         private var currentDirection: MoveCommandDirection?
         private var repeatTickCount = 0
-
-        override var canBecomeFirstResponder: Bool { true }
-
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            installRemoteLongPressRecognizers()
-        }
-
-        required init?(coder: NSCoder) {
-            super.init(coder: coder)
-            installRemoteLongPressRecognizers()
-        }
+        private var controllerObservers: [NSObjectProtocol] = []
+        private var configuredControllers: [ObjectIdentifier: GCController] = [:]
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
             if window == nil {
+                stopMonitoringControllers()
                 stopRepeating()
             } else if isRepeatEnabled {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.isRepeatEnabled else { return }
-                    self.becomeFirstResponder()
-                }
+                startMonitoringControllersIfPossible()
             }
-        }
-
-        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            for press in presses {
-                if let direction = moveDirection(for: press) {
-                    startRepeating(direction)
-                    break
-                }
-            }
-            super.pressesBegan(presses, with: event)
-        }
-
-        override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            for press in presses {
-                if let direction = moveDirection(for: press) {
-                    if currentDirection == nil {
-                        startRepeating(direction)
-                    }
-                    break
-                }
-            }
-            super.pressesChanged(presses, with: event)
-        }
-
-        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            if keyboardRepeatDirection == nil,
-               let currentDirection,
-               presses.contains(where: { moveDirection(for: $0) == currentDirection }) {
-                stopRepeating()
-            }
-            super.pressesEnded(presses, with: event)
-        }
-
-        override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-            stopRepeating()
-            super.pressesCancelled(presses, with: event)
         }
 
         func stopRepeating() {
+            stopRepeating(source: nil)
+        }
+
+        private func stopRepeating(source: RepeatSource?) {
+            if let source, currentSource != source { return }
+
             repeatTimer?.invalidate()
             repeatTimer = nil
+            currentSource = nil
             currentDirection = nil
             repeatTickCount = 0
         }
 
-        private func startRepeating(_ direction: MoveCommandDirection) {
+        private func startRepeating(_ direction: MoveCommandDirection, source: RepeatSource) {
             guard isRepeatEnabled else { return }
-            if currentDirection == direction, repeatTimer != nil {
+            if currentDirection == direction, currentSource == source, repeatTimer != nil {
                 return
             }
 
             stopRepeating()
+            currentSource = source
             currentDirection = direction
             scheduleNextTick(after: initialDelay)
-        }
-
-        private func startRepeatingAfterRecognizedHold(_ direction: MoveCommandDirection) {
-            guard isRepeatEnabled else { return }
-
-            // Siri Remote directional holds are not reliable first-responder
-            // press-repeat sources for a SwiftUI focusable grid.  The long-press
-            // recognizers below are attached to the grid-sized backing view and
-            // fire once the hold threshold has already elapsed, so begin the
-            // repeat cadence immediately instead of adding another delay.
-            if currentDirection == direction, repeatTimer != nil {
-                return
-            }
-
-            stopRepeating()
-            currentDirection = direction
-            onRepeat?(direction)
-            repeatTickCount += 1
-            scheduleNextTick(after: currentRepeatInterval())
-        }
-
-        private func installRemoteLongPressRecognizers() {
-            addRemoteLongPressRecognizer(for: .upArrow, direction: .up)
-            addRemoteLongPressRecognizer(for: .downArrow, direction: .down)
-            addRemoteLongPressRecognizer(for: .leftArrow, direction: .left)
-            addRemoteLongPressRecognizer(for: .rightArrow, direction: .right)
-        }
-
-        private func addRemoteLongPressRecognizer(for pressType: UIPress.PressType, direction: MoveCommandDirection) {
-            let recognizer = RemoteDirectionLongPressGestureRecognizer(
-                target: self,
-                action: #selector(handleRemoteLongPress(_:))
-            )
-            recognizer.direction = direction
-            recognizer.minimumPressDuration = initialDelay
-            recognizer.allowedPressTypes = [NSNumber(value: pressType.rawValue)]
-            recognizer.cancelsTouchesInView = false
-            recognizer.delaysTouchesBegan = false
-            recognizer.delaysTouchesEnded = false
-            addGestureRecognizer(recognizer)
-        }
-
-        @objc private func handleRemoteLongPress(_ recognizer: UILongPressGestureRecognizer) {
-            guard let directionalRecognizer = recognizer as? RemoteDirectionLongPressGestureRecognizer else { return }
-
-            switch directionalRecognizer.state {
-            case .began:
-                startRepeatingAfterRecognizedHold(directionalRecognizer.direction)
-            case .ended, .cancelled, .failed:
-                if currentDirection == directionalRecognizer.direction {
-                    stopRepeating()
-                }
-            default:
-                break
-            }
         }
 
         private func scheduleNextTick(after interval: TimeInterval) {
@@ -2156,38 +2065,113 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             return 0.05
         }
 
-        private func moveDirection(for press: UIPress) -> MoveCommandDirection? {
-            if let key = press.key {
-                switch key.charactersIgnoringModifiers {
-                case UIKeyCommand.inputUpArrow:
-                    return .up
-                case UIKeyCommand.inputDownArrow:
-                    return .down
-                case UIKeyCommand.inputLeftArrow:
-                    return .left
-                case UIKeyCommand.inputRightArrow:
-                    return .right
-                default:
-                    break
-                }
-            }
-
-            switch press.type {
-            case .upArrow:
-                return .up
-            case .downArrow:
-                return .down
-            case .leftArrow:
-                return .left
-            case .rightArrow:
-                return .right
-            default:
-                return nil
-            }
+        private func startMonitoringControllersIfPossible() {
+            guard window != nil else { return }
+            startMonitoringControllers()
         }
 
-        private final class RemoteDirectionLongPressGestureRecognizer: UILongPressGestureRecognizer {
-            var direction: MoveCommandDirection = .down
+        private func startMonitoringControllers() {
+            if controllerObservers.isEmpty {
+                controllerObservers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: .GCControllerDidConnect,
+                        object: nil,
+                        queue: .main
+                    ) { [weak self] notification in
+                        guard let controller = notification.object as? GCController else { return }
+                        self?.configure(controller)
+                    }
+                )
+
+                controllerObservers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: .GCControllerDidDisconnect,
+                        object: nil,
+                        queue: .main
+                    ) { [weak self] notification in
+                        guard let controller = notification.object as? GCController else { return }
+                        self?.unconfigure(controller)
+                    }
+                )
+            }
+
+            GCController.controllers().forEach(configure)
+            GCController.startWirelessControllerDiscovery(completionHandler: nil)
+        }
+
+        private func stopMonitoringControllers() {
+            for observer in controllerObservers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            controllerObservers.removeAll()
+
+            for controller in configuredControllers.values {
+                controller.microGamepad?.dpad.valueChangedHandler = nil
+            }
+            configuredControllers.removeAll()
+            stopRepeating(source: .remote)
+        }
+
+        private func configure(_ controller: GCController) {
+            let id = ObjectIdentifier(controller)
+            guard configuredControllers[id] == nil else { return }
+            guard let microGamepad = controller.microGamepad else { return }
+
+            microGamepad.reportsAbsoluteDpadValues = true
+            microGamepad.allowsRotation = false
+            microGamepad.dpad.valueChangedHandler = { [weak self] dpad, xValue, yValue in
+                DispatchQueue.main.async {
+                    self?.handleRemoteDPad(dpad: dpad, xValue: xValue, yValue: yValue)
+                }
+            }
+            configuredControllers[id] = controller
+        }
+
+        private func unconfigure(_ controller: GCController) {
+            let id = ObjectIdentifier(controller)
+            controller.microGamepad?.dpad.valueChangedHandler = nil
+            configuredControllers.removeValue(forKey: id)
+            stopRepeating(source: .remote)
+        }
+
+        private func handleRemoteDPad(dpad: GCControllerDirectionPad, xValue: Float, yValue: Float) {
+            guard isRepeatEnabled, window != nil else {
+                stopRepeating(source: .remote)
+                return
+            }
+
+            guard let direction = moveDirection(for: dpad, xValue: xValue, yValue: yValue) else {
+                stopRepeating(source: .remote)
+                return
+            }
+
+            // .onMoveCommand handles the initial Siri Remote click. The d-pad
+            // monitor only owns the delayed repeat while the clickpad/ring is
+            // held, which avoids double-moving on short presses.
+            startRepeating(direction, source: .remote)
+        }
+
+        private func moveDirection(
+            for dpad: GCControllerDirectionPad,
+            xValue: Float,
+            yValue: Float
+        ) -> MoveCommandDirection? {
+            if dpad.up.isPressed { return .up }
+            if dpad.down.isPressed { return .down }
+            if dpad.left.isPressed { return .left }
+            if dpad.right.isPressed { return .right }
+
+            let absoluteX = abs(xValue)
+            let absoluteY = abs(yValue)
+            let threshold: Float = 0.55
+
+            guard max(absoluteX, absoluteY) >= threshold else { return nil }
+
+            if absoluteY >= absoluteX {
+                return yValue > 0 ? .up : .down
+            } else {
+                return xValue > 0 ? .right : .left
+            }
         }
     }
 }
