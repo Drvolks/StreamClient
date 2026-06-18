@@ -27,6 +27,8 @@ struct SettingsView: View {
     #if DISPATCHERPVR
     @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
     @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
+    @State private var guideShowProfilesInSidebar: Bool = UserPreferences.load().guideShowProfilesInSidebar
+    @State private var guideProfileIds: [Int] = UserPreferences.load().guideProfileIds
     #endif
     @ObservedObject private var eventLog: NetworkEventLog
 
@@ -443,7 +445,7 @@ struct SettingsView: View {
                         tvOSGuideStatusRow("No channel groups available")
                     } else {
                         let populatedGroups = epgCache.channelGroups.filter { group in
-                            epgCache.visibleChannels.contains { $0.groupId == group.id }
+                            epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
                         }
                         if populatedGroups.isEmpty {
                             tvOSGuideStatusRow("No channels in any group")
@@ -456,6 +458,46 @@ struct SettingsView: View {
 
                             ForEach(populatedGroups) { group in
                                 tvOSGuideGroupToggleRow(group: group)
+                            }
+                        }
+                    }
+                }
+
+                Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
+                    .font(.system(size: 24, weight: .semibold))
+                    .padding(.horizontal, Theme.spacingMD)
+                    .padding(.vertical, Theme.spacingSM)
+                    .background(Theme.guideNowPlaying.opacity(0.78))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+                    .onChange(of: guideShowProfilesInSidebar) { newValue in
+                        var prefs = UserPreferences.load()
+                        prefs.guideShowProfilesInSidebar = newValue
+                        prefs.save()
+                        if !newValue {
+                            appState.guideProfileFilter = nil
+                            appState.guideChannelFilter = ""
+                        }
+                        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                    }
+
+                if guideShowProfilesInSidebar {
+                    if epgCache.channelProfiles.isEmpty {
+                        tvOSGuideStatusRow("No channel profiles available")
+                    } else {
+                        let populatedProfiles = epgCache.channelProfiles.filter { profile in
+                            epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
+                        }
+                        if populatedProfiles.isEmpty {
+                            tvOSGuideStatusRow("No channels in any profile")
+                        } else {
+                            Text("Included Profiles")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(Theme.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, Theme.spacingMD)
+
+                            ForEach(populatedProfiles) { profile in
+                                tvOSGuideProfileToggleRow(profile: profile)
                             }
                         }
                     }
@@ -500,6 +542,45 @@ struct SettingsView: View {
                     .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
 
                 Text(group.name)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, Theme.spacingMD)
+            .padding(.vertical, Theme.spacingMD)
+            .background(Theme.guideNowPlaying.opacity(0.78))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+        }
+        .buttonStyle(TVSettingsRowButtonStyle())
+    }
+
+    private func tvOSGuideProfileToggleRow(profile: ChannelProfile) -> some View {
+        let isSelected = guideProfileIds.contains(profile.id)
+
+        return Button {
+            if isSelected {
+                guideProfileIds.removeAll { $0 == profile.id }
+            } else {
+                guideProfileIds.append(profile.id)
+            }
+
+            var prefs = UserPreferences.load()
+            prefs.guideProfileIds = guideProfileIds
+            prefs.save()
+            if !guideProfileIds.isEmpty, appState.guideProfileFilter == profile.id, !guideProfileIds.contains(profile.id) {
+                appState.guideProfileFilter = nil
+                appState.guideChannelFilter = ""
+            }
+            NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+        } label: {
+            HStack(spacing: Theme.spacingMD) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+
+                Text(profile.name)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -786,6 +867,7 @@ struct SettingsView: View {
         #endif
         appState.guideChannelFilter = ""
         appState.guideGroupFilter = nil
+        appState.guideProfileFilter = nil
         appState.searchQuery = ""
         #if DISPATCHERPVR
         appState.userLevel = 10
@@ -924,6 +1006,11 @@ struct SettingsView: View {
                     var prefs = UserPreferences.load()
                     prefs.guideShowGroupsInSidebar = newValue
                     prefs.save()
+                    if !newValue {
+                        appState.guideGroupFilter = nil
+                        appState.guideChannelFilter = ""
+                    }
+                    NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
                 }
             if guideShowGroupsInSidebar {
                 if epgCache.channelGroups.isEmpty {
@@ -931,7 +1018,7 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.textSecondary)
                 } else {
                     let populatedGroups = epgCache.channelGroups.filter { group in
-                        epgCache.visibleChannels.contains { $0.groupId == group.id }
+                        epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
                     }
                     if populatedGroups.isEmpty {
                         Text("No channels in any group")
@@ -948,11 +1035,70 @@ struct SettingsView: View {
                                 var prefs = UserPreferences.load()
                                 prefs.guideGroupIds = guideGroupIds
                                 prefs.save()
+                                if !guideGroupIds.isEmpty, appState.guideGroupFilter == group.id, !guideGroupIds.contains(group.id) {
+                                    appState.guideGroupFilter = nil
+                                    appState.guideChannelFilter = ""
+                                }
+                                NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
                             } label: {
                                 HStack {
                                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
                                     Text(group.name)
+                                        .foregroundStyle(Theme.textPrimary)
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
+            Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
+                .onChange(of: guideShowProfilesInSidebar) { newValue in
+                    var prefs = UserPreferences.load()
+                    prefs.guideShowProfilesInSidebar = newValue
+                    prefs.save()
+                    if !newValue {
+                        appState.guideProfileFilter = nil
+                        appState.guideChannelFilter = ""
+                    }
+                    NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                }
+            if guideShowProfilesInSidebar {
+                if epgCache.channelProfiles.isEmpty {
+                    Text("No channel profiles available")
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    let populatedProfiles = epgCache.channelProfiles.filter { profile in
+                        epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
+                    }
+                    if populatedProfiles.isEmpty {
+                        Text("No channels in any profile")
+                            .foregroundStyle(Theme.textSecondary)
+                    } else {
+                        ForEach(populatedProfiles) { profile in
+                            let isSelected = guideProfileIds.contains(profile.id)
+                            Button {
+                                if isSelected {
+                                    guideProfileIds.removeAll { $0 == profile.id }
+                                } else {
+                                    guideProfileIds.append(profile.id)
+                                }
+                                var prefs = UserPreferences.load()
+                                prefs.guideProfileIds = guideProfileIds
+                                prefs.save()
+                                if !guideProfileIds.isEmpty, appState.guideProfileFilter == profile.id, !guideProfileIds.contains(profile.id) {
+                                    appState.guideProfileFilter = nil
+                                    appState.guideChannelFilter = ""
+                                }
+                                NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                            } label: {
+                                HStack {
+                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+                                    Text(profile.name)
                                         .foregroundStyle(Theme.textPrimary)
                                     Spacer()
                                 }
