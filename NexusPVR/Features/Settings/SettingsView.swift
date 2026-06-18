@@ -425,6 +425,7 @@ struct SettingsView: View {
             VStack(spacing: Theme.spacingMD) {
                 Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
                     .font(.system(size: 24, weight: .semibold))
+                    .modifier(TVGuideSidebarToggleForegroundStyle())
                     .padding(.horizontal, Theme.spacingMD)
                     .padding(.vertical, Theme.spacingSM)
                     .background(Theme.guideNowPlaying.opacity(0.78))
@@ -465,6 +466,7 @@ struct SettingsView: View {
 
                 Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
                     .font(.system(size: 24, weight: .semibold))
+                    .modifier(TVGuideSidebarToggleForegroundStyle())
                     .padding(.horizontal, Theme.spacingMD)
                     .padding(.vertical, Theme.spacingSM)
                     .background(Theme.guideNowPlaying.opacity(0.78))
@@ -536,22 +538,7 @@ struct SettingsView: View {
             }
             NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
         } label: {
-            HStack(spacing: Theme.spacingMD) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
-
-                Text(group.name)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-
-                Spacer()
-            }
-            .padding(.horizontal, Theme.spacingMD)
-            .padding(.vertical, Theme.spacingMD)
-            .background(Theme.guideNowPlaying.opacity(0.78))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            TVGuideToggleRowContent(title: group.name, isSelected: isSelected)
         }
         .buttonStyle(TVSettingsRowButtonStyle())
     }
@@ -575,22 +562,7 @@ struct SettingsView: View {
             }
             NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
         } label: {
-            HStack(spacing: Theme.spacingMD) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
-
-                Text(profile.name)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-
-                Spacer()
-            }
-            .padding(.horizontal, Theme.spacingMD)
-            .padding(.vertical, Theme.spacingMD)
-            .background(Theme.guideNowPlaying.opacity(0.78))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            TVGuideToggleRowContent(title: profile.name, isSelected: isSelected)
         }
         .buttonStyle(TVSettingsRowButtonStyle())
     }
@@ -1173,6 +1145,43 @@ struct SettingsView: View {
 }
 
 #if os(tvOS)
+#if DISPATCHERPVR
+private struct TVGuideSidebarToggleForegroundStyle: ViewModifier {
+    @Environment(\.isFocused) private var isFocused
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(isFocused ? Color(white: 0.06) : Theme.textPrimary)
+    }
+}
+
+private struct TVGuideToggleRowContent: View {
+    let title: String
+    let isSelected: Bool
+
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        HStack(spacing: Theme.spacingMD) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+
+            Text(title)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(isFocused ? Color.white : Theme.textPrimary)
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .padding(.horizontal, Theme.spacingMD)
+        .padding(.vertical, Theme.spacingMD)
+        .background(Theme.guideNowPlaying.opacity(0.78))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+    }
+}
+#endif
+
 private struct TVSettingsRowButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused
 
