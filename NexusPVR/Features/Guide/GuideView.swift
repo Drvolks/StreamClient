@@ -2003,10 +2003,15 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         // moment of the click. The touch surface also reports a finger position
         // continuously (even resting a thumb), so we must not drive repeats from
         // touch alone. Instead:
+        //   - `isRemoteClickHeld` tracks the physical clickpad press (buttonA).
         //   - `latestRemoteX/Y` cache the live finger position.
-        //   - On buttonA press we LATCH the direction into `heldRemoteDirection`
-        //     and keep repeating it until the click is released, so a held click
-        //     scrolls steadily even as the touch value wanders below threshold.
+        //   - When the click goes down we LATCH a direction into
+        //     `heldRemoteDirection` and keep repeating it until release, so a
+        //     held click scrolls steadily even as the touch value wanders.
+        // The buttonA and dpad callbacks arrive independently, so the position
+        // may not have settled at the instant of the click; if the latch can't
+        // resolve a direction yet, the next dpad update *while held* resolves it.
+        private var isRemoteClickHeld = false
         private var latestRemoteX: Float = 0
         private var latestRemoteY: Float = 0
         private var heldRemoteDirection: MoveCommandDirection?
@@ -2121,6 +2126,7 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                 controller.microGamepad?.buttonA.pressedChangedHandler = nil
             }
             configuredControllers.removeAll()
+            isRemoteClickHeld = false
             heldRemoteDirection = nil
             stopRepeating(source: .remote)
         }
@@ -2135,6 +2141,7 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                 controller.microGamepad?.dpad.valueChangedHandler = nil
                 controller.microGamepad?.buttonA.pressedChangedHandler = nil
                 configuredControllers.removeValue(forKey: id)
+                isRemoteClickHeld = false
                 heldRemoteDirection = nil
                 stopRepeating(source: .remote)
             }
@@ -2154,9 +2161,15 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                     self?.handleRemoteDPad(xValue: xValue, yValue: yValue)
                 }
             }
-            microGamepad.buttonA.pressedChangedHandler = { [weak self] _, _, isPressed in
+            microGamepad.buttonA.pressedChangedHandler = { [weak self, weak microGamepad] _, _, isPressed in
+                // Read the finger position synchronously, at the hardware moment
+                // of the click — the cached value updated by the dpad handler may
+                // not have arrived yet (separate async hop), which made the latch
+                // miss the direction intermittently.
+                let xValue = microGamepad?.dpad.xAxis.value ?? 0
+                let yValue = microGamepad?.dpad.yAxis.value ?? 0
                 DispatchQueue.main.async {
-                    self?.handleRemoteClick(isPressed: isPressed)
+                    self?.handleRemoteClick(isPressed: isPressed, xValue: xValue, yValue: yValue)
                 }
             }
             configuredControllers[id] = controller
@@ -2167,19 +2180,36 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             latestRemoteY = yValue
 
             // Touch position alone never starts a repeat — that is what made a
-            // single click run away into a fast scroll. We only act on the
-            // physical click (handleRemoteClick). The one thing we watch for here
-            // is the finger lifting off entirely: if a repeat is active and the
-            // touch returns to the center, treat it as a release so a stuck timer
-            // can't keep scrolling after the user lets go.
-            if heldRemoteDirection != nil, hypot(xValue, yValue) < 0.1 {
+            // single click run away into a fast scroll. We only act while the
+            // physical click is held.
+            guard isRemoteClickHeld else { return }
+
+            if heldRemoteDirection == nil {
+                // The click landed before the finger position settled; latch the
+                // direction now that we have a usable reading.
+                if let direction = clickDirection(xValue: xValue, yValue: yValue) {
+                    heldRemoteDirection = direction
+                    startRepeating(direction, source: .remote)
+                }
+                return
+            }
+
+            // Already latched: keep repeating that direction until release. The
+            // only thing we bail on is the finger lifting off entirely (a missed
+            // buttonA-release safety net) — a genuine directional hold keeps the
+            // thumb well off-center, so this never trips mid-scroll.
+            if hypot(xValue, yValue) < 0.1 {
+                isRemoteClickHeld = false
                 heldRemoteDirection = nil
                 stopRepeating(source: .remote)
             }
         }
 
-        private func handleRemoteClick(isPressed: Bool) {
+        private func handleRemoteClick(isPressed: Bool, xValue: Float, yValue: Float) {
+            isRemoteClickHeld = isPressed
+
             guard isRepeatEnabled, window != nil else {
+                isRemoteClickHeld = false
                 heldRemoteDirection = nil
                 stopRepeating(source: .remote)
                 return
@@ -2196,12 +2226,13 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             // it for the whole press. .onMoveCommand already performed the first
             // single-row move; this owns only the *delayed* repeat, so a quick
             // click (released before `initialDelay`) moves exactly one row, while
-            // holding the click scrolls continuously until release.
-            guard let direction = clickDirection(xValue: latestRemoteX, yValue: latestRemoteY) else {
-                return
+            // holding the click scrolls continuously until release. If the
+            // position hasn't resolved yet, handleRemoteDPad latches it shortly.
+            if let direction = clickDirection(xValue: xValue, yValue: yValue)
+                ?? clickDirection(xValue: latestRemoteX, yValue: latestRemoteY) {
+                heldRemoteDirection = direction
+                startRepeating(direction, source: .remote)
             }
-            heldRemoteDirection = direction
-            startRepeating(direction, source: .remote)
         }
 
         private func clickDirection(xValue: Float, yValue: Float) -> MoveCommandDirection? {
