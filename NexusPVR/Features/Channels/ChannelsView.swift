@@ -159,12 +159,12 @@ struct ChannelsView: View {
                     self.focusedChannelId = id
                 }
             }
-        #else
+        #elseif os(iOS)
         NavigationStack {
             content
             .navigationTitle("Channels")
             .accessibilityIdentifier("channels-view")
-            #if DISPATCHERPVR && !os(tvOS)
+            #if DISPATCHERPVR
             .toolbar {
                 if hasFilterData {
                     ToolbarItem(placement: .automatic) {
@@ -173,12 +173,8 @@ struct ChannelsView: View {
                 }
             }
             #endif
-            #if os(iOS)
             .searchable(text: $appState.guideChannelFilter, prompt: "Search channels")
             .sidebarMenuToolbar()
-            #elseif os(macOS)
-            .searchable(text: $appState.guideChannelFilter, prompt: "Search channels")
-            #endif
             .alert("Error", isPresented: .constant(streamError != nil)) {
                 Button("OK") { streamError = nil }
             } message: {
@@ -186,6 +182,25 @@ struct ChannelsView: View {
             }
         }
         .background(Theme.background)
+        .task {
+            await tickCurrentTime()
+        }
+        #else
+        // macOS: mirror the guide view — no `.searchable` (its floating field
+        // overlaps the content). A custom nav bar (search + filter toggle) sits
+        // at the top in normal flow, below the title bar. The router gives the
+        // channels tab the same title-bar-respecting inset as the guide.
+        VStack(spacing: 0) {
+            macOSChannelsNavBar
+            content
+                .accessibilityIdentifier("channels-view")
+        }
+        .background(.ultraThinMaterial)
+        .alert("Error", isPresented: .constant(streamError != nil)) {
+            Button("OK") { streamError = nil }
+        } message: {
+            if let error = streamError { Text(error) }
+        }
         .task {
             await tickCurrentTime()
         }
@@ -313,61 +328,79 @@ struct ChannelsView: View {
     }
 
     private var emptyContent: some View {
+        #if os(tvOS)
         VStack(spacing: 0) {
-            #if os(tvOS)
             tvOSFilterBar
-            #else
+            emptyView
+        }
+        #elseif os(macOS)
+        // Filters live in the floating nav bar on macOS.
+        emptyView
+        #else
+        VStack(spacing: 0) {
             #if DISPATCHERPVR
             if showFilters && hasFilterData {
                 filterPanel
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             #endif
-            #endif
             emptyView
         }
+        #endif
     }
 
     // MARK: - Grid
 
     private var channelGrid: some View {
+        #if os(tvOS)
         VStack(spacing: 0) {
-            #if os(tvOS)
             tvOSFilterBar
-            #else
+            ScrollView {
+                cardsGrid
+            }
+        }
+        #elseif os(macOS)
+        ScrollView {
+            cardsGrid
+        }
+        #else
+        VStack(spacing: 0) {
             #if DISPATCHERPVR
             if showFilters && hasFilterData {
                 filterPanel
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             #endif
-            #endif
-
             ScrollView {
-                LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
-                    ForEach(visibleChannels) { channel in
-                        Button {
-                            play(channel: channel)
-                        } label: {
-                            ChannelGridCard(
-                                channel: channel,
-                                currentProgram: epgCache.currentProgram(for: channel, at: now)
-                            )
-                        }
-                        .accessibilityIdentifier("channel-card-\(channel.id)")
-                        #if os(tvOS)
-                        .buttonStyle(ChannelGridCardButtonStyle())
-                        .focusEffectDisabled()
-                        .focused($focusedChannelId, equals: channel.id)
-                        .zIndex(focusedChannelId == channel.id ? 1 : 0)
-                        #else
-                        .buttonStyle(.plain)
-                        #endif
-                    }
-                }
-                .padding(Theme.spacingMD)
+                cardsGrid
             }
         }
+        #endif
+    }
+
+    private var cardsGrid: some View {
+        LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
+            ForEach(visibleChannels) { channel in
+                Button {
+                    play(channel: channel)
+                } label: {
+                    ChannelGridCard(
+                        channel: channel,
+                        currentProgram: epgCache.currentProgram(for: channel, at: now)
+                    )
+                }
+                .accessibilityIdentifier("channel-card-\(channel.id)")
+                #if os(tvOS)
+                .buttonStyle(ChannelGridCardButtonStyle())
+                .focusEffectDisabled()
+                .focused($focusedChannelId, equals: channel.id)
+                .zIndex(focusedChannelId == channel.id ? 1 : 0)
+                #else
+                .buttonStyle(.plain)
+                #endif
+            }
+        }
+        .padding(Theme.spacingMD)
     }
 
     private func play(channel: Channel) {
@@ -697,6 +730,74 @@ struct ChannelsView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+    #endif
+
+    #if os(macOS)
+    /// macOS nav bar, mirroring the guide's `macOSGuideNavBar`: a capsule search
+    /// field on the left and a filter toggle on the right. Rendered at the top of
+    /// the content in normal flow, below the title bar.
+    private var macOSChannelsNavBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.spacingSM) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                    TextField("Search channels", text: $appState.guideChannelFilter)
+                        .textFieldStyle(.plain)
+                        .frame(width: 220)
+                        .accessibilityIdentifier("channels-view-field")
+                    if !appState.guideChannelFilter.isEmpty {
+                        Button {
+                            appState.guideChannelFilter = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+
+                Spacer()
+
+                #if DISPATCHERPVR
+                if hasFilterData {
+                    Button {
+                        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+                            showFilters.toggle()
+                        }
+                    } label: {
+                        Image(systemName: hasActiveFilters
+                              ? "line.3.horizontal.decrease.circle.fill"
+                              : "line.3.horizontal.decrease")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(hasActiveFilters ? Theme.accent : Theme.textPrimary)
+                            .frame(width: 32, height: 32)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showFilters ? "Hide filters" : "Show filters")
+                }
+                #endif
+            }
+            .padding(.horizontal, Theme.spacingMD)
+            .padding(.vertical, Theme.spacingSM)
+
+            #if DISPATCHERPVR
+            if showFilters && hasFilterData {
+                filterPanel
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            #endif
+        }
     }
     #endif
 }
