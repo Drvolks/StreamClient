@@ -26,6 +26,16 @@ struct ChannelsView: View {
     #if os(tvOS)
     @FocusState private var focusedChannelId: Int?
     @State private var requestTVSearchKeyboard = false
+    #if DISPATCHERPVR
+    @State private var headerDrawerKind: ChannelsDrawerKind?
+    @FocusState private var focusedDrawerItemId: String?
+    #endif
+    #endif
+
+    #if os(tvOS) && DISPATCHERPVR
+    /// Which header filter is currently expanded as a drawer, matching the
+    /// guide view's group/profile drawer UX.
+    private enum ChannelsDrawerKind { case group, profile }
     #endif
 
     /// Minimum 2 visible columns on iPhone, scales up for iPad / macOS / tvOS.
@@ -115,9 +125,25 @@ struct ChannelsView: View {
             }
             .background(.ultraThinMaterial)
             .onMoveCommand { direction in
+                #if DISPATCHERPVR
+                if headerDrawerKind != nil {
+                    // Up/down navigates the drawer list (handled by the focus
+                    // engine); left/right collapses it, like the guide view.
+                    if direction == .left || direction == .right {
+                        closeDrawer()
+                    }
+                    return
+                }
+                #endif
                 if direction == .left { requestSidebarFocus() }
             }
             .onExitCommand {
+                #if DISPATCHERPVR
+                if headerDrawerKind != nil {
+                    closeDrawer()
+                    return
+                }
+                #endif
                 requestSidebarFocus()
             }
             .task {
@@ -380,12 +406,14 @@ struct ChannelsView: View {
                     tvOSDispatcharrField(
                         icon: "folder.fill",
                         title: "Group",
-                        value: selectedGroupLabel
+                        value: selectedGroupLabel,
+                        kind: .group
                     )
                     tvOSDispatcharrField(
                         icon: "person.fill",
                         title: "Profile",
-                        value: selectedProfileLabel
+                        value: selectedProfileLabel,
+                        kind: .profile
                     )
                 }
                 #endif
@@ -405,8 +433,8 @@ struct ChannelsView: View {
             )
 
             #if DISPATCHERPVR
-            if showFilters && hasFilterData {
-                filterPanel
+            if headerDrawerKind != nil {
+                tvOSHeaderDrawer
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             #endif
@@ -455,10 +483,12 @@ struct ChannelsView: View {
     }
 
     #if DISPATCHERPVR
-    private func tvOSDispatcharrField(icon: String, title: String, value: String) -> some View {
+    private func tvOSDispatcharrField(icon: String, title: String, value: String, kind: ChannelsDrawerKind) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: Theme.animationDuration)) {
-                showFilters.toggle()
+            if headerDrawerKind == kind {
+                closeDrawer()
+            } else {
+                openDrawer(kind)
             }
         } label: {
             HStack(spacing: 6) {
@@ -473,6 +503,104 @@ struct ChannelsView: View {
         ))
         .focusEffectDisabled()
         .accessibilityLabel("Show \(title.lowercased()) filters")
+    }
+
+    // MARK: - tvOS Group/Profile Drawer (matches guide view UX)
+
+    /// Vertical drawer listing the options for the open filter. Mirrors the
+    /// guide's `tvOSHeaderDrawer`: a titled list with a checkmark on the
+    /// highlighted row. Each row is a focusable button so it works with the
+    /// channels grid's native focus model.
+    private var tvOSHeaderDrawer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(headerDrawerKind == .group ? "Select Group" : "Select Profile")
+                .font(.headline)
+                .foregroundStyle(Theme.textSecondary)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(currentDrawerItems, id: \.id) { item in
+                        Button {
+                            applyDrawerSelection(item.value)
+                        } label: {
+                            Text(item.label)
+                        }
+                        .buttonStyle(ChannelsDrawerItemButtonStyle())
+                        .focusEffectDisabled()
+                        .focused($focusedDrawerItemId, equals: item.id)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(maxHeight: 360)
+        }
+        .padding(.horizontal, Theme.spacingLG)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+        )
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
+        .focusSection()
+    }
+
+    private var currentDrawerItems: [(id: String, label: String, value: Int?)] {
+        switch headerDrawerKind {
+        case .group:
+            return [(id: "group-all", label: "All Groups", value: nil)] +
+                   populatedGroups.map { (id: "group-\($0.id)", label: $0.name, value: $0.id) }
+        case .profile:
+            return [(id: "profile-all", label: "All Profiles", value: nil)] +
+                   epgCache.channelProfiles.map { (id: "profile-\($0.id)", label: $0.name, value: $0.id) }
+        case .none:
+            return []
+        }
+    }
+
+    private var currentDrawerSelectedItemId: String? {
+        let value: Int? = (headerDrawerKind == .group)
+            ? appState.guideGroupFilter
+            : appState.guideProfileFilter
+        return currentDrawerItems.first(where: { $0.value == value })?.id
+    }
+
+    private func openDrawer(_ kind: ChannelsDrawerKind) {
+        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+            headerDrawerKind = kind
+        }
+        // Defer until the drawer has rendered so the focus lands on the
+        // currently-selected option (like the guide's initial cursor).
+        DispatchQueue.main.async {
+            focusedDrawerItemId = currentDrawerSelectedItemId
+        }
+    }
+
+    private func closeDrawer() {
+        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+            headerDrawerKind = nil
+        }
+    }
+
+    private func applyDrawerSelection(_ value: Int?) {
+        switch headerDrawerKind {
+        case .group:
+            appState.guideGroupFilter = value
+            if value != nil {
+                appState.guideProfileFilter = nil
+                appState.guideChannelFilter = ""
+            }
+        case .profile:
+            appState.guideProfileFilter = value
+            if value != nil {
+                appState.guideGroupFilter = nil
+                appState.guideChannelFilter = ""
+            }
+        case .none:
+            break
+        }
+        closeDrawer()
     }
     #endif
     #endif
@@ -586,7 +714,7 @@ struct ChannelGridCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacingSM) {
             // Logo header
-            HStack {
+            HStack(alignment: .top) {
                 CachedAsyncImage(url: try? client.channelIconURL(channelId: channel.id)) { image in
                     image
                         .resizable()
@@ -597,6 +725,12 @@ struct ChannelGridCard: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .frame(width: Theme.iconSize, height: Theme.iconSize)
+
+                Spacer(minLength: Theme.spacingSM)
+
+                if let program = currentProgram, let sport = SportDetector.detect(from: program) {
+                    SportIconView(sport: sport, size: Theme.iconSize * 0.5)
+                }
             }
 
             Text(channel.name)
@@ -736,6 +870,49 @@ private struct TVPillFieldFocusWrapper<Content: View>: View {
             .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 }
+
+#if DISPATCHERPVR
+/// tvOS `ButtonStyle` for rows in the group/profile drawer. Highlighted
+/// (focused) row shows a filled checkmark + accent border, matching the guide
+/// view's `tvOSHeaderDrawer` rows.
+struct ChannelsDrawerItemButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ChannelsDrawerItemFocusWrapper { configuration.label }
+    }
+}
+
+private struct ChannelsDrawerItemFocusWrapper<Content: View>: View {
+    @Environment(\.isFocused) private var isFocused
+    let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isFocused ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isFocused ? Theme.accent : Theme.textTertiary)
+            content()
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .font(.subheadline)
+        .foregroundStyle(isFocused ? Theme.textPrimary : Theme.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isFocused ? Theme.surfaceElevated : Theme.surface.opacity(0.3))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isFocused ? Theme.accent : Theme.surfaceHighlight.opacity(0.5), lineWidth: isFocused ? 2 : 1)
+        )
+        .animation(.easeInOut(duration: 0.12), value: isFocused)
+    }
+}
+#endif
 
 /// Zero-size `UITextField` that only ever drives the on-screen keyboard for the
 /// search field. `canBecomeFocused` is `false` so the focus engine never lands
