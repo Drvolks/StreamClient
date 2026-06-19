@@ -9,9 +9,6 @@ import SwiftUI
 #if os(iOS) || os(tvOS)
 import UIKit
 #endif
-#if os(tvOS)
-import GameController
-#endif
 
 
 // Helper struct to hold both program and channel for sheet presentation
@@ -595,7 +592,6 @@ struct GuideView: View {
     @State private var scrollTopRow: Int = 0
     @State private var focusedHeaderItem: TVGuideHeaderItem = .search
     @State private var timeOffset: Int = 0  // 30-minute increments from now
-    @State private var tvKeyboardRepeatDirection: MoveCommandDirection?
     @State private var guideStartTime: Date = {
         // Start from current time, rounded down to nearest 30 minutes
         let now = Date()
@@ -619,14 +615,6 @@ struct GuideView: View {
 
     private var visibleEnd: Date {
         visibleStart.addingTimeInterval(visibleMinutes * 60)
-    }
-
-    private var canRepeatTVGuideNavigation: Bool {
-        #if DISPATCHERPVR
-        gridHasFocus && !isTVSearchFieldFocused && !isHeaderDrawerOpen
-        #else
-        gridHasFocus && !isTVSearchFieldFocused
-        #endif
     }
 
     // Re-anchor the visible timeline on the current half-hour bucket.
@@ -905,21 +893,11 @@ struct GuideView: View {
                 }
             }
             .focused($gridHasFocus)
-            .background(
-                TVGuideRemoteRepeatView(
-                    isEnabled: canRepeatTVGuideNavigation,
-                    keyboardRepeatDirection: canRepeatTVGuideNavigation ? tvKeyboardRepeatDirection : nil,
-                    onRepeat: handleTVNavigation
-                )
-            )
             .onTapGesture {
                 handleTVSelect()
             }
             .onMoveCommand { direction in
                 handleTVNavigation(direction)
-            }
-            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow], phases: .all) { press in
-                handleTVKeyboardNavigationKey(press)
             }
             .onPlayPauseCommand {
                 handleTVSelect()
@@ -1509,55 +1487,6 @@ struct GuideView: View {
         }
     }
 
-    private func handleTVKeyboardNavigationKey(_ press: KeyPress) -> KeyPress.Result {
-        guard let direction = moveDirection(for: press.key) else {
-            return .ignored
-        }
-
-        guard canRepeatTVGuideNavigation else {
-            stopTVKeyboardNavigationRepeat()
-            return .ignored
-        }
-
-        if press.phase.contains(.down) {
-            tvKeyboardRepeatDirection = direction
-            return .ignored
-        }
-
-        if press.phase.contains(.repeat) {
-            tvKeyboardRepeatDirection = direction
-            return .handled
-        }
-
-        if press.phase.contains(.up) {
-            if tvKeyboardRepeatDirection == direction {
-                stopTVKeyboardNavigationRepeat()
-            }
-            return .handled
-        }
-
-        return .ignored
-    }
-
-    private func moveDirection(for key: KeyEquivalent) -> MoveCommandDirection? {
-        switch key {
-        case .upArrow:
-            return .up
-        case .downArrow:
-            return .down
-        case .leftArrow:
-            return .left
-        case .rightArrow:
-            return .right
-        default:
-            return nil
-        }
-    }
-
-    private func stopTVKeyboardNavigationRepeat() {
-        tvKeyboardRepeatDirection = nil
-    }
-
     private func moveHeaderFocusLeft() {
         guard let currentIndex = tvHeaderItems.firstIndex(of: focusedHeaderItem) else { return }
         focusedHeaderItem = tvHeaderItems[max(0, currentIndex - 1)]
@@ -1932,324 +1861,6 @@ private struct TVImmediateSearchField: UIViewRepresentable {
             }
         } else if uiView.isFirstResponder {
             uiView.resignFirstResponder()
-        }
-    }
-}
-
-private struct TVGuideRemoteRepeatView: UIViewRepresentable {
-    let isEnabled: Bool
-    let keyboardRepeatDirection: MoveCommandDirection?
-    let onRepeat: (MoveCommandDirection) -> Void
-
-    func makeUIView(context: Context) -> RemoteRepeatCaptureView {
-        let view = RemoteRepeatCaptureView(frame: .zero)
-        view.onRepeat = onRepeat
-        view.isRepeatEnabled = isEnabled
-        view.keyboardRepeatDirection = keyboardRepeatDirection
-        return view
-    }
-
-    func updateUIView(_ uiView: RemoteRepeatCaptureView, context: Context) {
-        uiView.onRepeat = onRepeat
-        uiView.isRepeatEnabled = isEnabled
-        uiView.keyboardRepeatDirection = keyboardRepeatDirection
-    }
-
-    static func dismantleUIView(_ uiView: RemoteRepeatCaptureView, coordinator: ()) {
-        uiView.stopRepeating()
-    }
-
-    final class RemoteRepeatCaptureView: UIView {
-        var onRepeat: ((MoveCommandDirection) -> Void)?
-
-        var isRepeatEnabled: Bool = false {
-            didSet {
-                guard oldValue != isRepeatEnabled else { return }
-                if isRepeatEnabled {
-                    startMonitoringControllersIfPossible()
-                } else {
-                    stopMonitoringControllers()
-                    stopRepeating()
-                }
-            }
-        }
-
-        var keyboardRepeatDirection: MoveCommandDirection? {
-            didSet {
-                guard oldValue != keyboardRepeatDirection else { return }
-                guard isRepeatEnabled, let keyboardRepeatDirection else {
-                    stopRepeating(source: .keyboard)
-                    return
-                }
-                startRepeating(keyboardRepeatDirection, source: .keyboard)
-            }
-        }
-
-        private enum RepeatSource {
-            case keyboard
-            case remote
-        }
-
-        private let initialDelay: TimeInterval = 0.35
-        private var repeatTimer: Timer?
-        private var currentSource: RepeatSource?
-        private var currentDirection: MoveCommandDirection?
-        private var repeatTickCount = 0
-        private var controllerObservers: [NSObjectProtocol] = []
-        private var configuredControllers: [ObjectIdentifier: GCController] = [:]
-
-        // On the Siri Remote a *directional* click arrives as a buttonA
-        // ("select") press; the direction comes from the touch position at the
-        // moment of the click. The touch surface also reports a finger position
-        // continuously (even resting a thumb), so we must not drive repeats from
-        // touch alone. Instead:
-        //   - `isRemoteClickHeld` tracks the physical clickpad press (buttonA).
-        //   - `latestRemoteX/Y` cache the live finger position.
-        //   - When the click goes down we LATCH a direction into
-        //     `heldRemoteDirection` and keep repeating it until release, so a
-        //     held click scrolls steadily even as the touch value wanders.
-        // The buttonA and dpad callbacks arrive independently, so the position
-        // may not have settled at the instant of the click; if the latch can't
-        // resolve a direction yet, the next dpad update *while held* resolves it.
-        private var isRemoteClickHeld = false
-        private var latestRemoteX: Float = 0
-        private var latestRemoteY: Float = 0
-        private var heldRemoteDirection: MoveCommandDirection?
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            if window == nil {
-                stopMonitoringControllers()
-                stopRepeating()
-            } else if isRepeatEnabled {
-                startMonitoringControllersIfPossible()
-            }
-        }
-
-        func stopRepeating() {
-            stopRepeating(source: nil)
-        }
-
-        private func stopRepeating(source: RepeatSource?) {
-            if let source, currentSource != source { return }
-
-            repeatTimer?.invalidate()
-            repeatTimer = nil
-            currentSource = nil
-            currentDirection = nil
-            repeatTickCount = 0
-        }
-
-        private func startRepeating(_ direction: MoveCommandDirection, source: RepeatSource) {
-            guard isRepeatEnabled else { return }
-            if currentDirection == direction, currentSource == source, repeatTimer != nil {
-                return
-            }
-
-            stopRepeating()
-            currentSource = source
-            currentDirection = direction
-            scheduleNextTick(after: initialDelay)
-        }
-
-        private func scheduleNextTick(after interval: TimeInterval) {
-            repeatTimer?.invalidate()
-            let timer = Timer(
-                timeInterval: interval,
-                target: self,
-                selector: #selector(handleRepeatTimer),
-                userInfo: nil,
-                repeats: false
-            )
-            RunLoop.main.add(timer, forMode: .common)
-            repeatTimer = timer
-        }
-
-        @objc private func handleRepeatTimer() {
-            guard isRepeatEnabled, let direction = currentDirection else {
-                stopRepeating()
-                return
-            }
-
-            onRepeat?(direction)
-            repeatTickCount += 1
-            scheduleNextTick(after: currentRepeatInterval())
-        }
-
-        private func currentRepeatInterval() -> TimeInterval {
-            if repeatTickCount < 10 { return 0.10 }
-            if repeatTickCount < 20 { return 0.08 }
-            if repeatTickCount < 30 { return 0.06 }
-            return 0.05
-        }
-
-        private func startMonitoringControllersIfPossible() {
-            guard window != nil else { return }
-            startMonitoringControllers()
-        }
-
-        private func startMonitoringControllers() {
-            if controllerObservers.isEmpty {
-                controllerObservers.append(
-                    NotificationCenter.default.addObserver(
-                        forName: .GCControllerDidConnect,
-                        object: nil,
-                        queue: .main
-                    ) { [weak self] _ in
-                        self?.refreshConfiguredControllers()
-                    }
-                )
-
-                controllerObservers.append(
-                    NotificationCenter.default.addObserver(
-                        forName: .GCControllerDidDisconnect,
-                        object: nil,
-                        queue: .main
-                    ) { [weak self] _ in
-                        self?.refreshConfiguredControllers()
-                    }
-                )
-            }
-
-            refreshConfiguredControllers()
-            GCController.startWirelessControllerDiscovery(completionHandler: nil)
-        }
-
-        private func stopMonitoringControllers() {
-            for observer in controllerObservers {
-                NotificationCenter.default.removeObserver(observer)
-            }
-            controllerObservers.removeAll()
-
-            for controller in configuredControllers.values {
-                controller.microGamepad?.dpad.valueChangedHandler = nil
-                controller.microGamepad?.buttonA.pressedChangedHandler = nil
-            }
-            configuredControllers.removeAll()
-            isRemoteClickHeld = false
-            heldRemoteDirection = nil
-            stopRepeating(source: .remote)
-        }
-
-        private func refreshConfiguredControllers() {
-            let controllers = GCController.controllers()
-            let connectedIds = Set(controllers.map(ObjectIdentifier.init))
-            let disconnectedIds = configuredControllers.keys.filter { !connectedIds.contains($0) }
-
-            for id in disconnectedIds {
-                guard let controller = configuredControllers[id] else { continue }
-                controller.microGamepad?.dpad.valueChangedHandler = nil
-                controller.microGamepad?.buttonA.pressedChangedHandler = nil
-                configuredControllers.removeValue(forKey: id)
-                isRemoteClickHeld = false
-                heldRemoteDirection = nil
-                stopRepeating(source: .remote)
-            }
-
-            controllers.forEach(configure)
-        }
-
-        private func configure(_ controller: GCController) {
-            let id = ObjectIdentifier(controller)
-            guard configuredControllers[id] == nil else { return }
-            guard let microGamepad = controller.microGamepad else { return }
-
-            microGamepad.reportsAbsoluteDpadValues = true
-            microGamepad.allowsRotation = false
-            microGamepad.dpad.valueChangedHandler = { [weak self] _, xValue, yValue in
-                DispatchQueue.main.async {
-                    self?.handleRemoteDPad(xValue: xValue, yValue: yValue)
-                }
-            }
-            microGamepad.buttonA.pressedChangedHandler = { [weak self, weak microGamepad] _, _, isPressed in
-                // Read the finger position synchronously, at the hardware moment
-                // of the click — the cached value updated by the dpad handler may
-                // not have arrived yet (separate async hop), which made the latch
-                // miss the direction intermittently.
-                let xValue = microGamepad?.dpad.xAxis.value ?? 0
-                let yValue = microGamepad?.dpad.yAxis.value ?? 0
-                DispatchQueue.main.async {
-                    self?.handleRemoteClick(isPressed: isPressed, xValue: xValue, yValue: yValue)
-                }
-            }
-            configuredControllers[id] = controller
-        }
-
-        private func handleRemoteDPad(xValue: Float, yValue: Float) {
-            latestRemoteX = xValue
-            latestRemoteY = yValue
-
-            // Touch position alone never starts a repeat — that is what made a
-            // single click run away into a fast scroll. We only act while the
-            // physical click is held.
-            guard isRemoteClickHeld else { return }
-
-            if heldRemoteDirection == nil {
-                // The click landed before the finger position settled; latch the
-                // direction now that we have a usable reading.
-                if let direction = clickDirection(xValue: xValue, yValue: yValue) {
-                    heldRemoteDirection = direction
-                    startRepeating(direction, source: .remote)
-                }
-                return
-            }
-
-            // Already latched: keep repeating that direction until release. The
-            // only thing we bail on is the finger lifting off entirely (a missed
-            // buttonA-release safety net) — a genuine directional hold keeps the
-            // thumb well off-center, so this never trips mid-scroll.
-            if hypot(xValue, yValue) < 0.1 {
-                isRemoteClickHeld = false
-                heldRemoteDirection = nil
-                stopRepeating(source: .remote)
-            }
-        }
-
-        private func handleRemoteClick(isPressed: Bool, xValue: Float, yValue: Float) {
-            isRemoteClickHeld = isPressed
-
-            guard isRepeatEnabled, window != nil else {
-                isRemoteClickHeld = false
-                heldRemoteDirection = nil
-                stopRepeating(source: .remote)
-                return
-            }
-
-            guard isPressed else {
-                // Click released — stop the repeat immediately (no overshoot).
-                heldRemoteDirection = nil
-                stopRepeating(source: .remote)
-                return
-            }
-
-            // Latch the direction from the finger position at click time and hold
-            // it for the whole press. .onMoveCommand already performed the first
-            // single-row move; this owns only the *delayed* repeat, so a quick
-            // click (released before `initialDelay`) moves exactly one row, while
-            // holding the click scrolls continuously until release. If the
-            // position hasn't resolved yet, handleRemoteDPad latches it shortly.
-            if let direction = clickDirection(xValue: xValue, yValue: yValue)
-                ?? clickDirection(xValue: latestRemoteX, yValue: latestRemoteY) {
-                heldRemoteDirection = direction
-                startRepeating(direction, source: .remote)
-            }
-        }
-
-        private func clickDirection(xValue: Float, yValue: Float) -> MoveCommandDirection? {
-            let absoluteX = abs(xValue)
-            let absoluteY = abs(yValue)
-            // Deliberately low: a directional click only needs the thumb slightly
-            // off-center, and "up" clicks in particular rarely reach the far edge.
-            // A centered (select) click stays under this and never repeats.
-            let threshold: Float = 0.3
-
-            guard max(absoluteX, absoluteY) >= threshold else { return nil }
-
-            if absoluteY >= absoluteX {
-                return yValue > 0 ? .up : .down
-            } else {
-                return xValue > 0 ? .right : .left
-            }
         }
     }
 }
