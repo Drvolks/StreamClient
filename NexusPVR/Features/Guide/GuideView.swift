@@ -905,6 +905,11 @@ struct GuideView: View {
                 }
             }
             .focused($gridHasFocus)
+            .onChange(of: gridHasFocus) { _, hasFocus in
+                debugTVGuideNavigationLog(
+                    "grid focus=\(hasFocus), canRepeat=\(canRepeatTVGuideNavigation), row=\(focusedRow), col=\(focusedColumn)"
+                )
+            }
             .background(
                 TVGuideRemoteRepeatView(
                     isEnabled: canRepeatTVGuideNavigation,
@@ -916,6 +921,9 @@ struct GuideView: View {
                 handleTVSelect()
             }
             .onMoveCommand { direction in
+                debugTVGuideNavigationLog(
+                    "onMoveCommand direction=\(tvGuideDirectionName(direction)), canRepeat=\(canRepeatTVGuideNavigation), row=\(focusedRow), col=\(focusedColumn), timeOffset=\(timeOffset)"
+                )
                 handleTVNavigation(direction)
             }
             .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow], phases: .all) { press in
@@ -1423,8 +1431,21 @@ struct GuideView: View {
 
 
     private func handleTVNavigation(_ direction: MoveCommandDirection) {
+        let beforeRow = focusedRow
+        let beforeColumn = focusedColumn
+        let beforeTimeOffset = timeOffset
+        debugTVGuideNavigationLog(
+            "handle start direction=\(tvGuideDirectionName(direction)), row=\(beforeRow), col=\(beforeColumn), timeOffset=\(beforeTimeOffset), gridFocus=\(gridHasFocus), searchFocus=\(isTVSearchFieldFocused)"
+        )
+        defer {
+            debugTVGuideNavigationLog(
+                "handle end direction=\(tvGuideDirectionName(direction)), row \(beforeRow)->\(focusedRow), col \(beforeColumn)->\(focusedColumn), timeOffset \(beforeTimeOffset)->\(timeOffset)"
+            )
+        }
+
         #if DISPATCHERPVR
         if isHeaderDrawerOpen {
+            debugTVGuideNavigationLog("handle routed to header drawer direction=\(tvGuideDirectionName(direction))")
             handleHeaderDrawerNavigation(direction)
             return
         }
@@ -1555,7 +1576,30 @@ struct GuideView: View {
     }
 
     private func stopTVKeyboardNavigationRepeat() {
+        debugTVGuideNavigationLog("keyboard repeat stop direction=\(tvGuideDirectionName(tvKeyboardRepeatDirection))")
         tvKeyboardRepeatDirection = nil
+    }
+
+    private func debugTVGuideNavigationLog(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        print("[TVGuideNavigation] \(message())")
+        #endif
+    }
+
+    private func tvGuideDirectionName(_ direction: MoveCommandDirection?) -> String {
+        guard let direction else { return "nil" }
+        switch direction {
+        case .up:
+            return "up"
+        case .down:
+            return "down"
+        case .left:
+            return "left"
+        case .right:
+            return "right"
+        @unknown default:
+            return "unknown"
+        }
     }
 
     private func moveHeaderFocusLeft() {
@@ -1956,7 +2000,7 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: RemoteRepeatCaptureView, coordinator: ()) {
-        uiView.stopRepeating()
+        uiView.invalidate()
     }
 
     final class RemoteRepeatCaptureView: UIView {
@@ -1965,11 +2009,13 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         var isRepeatEnabled: Bool = false {
             didSet {
                 guard oldValue != isRepeatEnabled else { return }
+                debugLog(
+                    "enabled \(oldValue) -> \(isRepeatEnabled), window=\(window != nil), firstResponder=\(isFirstResponder)"
+                )
                 if isRepeatEnabled {
-                    startMonitoringControllersIfPossible()
+                    activateRepeatCaptureIfPossible()
                 } else {
-                    stopMonitoringControllers()
-                    stopRepeating()
+                    deactivateRepeatCapture()
                 }
             }
         }
@@ -1977,6 +2023,9 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         var keyboardRepeatDirection: MoveCommandDirection? {
             didSet {
                 guard oldValue != keyboardRepeatDirection else { return }
+                debugLog(
+                    "keyboard direction \(directionName(oldValue)) -> \(directionName(keyboardRepeatDirection)), enabled=\(isRepeatEnabled)"
+                )
                 guard isRepeatEnabled, let keyboardRepeatDirection else {
                     stopRepeating(source: .keyboard)
                     return
@@ -1987,7 +2036,8 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
 
         private enum RepeatSource {
             case keyboard
-            case remote
+            case remotePress
+            case remoteController
         }
 
         private let initialDelay: TimeInterval = 0.35
@@ -1995,14 +2045,19 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         private var currentSource: RepeatSource?
         private var currentDirection: MoveCommandDirection?
         private var repeatTickCount = 0
+
+        // Primary Siri Remote hold path. UIKit exposes directional remote
+        // clicks as arrow press types; this avoids deriving "hold" from a
+        // flaky touch-vector/buttonA pair.
+        private var activeRemotePressType: UIPress.PressType?
+        private var activeRemotePressDirection: MoveCommandDirection?
         private var controllerObservers: [NSObjectProtocol] = []
         private var configuredControllers: [ObjectIdentifier: GCController] = [:]
 
-        // On the Siri Remote a *directional* click arrives as a buttonA
-        // ("select") press; the direction comes from the touch position at the
-        // moment of the click. The touch surface also reports a finger position
-        // continuously (even resting a thumb), so we must not drive repeats from
-        // touch alone. Instead:
+        // GCController is a fallback for remotes/controllers that do not deliver
+        // the UIKit arrow-press lifecycle to this view. The touch surface reports
+        // a finger position continuously (even resting a thumb), so this path
+        // must still be gated on the physical clickpad press:
         //   - `isRemoteClickHeld` tracks the physical clickpad press (buttonA).
         //   - `latestRemoteX/Y` cache the live finger position.
         //   - When the click goes down we LATCH a direction into
@@ -2016,14 +2071,33 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         private var latestRemoteY: Float = 0
         private var heldRemoteDirection: MoveCommandDirection?
 
+        override var canBecomeFirstResponder: Bool { true }
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            installRemotePressRecognizers()
+            debugLog("init frame=\(frame)")
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            installRemotePressRecognizers()
+            debugLog("init coder")
+        }
+
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            debugLog("didMoveToWindow window=\(window != nil), enabled=\(isRepeatEnabled)")
             if window == nil {
-                stopMonitoringControllers()
-                stopRepeating()
+                deactivateRepeatCapture()
             } else if isRepeatEnabled {
-                startMonitoringControllersIfPossible()
+                activateRepeatCaptureIfPossible()
             }
+        }
+
+        func invalidate() {
+            debugLog("invalidate")
+            deactivateRepeatCapture()
         }
 
         func stopRepeating() {
@@ -2033,6 +2107,11 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         private func stopRepeating(source: RepeatSource?) {
             if let source, currentSource != source { return }
 
+            if repeatTimer != nil || currentSource != nil || currentDirection != nil {
+                debugLog(
+                    "stop repeat requested=\(sourceName(source)), current=\(sourceName(currentSource)), direction=\(directionName(currentDirection)), ticks=\(repeatTickCount)"
+                )
+            }
             repeatTimer?.invalidate()
             repeatTimer = nil
             currentSource = nil
@@ -2040,20 +2119,99 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             repeatTickCount = 0
         }
 
+        private func activateRepeatCaptureIfPossible() {
+            guard window != nil else {
+                debugLog("activate skipped: no window")
+                return
+            }
+            if !isFirstResponder {
+                let didBecomeFirstResponder = becomeFirstResponder()
+                debugLog("becomeFirstResponder -> \(didBecomeFirstResponder)")
+            } else {
+                debugLog("already firstResponder")
+            }
+            startMonitoringControllersIfPossible()
+        }
+
+        private func deactivateRepeatCapture() {
+            debugLog("deactivate capture")
+            activeRemotePressType = nil
+            activeRemotePressDirection = nil
+            stopMonitoringControllers()
+            stopRepeating()
+            if isFirstResponder {
+                resignFirstResponder()
+            }
+        }
+
         private func startRepeating(_ direction: MoveCommandDirection, source: RepeatSource) {
-            guard isRepeatEnabled else { return }
+            guard isRepeatEnabled else {
+                debugLog("start repeat blocked: disabled source=\(sourceName(source)), direction=\(directionName(direction))")
+                return
+            }
+            guard canStartRepeating(from: source) else {
+                debugLog(
+                    "start repeat blocked: current=\(sourceName(currentSource)) wins over source=\(sourceName(source)), direction=\(directionName(direction))"
+                )
+                return
+            }
             if currentDirection == direction, currentSource == source, repeatTimer != nil {
+                debugLog("start repeat ignored duplicate source=\(sourceName(source)), direction=\(directionName(direction))")
                 return
             }
 
             stopRepeating()
             currentSource = source
             currentDirection = direction
+            debugLog("start repeat source=\(sourceName(source)), direction=\(directionName(direction)), delay=\(initialDelay)")
             scheduleNextTick(after: initialDelay)
+        }
+
+        private func startRepeatingAfterRecognizedHold(_ direction: MoveCommandDirection, source: RepeatSource) {
+            guard isRepeatEnabled else {
+                debugLog(
+                    "recognized hold blocked: disabled source=\(sourceName(source)), direction=\(directionName(direction))"
+                )
+                return
+            }
+            guard canStartRepeating(from: source) else {
+                debugLog(
+                    "recognized hold blocked: current=\(sourceName(currentSource)) wins over source=\(sourceName(source)), direction=\(directionName(direction))"
+                )
+                return
+            }
+
+            if currentDirection == direction, currentSource == source {
+                guard repeatTickCount == 0 else {
+                    debugLog("recognized hold ignored: already repeating source=\(sourceName(source)), direction=\(directionName(direction))")
+                    return
+                }
+                repeatTimer?.invalidate()
+                repeatTimer = nil
+            } else {
+                stopRepeating()
+                currentSource = source
+                currentDirection = direction
+            }
+
+            debugLog("recognized hold starts immediate repeat source=\(sourceName(source)), direction=\(directionName(direction))")
+            fireRepeatAndScheduleNext()
+        }
+
+        private func canStartRepeating(from source: RepeatSource) -> Bool {
+            if currentSource == .remotePress, source == .remoteController {
+                return false
+            }
+            return true
         }
 
         private func scheduleNextTick(after interval: TimeInterval) {
             repeatTimer?.invalidate()
+            if repeatTickCount < 3 || repeatTickCount % 10 == 0 {
+                debugLog(
+                    "schedule tick source=\(sourceName(currentSource)), direction=\(directionName(currentDirection)), interval=\(String(format: "%.2f", interval)), ticks=\(repeatTickCount)"
+                )
+            }
             let timer = Timer(
                 timeInterval: interval,
                 target: self,
@@ -2066,11 +2224,21 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         }
 
         @objc private func handleRepeatTimer() {
+            fireRepeatAndScheduleNext()
+        }
+
+        private func fireRepeatAndScheduleNext() {
             guard isRepeatEnabled, let direction = currentDirection else {
+                debugLog(
+                    "timer fired but stopped: enabled=\(isRepeatEnabled), direction=\(directionName(currentDirection)), source=\(sourceName(currentSource))"
+                )
                 stopRepeating()
                 return
             }
 
+            debugLog(
+                "tick source=\(sourceName(currentSource)), direction=\(directionName(direction)), count=\(repeatTickCount + 1)"
+            )
             onRepeat?(direction)
             repeatTickCount += 1
             scheduleNextTick(after: currentRepeatInterval())
@@ -2083,12 +2251,150 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             return 0.05
         }
 
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            debugLog("pressesBegan \(pressesDescription(presses))")
+            handleRemotePressesBegan(presses)
+            super.pressesBegan(presses, with: event)
+        }
+
+        override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            debugLog("pressesChanged \(pressesDescription(presses))")
+            if activeRemotePressDirection == nil {
+                handleRemotePressesBegan(presses)
+            }
+            super.pressesChanged(presses, with: event)
+        }
+
+        override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            debugLog("pressesEnded \(pressesDescription(presses))")
+            handleRemotePressesEnded(presses)
+            super.pressesEnded(presses, with: event)
+        }
+
+        override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            debugLog("pressesCancelled \(pressesDescription(presses))")
+            handleRemotePressesEnded(presses)
+            super.pressesCancelled(presses, with: event)
+        }
+
+        @discardableResult
+        private func handleRemotePressesBegan(_ presses: Set<UIPress>) -> Bool {
+            guard isRepeatEnabled, window != nil else {
+                debugLog("remote press began ignored: enabled=\(isRepeatEnabled), window=\(window != nil)")
+                return false
+            }
+
+            for press in presses {
+                guard let direction = remoteDirection(for: press) else { continue }
+                activeRemotePressType = press.type
+                activeRemotePressDirection = direction
+                debugLog(
+                    "remote press began matched type=\(pressTypeName(press.type)), direction=\(directionName(direction))"
+                )
+                startRepeating(direction, source: .remotePress)
+                return true
+            }
+
+            debugLog("remote press began: no directional remote press")
+            return false
+        }
+
+        private func handleRemotePressesEnded(_ presses: Set<UIPress>) {
+            guard presses.contains(where: isTrackedRemotePressEnd) else {
+                debugLog(
+                    "remote press end ignored: activeType=\(pressTypeName(activeRemotePressType)), current=\(sourceName(currentSource))/\(directionName(currentDirection))"
+                )
+                return
+            }
+            debugLog(
+                "remote press ended matched activeType=\(pressTypeName(activeRemotePressType)), current=\(sourceName(currentSource))/\(directionName(currentDirection))"
+            )
+            activeRemotePressType = nil
+            activeRemotePressDirection = nil
+            stopRepeating(source: .remotePress)
+        }
+
+        private func isTrackedRemotePressEnd(_ press: UIPress) -> Bool {
+            guard let direction = remoteDirection(for: press) else { return false }
+            if let activeRemotePressType {
+                return press.type == activeRemotePressType
+            }
+            return currentSource == .remotePress && direction == currentDirection
+        }
+
+        private func installRemotePressRecognizers() {
+            addRemoteLongPressRecognizer(for: .upArrow, direction: .up)
+            addRemoteLongPressRecognizer(for: .downArrow, direction: .down)
+            addRemoteLongPressRecognizer(for: .leftArrow, direction: .left)
+            addRemoteLongPressRecognizer(for: .rightArrow, direction: .right)
+        }
+
+        private func addRemoteLongPressRecognizer(
+            for pressType: UIPress.PressType,
+            direction: MoveCommandDirection
+        ) {
+            let recognizer = RemoteDirectionLongPressGestureRecognizer(
+                direction: direction,
+                target: self,
+                action: #selector(handleRemoteLongPress(_:))
+            )
+            recognizer.minimumPressDuration = initialDelay
+            recognizer.allowedPressTypes = [NSNumber(value: pressType.rawValue)]
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            addGestureRecognizer(recognizer)
+        }
+
+        @objc private func handleRemoteLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard let directionalRecognizer = recognizer as? RemoteDirectionLongPressGestureRecognizer else { return }
+            debugLog(
+                "longPress state=\(recognizerStateName(directionalRecognizer.state)), direction=\(directionName(directionalRecognizer.direction))"
+            )
+
+            switch directionalRecognizer.state {
+            case .began:
+                activeRemotePressDirection = directionalRecognizer.direction
+                startRepeatingAfterRecognizedHold(directionalRecognizer.direction, source: .remotePress)
+            case .ended, .cancelled, .failed:
+                activeRemotePressType = nil
+                activeRemotePressDirection = nil
+                stopRepeating(source: .remotePress)
+            default:
+                break
+            }
+        }
+
+        private func remoteDirection(for press: UIPress) -> MoveCommandDirection? {
+            guard press.key == nil else { return nil }
+            return remoteDirection(for: press.type)
+        }
+
+        private func remoteDirection(for pressType: UIPress.PressType) -> MoveCommandDirection? {
+            switch pressType {
+            case .upArrow:
+                return .up
+            case .downArrow:
+                return .down
+            case .leftArrow:
+                return .left
+            case .rightArrow:
+                return .right
+            default:
+                return nil
+            }
+        }
+
         private func startMonitoringControllersIfPossible() {
-            guard window != nil else { return }
+            guard window != nil else {
+                debugLog("controller monitoring skipped: no window")
+                return
+            }
             startMonitoringControllers()
         }
 
         private func startMonitoringControllers() {
+            debugLog("start controller monitoring, existingConfigured=\(configuredControllers.count)")
             if controllerObservers.isEmpty {
                 controllerObservers.append(
                     NotificationCenter.default.addObserver(
@@ -2096,7 +2402,9 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                         object: nil,
                         queue: .main
                     ) { [weak self] _ in
-                        self?.refreshConfiguredControllers()
+                        Task { @MainActor in
+                            self?.refreshConfiguredControllers()
+                        }
                     }
                 )
 
@@ -2106,7 +2414,9 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                         object: nil,
                         queue: .main
                     ) { [weak self] _ in
-                        self?.refreshConfiguredControllers()
+                        Task { @MainActor in
+                            self?.refreshConfiguredControllers()
+                        }
                     }
                 )
             }
@@ -2116,6 +2426,11 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         }
 
         private func stopMonitoringControllers() {
+            if !controllerObservers.isEmpty || !configuredControllers.isEmpty {
+                debugLog(
+                    "stop controller monitoring observers=\(controllerObservers.count), controllers=\(configuredControllers.count)"
+                )
+            }
             for observer in controllerObservers {
                 NotificationCenter.default.removeObserver(observer)
             }
@@ -2128,11 +2443,12 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             configuredControllers.removeAll()
             isRemoteClickHeld = false
             heldRemoteDirection = nil
-            stopRepeating(source: .remote)
+            stopRepeating(source: .remoteController)
         }
 
         private func refreshConfiguredControllers() {
             let controllers = GCController.controllers()
+            debugLog("refresh controllers available=\(controllers.count), configured=\(configuredControllers.count)")
             let connectedIds = Set(controllers.map(ObjectIdentifier.init))
             let disconnectedIds = configuredControllers.keys.filter { !connectedIds.contains($0) }
 
@@ -2143,7 +2459,8 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                 configuredControllers.removeValue(forKey: id)
                 isRemoteClickHeld = false
                 heldRemoteDirection = nil
-                stopRepeating(source: .remote)
+                debugLog("controller disconnected id=\(id)")
+                stopRepeating(source: .remoteController)
             }
 
             controllers.forEach(configure)
@@ -2152,8 +2469,12 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         private func configure(_ controller: GCController) {
             let id = ObjectIdentifier(controller)
             guard configuredControllers[id] == nil else { return }
-            guard let microGamepad = controller.microGamepad else { return }
+            guard let microGamepad = controller.microGamepad else {
+                debugLog("controller ignored: no microGamepad id=\(id), vendor=\(controller.vendorName ?? "unknown")")
+                return
+            }
 
+            debugLog("configure controller id=\(id), vendor=\(controller.vendorName ?? "unknown")")
             microGamepad.reportsAbsoluteDpadValues = true
             microGamepad.allowsRotation = false
             microGamepad.dpad.valueChangedHandler = { [weak self] _, xValue, yValue in
@@ -2178,6 +2499,11 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
         private func handleRemoteDPad(xValue: Float, yValue: Float) {
             latestRemoteX = xValue
             latestRemoteY = yValue
+            if isRemoteClickHeld || max(abs(xValue), abs(yValue)) >= 0.2 {
+                debugLog(
+                    "gc dpad x=\(formatAxis(xValue)), y=\(formatAxis(yValue)), clickHeld=\(isRemoteClickHeld), heldDirection=\(directionName(heldRemoteDirection))"
+                )
+            }
 
             // Touch position alone never starts a repeat — that is what made a
             // single click run away into a fast scroll. We only act while the
@@ -2189,36 +2515,42 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
                 // direction now that we have a usable reading.
                 if let direction = clickDirection(xValue: xValue, yValue: yValue) {
                     heldRemoteDirection = direction
-                    startRepeating(direction, source: .remote)
+                    debugLog("gc dpad latched direction=\(directionName(direction)) while click already held")
+                    startRepeating(direction, source: .remoteController)
+                } else {
+                    debugLog(
+                        "gc dpad could not latch: below threshold x=\(formatAxis(xValue)), y=\(formatAxis(yValue))"
+                    )
                 }
                 return
             }
 
-            // Already latched: keep repeating that direction until release. The
-            // only thing we bail on is the finger lifting off entirely (a missed
-            // buttonA-release safety net) — a genuine directional hold keeps the
-            // thumb well off-center, so this never trips mid-scroll.
-            if hypot(xValue, yValue) < 0.1 {
-                isRemoteClickHeld = false
-                heldRemoteDirection = nil
-                stopRepeating(source: .remote)
-            }
+            // Already latched: keep repeating that direction until buttonA
+            // release. Real Siri Remote holds can report a centered dpad value
+            // while the physical click is still down, so dpad centering must not
+            // cancel the repeat.
         }
 
         private func handleRemoteClick(isPressed: Bool, xValue: Float, yValue: Float) {
             isRemoteClickHeld = isPressed
+            debugLog(
+                "gc click isPressed=\(isPressed), x=\(formatAxis(xValue)), y=\(formatAxis(yValue)), enabled=\(isRepeatEnabled), window=\(window != nil)"
+            )
 
             guard isRepeatEnabled, window != nil else {
                 isRemoteClickHeld = false
                 heldRemoteDirection = nil
-                stopRepeating(source: .remote)
+                debugLog("gc click ignored: enabled=\(isRepeatEnabled), window=\(window != nil)")
+                stopRepeating(source: .remoteController)
                 return
             }
 
             guard isPressed else {
                 // Click released — stop the repeat immediately (no overshoot).
                 heldRemoteDirection = nil
-                stopRepeating(source: .remote)
+                debugLog("gc click released")
+                stopRepeating(source: .remoteController)
+                stopRepeating(source: .remotePress)
                 return
             }
 
@@ -2231,7 +2563,12 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             if let direction = clickDirection(xValue: xValue, yValue: yValue)
                 ?? clickDirection(xValue: latestRemoteX, yValue: latestRemoteY) {
                 heldRemoteDirection = direction
-                startRepeating(direction, source: .remote)
+                debugLog("gc click latched direction=\(directionName(direction))")
+                startRepeating(direction, source: .remoteController)
+            } else {
+                debugLog(
+                    "gc click no direction: click x=\(formatAxis(xValue)), y=\(formatAxis(yValue)), latestX=\(formatAxis(latestRemoteX)), latestY=\(formatAxis(latestRemoteY))"
+                )
             }
         }
 
@@ -2250,6 +2587,102 @@ private struct TVGuideRemoteRepeatView: UIViewRepresentable {
             } else {
                 return xValue > 0 ? .right : .left
             }
+        }
+
+        private final class RemoteDirectionLongPressGestureRecognizer: UILongPressGestureRecognizer {
+            let direction: MoveCommandDirection
+
+            init(direction: MoveCommandDirection, target: Any?, action: Selector?) {
+                self.direction = direction
+                super.init(target: target, action: action)
+            }
+        }
+
+        private func debugLog(_ message: @autoclosure () -> String) {
+            #if DEBUG
+            print("[TVGuideRemoteRepeat] \(message())")
+            #endif
+        }
+
+        private func directionName(_ direction: MoveCommandDirection?) -> String {
+            guard let direction else { return "nil" }
+            switch direction {
+            case .up:
+                return "up"
+            case .down:
+                return "down"
+            case .left:
+                return "left"
+            case .right:
+                return "right"
+            @unknown default:
+                return "unknown"
+            }
+        }
+
+        private func sourceName(_ source: RepeatSource?) -> String {
+            guard let source else { return "nil" }
+            switch source {
+            case .keyboard:
+                return "keyboard"
+            case .remotePress:
+                return "remotePress"
+            case .remoteController:
+                return "remoteController"
+            }
+        }
+
+        private func pressTypeName(_ type: UIPress.PressType?) -> String {
+            guard let type else { return "nil" }
+            switch type {
+            case .upArrow:
+                return "upArrow"
+            case .downArrow:
+                return "downArrow"
+            case .leftArrow:
+                return "leftArrow"
+            case .rightArrow:
+                return "rightArrow"
+            case .select:
+                return "select"
+            case .menu:
+                return "menu"
+            case .playPause:
+                return "playPause"
+            default:
+                return "other(\(type.rawValue))"
+            }
+        }
+
+        private func recognizerStateName(_ state: UIGestureRecognizer.State) -> String {
+            switch state {
+            case .possible:
+                return "possible"
+            case .began:
+                return "began"
+            case .changed:
+                return "changed"
+            case .ended:
+                return "ended"
+            case .cancelled:
+                return "cancelled"
+            case .failed:
+                return "failed"
+            @unknown default:
+                return "unknown"
+            }
+        }
+
+        private func pressesDescription(_ presses: Set<UIPress>) -> String {
+            let descriptions = presses.map { press in
+                let key = press.key?.charactersIgnoringModifiers ?? "nil"
+                return "\(pressTypeName(press.type))/phase=\(press.phase)/key=\(key)"
+            }
+            return descriptions.joined(separator: ", ")
+        }
+
+        private func formatAxis(_ value: Float) -> String {
+            String(format: "%.2f", value)
         }
     }
 }
