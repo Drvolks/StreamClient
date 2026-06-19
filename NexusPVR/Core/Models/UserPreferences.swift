@@ -23,6 +23,10 @@ nonisolated struct UserPreferences: Codable {
     var guideGroupIds: [Int] = []
     var guideShowProfilesInSidebar: Bool = false
     var guideProfileIds: [Int] = []
+    /// Persisted raw value of the tab the app should open to at launch.
+    /// Stored as a `String` so this model stays free of UI dependencies;
+    /// resolve via the `landingTab` computed property.
+    var landingTabRawValue: String = LandingTabOption.defaultRawValue
     var updatedAt: Date = .distantPast
 
     /// The GPU API for the current platform.
@@ -34,6 +38,38 @@ nonisolated struct UserPreferences: Codable {
         #else
         iosGPUAPI
         #endif
+    }
+
+    /// The tab the app should open to at launch. The raw value is stored on
+    /// disk so this struct doesn't need to import the navigation module.
+    var landingTab: LandingTabOption {
+        get { LandingTabOption(rawValue: landingTabRawValue) ?? .guide }
+        set { landingTabRawValue = newValue.rawValue }
+    }
+
+    /// User-selectable landing page option. Nested inside `UserPreferences`
+    /// (rather than defined as a separate top-level type) so the persistence
+    /// model is self-contained: the tvOS Top Shelf extension shares
+    /// `UserPreferences.swift` but does not include sibling Core/Models
+    /// files. Keeping the enum here means a single source file is enough for
+    /// the Top Shelf to keep compiling.
+    nonisolated enum LandingTabOption: String, CaseIterable, Identifiable, Codable {
+        case guide = "Guide"
+        case channels = "Channels"
+        case completedRecordings = "CompletedRecordings"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .guide: return "Guide"
+            case .channels: return "Channels"
+            case .completedRecordings: return "Completed Recordings"
+            }
+        }
+
+        /// The raw value used when no preference has been persisted.
+        static var defaultRawValue: String { LandingTabOption.guide.rawValue }
     }
 
     // Migration: keep old property for decoding existing data
@@ -54,6 +90,7 @@ nonisolated struct UserPreferences: Codable {
         case guideGroupIds
         case guideShowProfilesInSidebar
         case guideProfileIds
+        case landingTabRawValue
         case updatedAt
     }
 
@@ -83,6 +120,7 @@ nonisolated struct UserPreferences: Codable {
         guideGroupIds = try container.decodeIfPresent([Int].self, forKey: .guideGroupIds) ?? []
         guideShowProfilesInSidebar = try container.decodeIfPresent(Bool.self, forKey: .guideShowProfilesInSidebar) ?? false
         guideProfileIds = try container.decodeIfPresent([Int].self, forKey: .guideProfileIds) ?? []
+        landingTabRawValue = try container.decodeIfPresent(String.self, forKey: .landingTabRawValue) ?? LandingTabOption.defaultRawValue
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
@@ -103,6 +141,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(guideGroupIds, forKey: .guideGroupIds)
         try container.encode(guideShowProfilesInSidebar, forKey: .guideShowProfilesInSidebar)
         try container.encode(guideProfileIds, forKey: .guideProfileIds)
+        try container.encode(landingTabRawValue, forKey: .landingTabRawValue)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 

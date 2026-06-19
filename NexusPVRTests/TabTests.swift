@@ -15,6 +15,7 @@ struct TabTests {
     @Test("Tab id equals raw value")
     func idEqualsRawValue() {
         #expect(Tab.guide.id == "Guide")
+        #expect(Tab.channels.id == "Channels")
         #expect(Tab.recordings.id == "Recordings")
         #expect(Tab.topics.id == "Topics")
         #expect(Tab.calendar.id == "Calendar")
@@ -25,6 +26,7 @@ struct TabTests {
     @Test("Tab label equals raw value")
     func labelEqualsRawValue() {
         #expect(Tab.guide.label == "Guide")
+        #expect(Tab.channels.label == "Channels")
         #expect(Tab.recordings.label == "Recordings")
         #expect(Tab.settings.label == "Settings")
     }
@@ -32,6 +34,7 @@ struct TabTests {
     @Test("Tab icon returns expected SF Symbol names")
     func iconReturnsExpectedSymbols() {
         #expect(Tab.guide.icon == "calendar")
+        #expect(Tab.channels.icon == "tv")
         #expect(Tab.topics.icon == "star.fill")
         #expect(Tab.calendar.icon == "calendar.badge.clock")
         #expect(Tab.search.icon == "magnifyingglass")
@@ -43,6 +46,7 @@ struct TabTests {
     func allCasesUserLevel0() {
         let cases = Tab.allCases(userLevel: 0)
         #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
         #expect(!cases.contains(.recordings))
         #expect(cases.contains(.topics))
         #expect(cases.contains(.search))
@@ -53,6 +57,7 @@ struct TabTests {
     func allCasesUserLevel1() {
         let cases = Tab.allCases(userLevel: 1)
         #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
         #expect(cases.contains(.recordings))
         #expect(cases.contains(.topics))
         #expect(cases.contains(.search))
@@ -63,10 +68,22 @@ struct TabTests {
     func allCasesUserLevel10() {
         let cases = Tab.allCases(userLevel: 10)
         #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
         #expect(cases.contains(.recordings))
         #expect(cases.contains(.topics))
         #expect(cases.contains(.search))
         #expect(cases.contains(.settings))
+    }
+
+    @Test("Channels tab appears directly below Guide in allCases")
+    func channelsAppearsAfterGuide() {
+        let cases = Tab.allCases(userLevel: 10)
+        guard let guideIndex = cases.firstIndex(of: .guide),
+              let channelsIndex = cases.firstIndex(of: .channels) else {
+            Issue.record("Expected guide and channels to be present in allCases")
+            return
+        }
+        #expect(channelsIndex == guideIndex + 1)
     }
 
     #if os(iOS)
@@ -74,6 +91,7 @@ struct TabTests {
     func iOSTabsUserLevel0() {
         let cases = Tab.iOSTabs(userLevel: 0)
         #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
         #expect(!cases.contains(.recordings))
         #expect(cases.contains(.topics))
         #expect(cases.contains(.calendar))
@@ -86,6 +104,17 @@ struct TabTests {
         let cases = Tab.iOSTabs(userLevel: 1)
         #expect(cases.contains(.recordings))
     }
+
+    @Test("Channels tab appears directly below Guide in iOS tabs")
+    func iOSTabsChannelsAfterGuide() {
+        let cases = Tab.iOSTabs(userLevel: 10)
+        guard let guideIndex = cases.firstIndex(of: .guide),
+              let channelsIndex = cases.firstIndex(of: .channels) else {
+            Issue.record("Expected guide and channels to be present in iOS tabs")
+            return
+        }
+        #expect(channelsIndex == guideIndex + 1)
+    }
     #endif
 
     #if os(macOS)
@@ -93,6 +122,7 @@ struct TabTests {
     func macOSTabsUserLevel0() {
         let cases = Tab.macOSTabs(userLevel: 0)
         #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
         #expect(!cases.contains(.recordings))
         #expect(cases.contains(.topics))
         #expect(cases.contains(.calendar))
@@ -105,6 +135,17 @@ struct TabTests {
         let cases = Tab.macOSTabs(userLevel: 1)
         #expect(cases.contains(.recordings))
     }
+
+    @Test("Channels tab appears directly below Guide in macOS tabs")
+    func macOSTabsChannelsAfterGuide() {
+        let cases = Tab.macOSTabs(userLevel: 10)
+        guard let guideIndex = cases.firstIndex(of: .guide),
+              let channelsIndex = cases.firstIndex(of: .channels) else {
+            Issue.record("Expected guide and channels to be present in macOS tabs")
+            return
+        }
+        #expect(channelsIndex == guideIndex + 1)
+    }
     #endif
 
     #if os(tvOS)
@@ -112,6 +153,7 @@ struct TabTests {
     func tvOSTabsUserLevel0() {
         let cases = Tab.tvOSTabs(userLevel: 0)
         #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
         #expect(!cases.contains(.recordings))
         #expect(cases.contains(.topics))
         #expect(cases.contains(.settings))
@@ -122,6 +164,17 @@ struct TabTests {
     func tvOSTabsUserLevel1() {
         let cases = Tab.tvOSTabs(userLevel: 1)
         #expect(cases.contains(.recordings))
+    }
+
+    @Test("Channels tab appears directly below Guide in tvOS tabs")
+    func tvOSTabsChannelsAfterGuide() {
+        let cases = Tab.tvOSTabs(userLevel: 10)
+        guard let guideIndex = cases.firstIndex(of: .guide),
+              let channelsIndex = cases.firstIndex(of: .channels) else {
+            Issue.record("Expected guide and channels to be present in tvOS tabs")
+            return
+        }
+        #expect(channelsIndex == guideIndex + 1)
     }
     #endif
 }

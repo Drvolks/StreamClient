@@ -257,6 +257,22 @@ final class EPGCache: ObservableObject {
         return all.filter { $0.endDate > dayStart && $0.startDate < dayEnd }
     }
 
+    /// Returns the program currently airing on the given channel at `date`.
+    /// Returns nil when the channel has no EPG data or no program is airing.
+    /// This is a public helper so views (e.g. Channels grid) can reuse the
+    /// preloaded EPG data without exposing the underlying storage.
+    func currentProgram(forChannelId channelId: Int, at date: Date = Date()) -> Program? {
+        guard let all = epg[channelId] else { return nil }
+        return all.first { program in
+            program.startDate <= date && program.endDate > date
+        }
+    }
+
+    /// Convenience helper that resolves a `Channel` to its current program.
+    func currentProgram(for channel: Channel, at date: Date = Date()) -> Program? {
+        currentProgram(forChannelId: channel.id, at: date)
+    }
+
     // MARK: - Search
 
     func searchPrograms(query: String) async -> [SearchResult] {

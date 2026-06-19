@@ -15,8 +15,15 @@ struct AppStateTests {
 
     // MARK: - Initial State
 
+    // Note: tests that depend on the initial `selectedTab` set
+    // `testLandingTabOverride` to make the assertion deterministic
+    // regardless of any state persisted in the test process's
+    // UserDefaults / iCloud KV store.
+
     @Test("AppState initial selectedTab is guide")
     func initialSelectedTab() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
         let state = AppState()
         #expect(state.selectedTab == .guide)
     }
@@ -255,5 +262,168 @@ struct AppStateTests {
     func recordingsSeriesIsLoadingInitiallyFalse() {
         let state = AppState()
         #expect(state.recordingsSeriesIsLoading == false)
+    }
+
+    // MARK: - Landing tab
+
+    // The landing tab tests use `testLandingTabOverride` so the initial
+    // tab is deterministic regardless of any state that happens to be
+    // persisted in the test process's UserDefaults / iCloud KV store.
+    // Each test sets the override and resets it in a `defer` so leftover
+    // state from a previous test can't leak in.
+
+    @Test("applyLandingTab guide selects the guide tab")
+    func applyLandingTabGuide() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.selectedTab = .recordings
+        state.applyLandingTab(.guide)
+        #expect(state.selectedTab == .guide)
+    }
+
+    @Test("applyLandingTab channels selects the channels tab")
+    func applyLandingTabChannels() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.selectedTab = .guide
+        state.applyLandingTab(.channels)
+        #expect(state.selectedTab == .channels)
+    }
+
+    @Test("applyLandingTab completedRecordings selects recordings and forces completed filter")
+    func applyLandingTabCompletedRecordings() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.selectedTab = .guide
+        state.recordingsFilter = .scheduled
+        state.recordingsFilterUserOverride = true
+        state.selectedRecordingsSeriesName = "Series"
+        state.showingRecordingsSeriesList = true
+
+        state.applyLandingTab(.completedRecordings)
+
+        #expect(state.selectedTab == .recordings)
+        #expect(state.recordingsFilter == .completed)
+        // User override is cleared because this is the app-default landing
+        // behavior, not a manual filter change.
+        #expect(state.recordingsFilterUserOverride == false)
+        #expect(state.selectedRecordingsSeriesName.isEmpty)
+        #expect(state.showingRecordingsSeriesList == false)
+    }
+
+    @Test("applyLandingTab redirects completedRecordings to Guide for userLevel < 1")
+    func applyLandingTabRedirectsWhenUnavailable() {
+        // Dispatcharr userLevel 0 (Streamer) does not have recordings
+        // access, so asking for the Completed Recordings landing must
+        // redirect to the Guide tab instead of silently landing on a
+        // hidden/unavailable destination.
+        #if DISPATCHERPVR
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.userLevel = 0
+        state.selectedTab = .channels
+        // Set a non-default filter so we can prove the redirect leaves
+        // the user's manual selection alone.
+        state.recordingsFilter = .scheduled
+        state.recordingsFilterUserOverride = true
+
+        state.applyLandingTab(.completedRecordings)
+
+        #expect(state.selectedTab == .guide)
+        // The recordings filter must not be touched when we redirect,
+        // so the user's manual filter selection is preserved.
+        #expect(state.recordingsFilter == .scheduled)
+        #expect(state.recordingsFilterUserOverride == true)
+        #endif
+    }
+
+    @Test("applyLandingTab keeps completedRecordings for userLevel >= 1")
+    func applyLandingTabKeepsForAdmin() {
+        #if DISPATCHERPVR
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.userLevel = 10
+        state.selectedTab = .guide
+        // Pre-set a non-default filter and series so the test verifies
+        // that `applyLandingTab(.completedRecordings)` actually resets
+        // those (not just that the tab ends up as `.recordings`).
+        state.recordingsFilter = .scheduled
+        state.recordingsFilterUserOverride = true
+        state.selectedRecordingsSeriesName = "Series"
+        state.showingRecordingsSeriesList = true
+
+        state.applyLandingTab(.completedRecordings)
+
+        #expect(state.selectedTab == .recordings)
+        #expect(state.recordingsFilter == .completed)
+        #expect(state.recordingsFilterUserOverride == false)
+        #expect(state.selectedRecordingsSeriesName.isEmpty)
+        #expect(state.showingRecordingsSeriesList == false)
+        #endif
+    }
+
+    @Test("userLevel downgrade redirects hidden recordings tab to Guide")
+    func userLevelDowngradeRedirectsHiddenRecordingsTab() {
+        #if DISPATCHERPVR
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.userLevel = 10
+        state.selectedTab = .recordings
+
+        state.userLevel = 0
+
+        #expect(state.selectedTab == .guide)
+        #endif
+    }
+
+    @Test("userLevel downgrade leaves available tabs alone")
+    func userLevelDowngradeLeavesAvailableTabsAlone() {
+        #if DISPATCHERPVR
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.userLevel = 10
+        state.selectedTab = .channels
+
+        state.userLevel = 0
+
+        #expect(state.selectedTab == .channels)
+        #endif
+    }
+
+    @Test("AppState.tab(for:) maps LandingTabOption to the correct Tab")
+    func landingOptionTabMapping() {
+        #expect(AppState.tab(for: .guide) == .guide)
+        #expect(AppState.tab(for: .channels) == .channels)
+        #expect(AppState.tab(for: .completedRecordings) == .recordings)
+    }
+
+    @Test("isLandingOptionAvailable returns true for guide and channels at any level")
+    func isLandingOptionAvailableAlwaysForGuideAndChannels() {
+        for level in [0, 1, 10] {
+            #expect(AppState.isLandingOptionAvailable(.guide, forUserLevel: level) == true)
+            #expect(AppState.isLandingOptionAvailable(.channels, forUserLevel: level) == true)
+        }
+    }
+
+    @Test("isLandingOptionAvailable gates completedRecordings on userLevel >= 1")
+    func isLandingOptionAvailableGatesCompletedRecordings() {
+        #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 0) == false)
+        #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 1) == true)
+        #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 10) == true)
+    }
+
+    @Test("initialLandingTab honors testLandingTabOverride")
+    func initialLandingTabHonorsOverride() {
+        AppState.testLandingTabOverride = .channels
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        #expect(state.selectedTab == .channels)
     }
 }

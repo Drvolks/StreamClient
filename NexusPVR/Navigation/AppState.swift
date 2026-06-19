@@ -13,7 +13,14 @@ import Combine
 final class AppState: ObservableObject {
     let isUITesting: Bool = ProcessInfo.processInfo.arguments.contains("--ui-testing")
 
-    @Published var selectedTab: Tab = .guide
+    /// Test-only override for the initial landing tab. When set, this takes
+    /// precedence over any persisted `UserPreferences` so tests can be
+    /// deterministic regardless of what's stored on disk or in the iCloud
+    /// KV store. Always nil in production. Mirrors the
+    /// `UserPreferences.demoStore` pattern already used in the codebase.
+    nonisolated(unsafe) static var testLandingTabOverride: LandingTabOption?
+
+    @Published var selectedTab: Tab = AppState.initialLandingTab()
     @Published var searchQuery: String = ""
     @Published var guideChannelFilter: String = ""
     @Published var guideGroupFilter: Int? = nil
@@ -76,7 +83,9 @@ final class AppState: ObservableObject {
     // M3U account error indicator for badge
     @Published var hasM3UErrors = false
     /// User role level from Dispatcharr (0=Streamer, 1=Standard, 10=Admin)
-    @Published var userLevel: Int = 10
+    @Published var userLevel: Int = 10 {
+        didSet { reconcileSelectedTabForCurrentAccess() }
+    }
     #else
     /// NexusPVR users always have full access
     var userLevel: Int { 10 }
@@ -201,6 +210,85 @@ final class AppState: ObservableObject {
         showingRecordingsSeriesList = false
         if userInitiated {
             recordingsFilterUserOverride = true
+        }
+    }
+
+    // MARK: - Landing Tab
+
+    /// Resolve the initial landing tab. Honors `testLandingTabOverride` if
+    /// set (used by tests for deterministic behavior), otherwise falls back
+    /// to the persisted `UserPreferences` value. Unknown / future raw
+    /// values fall back to `.guide` so the app still launches cleanly
+    /// after a downgrade or corrupted preference blob.
+    static func initialLandingTab() -> Tab {
+        if let override = testLandingTabOverride {
+            return tab(for: override)
+        }
+        let prefs = UserPreferences.load()
+        return tab(for: prefs.landingTab)
+    }
+
+    /// Map a `LandingTabOption` to the corresponding `Tab`.
+    /// The mapping is one-way and centralized so that preferences can be
+    /// applied consistently across all platforms and launch paths.
+    static func tab(for option: LandingTabOption) -> Tab {
+        switch option {
+        case .guide: return .guide
+        case .channels: return .channels
+        case .completedRecordings: return .recordings
+        }
+    }
+
+    /// Whether a landing option's target tab is available to the current
+    /// user. The Completed Recordings landing requires `userLevel >= 1`
+    /// (recordings access); the other landings are always available.
+    /// Used by both the Settings picker (to filter out unavailable
+    /// options) and `applyLandingTab` (to redirect to Guide if needed).
+    static func isLandingOptionAvailable(
+        _ option: LandingTabOption,
+        forUserLevel userLevel: Int
+    ) -> Bool {
+        switch option {
+        case .guide, .channels:
+            return true
+        case .completedRecordings:
+            return userLevel >= 1
+        }
+    }
+
+    /// Keep the selected tab in sync with the user's current access level.
+    /// Dispatcharr resolves `userLevel` after launch, so a persisted landing
+    /// tab can briefly select Recordings before the app learns the current
+    /// user is a Streamer. Redirect in that case so the UI never stays on a
+    /// tab that the sidebars have hidden.
+    func reconcileSelectedTabForCurrentAccess() {
+        if selectedTab == .recordings && userLevel < 1 {
+            selectedTab = .guide
+        }
+    }
+
+    /// Convenience helper used by settings UI when applying a new landing
+    /// preference: navigates to the right tab and, for `.completedRecordings`,
+    /// forces the completed filter without setting the user-override flag.
+    /// If the requested option is not available for the current user
+    /// (e.g. Completed Recordings for a Dispatcharr streamer without
+    /// recordings access), falls back to the Guide tab so the user never
+    /// lands on a hidden/non-existent destination.
+    func applyLandingTab(_ option: LandingTabOption) {
+        let resolved: LandingTabOption
+        if Self.isLandingOptionAvailable(option, forUserLevel: userLevel) {
+            resolved = option
+        } else {
+            resolved = .guide
+        }
+        let target = Self.tab(for: resolved)
+        selectedTab = target
+        if resolved == .completedRecordings {
+            recordingsFilter = .completed
+            selectedRecordingsSeriesName = ""
+            showingRecordingsSeriesList = false
+            // The user explicitly chose this landing — do not mark as override.
+            recordingsFilterUserOverride = false
         }
     }
 

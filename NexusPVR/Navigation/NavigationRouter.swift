@@ -194,6 +194,8 @@ struct IOSNavigation: View {
                             .toolbarBackground(.visible, for: .navigationBar)
                             .navigationBarTitleDisplayMode(.inline)
                     }
+                case .channels:
+                    ChannelsView()
                 case .topics:
                     if appState.showingKeywordsEditor {
                         NavigationStack {
@@ -1045,6 +1047,8 @@ struct TVOSNavigation: View {
                 switch appState.selectedTab {
                 case .guide:
                     GuideView(onRequestNavBarFocus: { focusSidebar() })
+                case .channels:
+                    ChannelsView()
                 case .recordings:
                     RecordingsListView()
                 case .topics, .calendar:
@@ -1680,6 +1684,8 @@ struct MacOSNavigation: View {
                             switch appState.selectedTab {
                             case .guide:
                                 NavigationStack { GuideView() }
+                            case .channels:
+                                ChannelsView()
                             case .topics:
                                 TopicsView()
                             case .calendar:
