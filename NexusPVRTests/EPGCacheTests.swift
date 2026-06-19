@@ -154,6 +154,19 @@ struct EPGCacheTests {
         #expect(cache.programs(for: 1, on: Date()).isEmpty)
     }
 
+    @Test("currentProgram returns nil when EPG is not loaded")
+    func currentProgramNotLoaded() {
+        let cache = EPGCache()
+        #expect(cache.currentProgram(forChannelId: 1) == nil)
+        #expect(cache.currentProgram(for: Channel(id: 1, name: "A", number: 1)) == nil)
+    }
+
+    @Test("currentProgram returns nil for unknown channel id")
+    func currentProgramUnknownChannel() {
+        let cache = EPGCache()
+        #expect(cache.currentProgram(forChannelId: 999) == nil)
+    }
+
     // MARK: - Search
 
     @Test("searchProgramsCount returns 0 for empty EPG")

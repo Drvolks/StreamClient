@@ -24,6 +24,7 @@ struct UserPreferencesTests {
         prefs.subtitleSize = .large
         prefs.subtitleBackground = false
         prefs.preferredSubtitleLanguage = "eng"
+        prefs.landingTab = .channels
         prefs.updatedAt = Date(timeIntervalSince1970: 1_700_000_000)
 
         let data = try JSONEncoder().encode(prefs)
@@ -36,6 +37,8 @@ struct UserPreferencesTests {
         #expect(decoded.subtitleSize == prefs.subtitleSize)
         #expect(decoded.subtitleBackground == prefs.subtitleBackground)
         #expect(decoded.preferredSubtitleLanguage == prefs.preferredSubtitleLanguage)
+        #expect(decoded.landingTab == prefs.landingTab)
+        #expect(decoded.landingTabRawValue == prefs.landingTabRawValue)
         #expect(decoded.updatedAt == prefs.updatedAt)
     }
 
@@ -50,7 +53,30 @@ struct UserPreferencesTests {
         #expect(prefs.subtitleSize == .medium)
         #expect(prefs.subtitleBackground == true)
         #expect(prefs.preferredSubtitleLanguage == nil)
+        #expect(prefs.landingTab == .guide)
+        #expect(prefs.landingTabRawValue == LandingTabOption.guide.rawValue)
         #expect(prefs.updatedAt == .distantPast)
+    }
+
+    @Test("Decoding legacy JSON without landingTab defaults to Guide")
+    func decodeLegacyWithoutLandingTab() throws {
+        // Pre-landingTab JSON blobs should still decode cleanly to the
+        // default landing page (Guide) rather than failing.
+        let json = #"{"keywords": ["news"]}"#
+        let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+        #expect(prefs.keywords == ["news"])
+        #expect(prefs.landingTab == .guide)
+    }
+
+    @Test("LandingTabOption round-trips through the raw value")
+    func landingTabRoundTrips() throws {
+        for option in LandingTabOption.allCases {
+            var prefs = UserPreferences()
+            prefs.landingTab = option
+            let data = try JSONEncoder().encode(prefs)
+            let decoded = try JSONDecoder().decode(UserPreferences.self, from: data)
+            #expect(decoded.landingTab == option)
+        }
     }
 
     @Test("Decoding legacy seekTimeSeconds migrates to seekForwardSeconds")

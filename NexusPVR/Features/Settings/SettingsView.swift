@@ -24,6 +24,7 @@ struct SettingsView: View {
     @State private var subtitleMode: SubtitleMode = UserPreferences.load().subtitleMode
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
+    @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     #if DISPATCHERPVR
     @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
     @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
@@ -56,6 +57,7 @@ struct SettingsView: View {
         case subtitleSize
         case subtitleBackground
         case renderer
+        case landingTab
     }
     #endif
 
@@ -66,6 +68,7 @@ struct SettingsView: View {
             #else
             List {
                 serverSection
+                generalSection
                 playbackSection
                 #if DISPATCHERPVR
                 guideSection
@@ -140,6 +143,22 @@ struct SettingsView: View {
                             icon: "network"
                         ) {
                             activeTVPopup = .server
+                        }
+                    }
+                    .focusSection()
+
+                    TVSettingsSection(
+                        title: "General",
+                        icon: "gearshape"
+                    ) {
+                        VStack(spacing: Theme.spacingMD) {
+                            tvSettingsRow(
+                                title: "Landing Page",
+                                value: displayedLandingTab.label,
+                                icon: "house.fill"
+                            ) {
+                                activeTVPopup = .landingTab
+                            }
                         }
                     }
                     .focusSection()
@@ -651,6 +670,8 @@ struct SettingsView: View {
             return "Subtitle Background"
         case .renderer:
             return "Renderer"
+        case .landingTab:
+            return "Landing Page"
         }
     }
 
@@ -771,10 +792,66 @@ struct SettingsView: View {
                     prefs.save()
                 }
             }
+        case .landingTab:
+            return availableLandingOptions
+                .map { option in
+                    TVPopupOption(
+                        id: "settings-popup-landing-\(option.rawValue)",
+                        title: option.label,
+                        isCurrent: displayedLandingTab == option,
+                        isDestructive: false
+                    ) {
+                        saveLandingTab(option)
+                    }
+                }
         }
     }
 
     #endif
+
+    private var generalSection: some View {
+        Section {
+            // Filter the picker to only show landing options the current
+            // user can actually open. Hiding unavailable options keeps the
+            // UI honest and avoids surprising the user with a redirected
+            // landing on next launch.
+            Picker("Landing Page", selection: landingTabSelection) {
+                ForEach(availableLandingOptions) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .accessibilityIdentifier("settings-landing-page-picker")
+        } header: {
+            Text("General")
+        } footer: {
+            Text("Choose which page opens when the app launches.")
+        }
+    }
+
+    private var landingTabSelection: Binding<LandingTabOption> {
+        Binding(
+            get: { displayedLandingTab },
+            set: { newValue in saveLandingTab(newValue) }
+        )
+    }
+
+    private var availableLandingOptions: [LandingTabOption] {
+        LandingTabOption.allCases.filter { option in
+            AppState.isLandingOptionAvailable(option, forUserLevel: appState.userLevel)
+        }
+    }
+
+    private var displayedLandingTab: LandingTabOption {
+        availableLandingOptions.contains(landingTab) ? landingTab : .guide
+    }
+
+    private func saveLandingTab(_ option: LandingTabOption) {
+        landingTab = option
+        var prefs = UserPreferences.load()
+        prefs.landingTab = option
+        prefs.save()
+        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
 
     private var serverSection: some View {
         Section {

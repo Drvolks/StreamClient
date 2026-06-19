@@ -7,8 +7,9 @@
 
 import Foundation
 
-enum Tab: String, Identifiable {
+enum Tab: String, Identifiable, Codable {
     case guide = "Guide"
+    case channels = "Channels"
     case recordings = "Recordings"
     case topics = "Topics"
     case calendar = "Calendar"
@@ -23,6 +24,7 @@ enum Tab: String, Identifiable {
     var icon: String {
         switch self {
         case .guide: return "calendar"
+        case .channels: return "tv"
         case .topics: return "star.fill"
         case .calendar: return "calendar.badge.clock"
         case .search: return "magnifyingglass"
@@ -41,7 +43,7 @@ enum Tab: String, Identifiable {
     }
 
     static func allCases(userLevel: Int) -> [Tab] {
-        var cases: [Tab] = [.guide]
+        var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 { cases.append(.recordings) }
         cases.append(contentsOf: [.topics, .search])
         #if DISPATCHERPVR
@@ -54,7 +56,7 @@ enum Tab: String, Identifiable {
     #if os(iOS)
     /// Tabs shown in the iOS collapsible nav bar (search is integrated into the bar itself)
     static func iOSTabs(userLevel: Int) -> [Tab] {
-        var cases: [Tab] = [.guide]
+        var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 { cases.append(.recordings) }
         cases.append(contentsOf: [.topics, .calendar])
         #if DISPATCHERPVR
@@ -68,7 +70,7 @@ enum Tab: String, Identifiable {
     #if os(macOS)
     /// Tabs shown in the macOS sidebar (search is integrated into the guide floating bar)
     static func macOSTabs(userLevel: Int) -> [Tab] {
-        var cases: [Tab] = [.guide]
+        var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 { cases.append(.recordings) }
         cases.append(contentsOf: [.topics, .calendar])
         #if DISPATCHERPVR
@@ -82,7 +84,7 @@ enum Tab: String, Identifiable {
     #if os(tvOS)
     /// Tabs shown in the tvOS sidebar
     static func tvOSTabs(userLevel: Int) -> [Tab] {
-        var cases: [Tab] = [.guide]
+        var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 { cases.append(.recordings) }
         cases.append(.topics)
         #if DISPATCHERPVR
