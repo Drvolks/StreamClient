@@ -601,6 +601,52 @@ struct IOSNavigation: View {
                                 }
                             }
                             #endif
+                        } else if tab == .channels {
+                            // Channels header (tappable) + optional group sub-items.
+                            // Mirrors the guide's sidebar sub-menu UX but reuses the
+                            // same group/profile filter state and the existing
+                            // `guideShowGroupsInSidebar` / `guideShowProfilesInSidebar`
+                            // preferences — no new settings are required (issue #105).
+                            Button {
+                                #if DISPATCHERPVR
+                                appState.guideGroupFilter = nil
+                                appState.guideChannelFilter = ""
+                                appState.guideProfileFilter = nil
+                                #endif
+                                appState.selectedTab = .channels
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    isSidebarOpen = false
+                                }
+                            } label: {
+                                sidebarRow(
+                                    icon: tab.icon,
+                                    label: tab.label,
+                                    isSelected: appState.selectedTab == .channels,
+                                    badge: { sidebarTabBadge(for: tab) }
+                                )
+                            }
+                            .accessibilityIdentifier("tab-\(tab.rawValue)")
+
+                            // Group sub-items (Dispatcharr only)
+                            #if DISPATCHERPVR
+                            let prefs = UserPreferences.load()
+                            if prefs.guideShowGroupsInSidebar {
+                                let populatedGroups = epgCache.channelGroups.filter { group in
+                                    epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                                }
+                                ForEach(populatedGroups.filter { prefs.guideGroupIds.isEmpty || prefs.guideGroupIds.contains($0.id) }) { group in
+                                    sidebarChannelGroupSubRow(group: group)
+                                }
+                            }
+                            if prefs.guideShowProfilesInSidebar {
+                                let populatedProfiles = epgCache.channelProfiles.filter { profile in
+                                    epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
+                                }
+                                ForEach(populatedProfiles.filter { prefs.guideProfileIds.isEmpty || prefs.guideProfileIds.contains($0.id) }) { profile in
+                                    sidebarChannelProfileSubRow(profile: profile)
+                                }
+                            }
+                            #endif
                         } else {
                             Button {
                                 appState.selectedTab = tab
@@ -843,6 +889,64 @@ struct IOSNavigation: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
         }
         .accessibilityIdentifier("guide-profile-\(profile.id)")
+    }
+
+    private func sidebarChannelGroupSubRow(group: ChannelGroup) -> some View {
+        let isSelected = appState.selectedTab == .channels && appState.guideGroupFilter == group.id
+        return Button {
+            appState.guideGroupFilter = group.id
+            appState.guideProfileFilter = nil
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .channels
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                isSidebarOpen = false
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 28)
+                Text(group.name)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.leading, Theme.spacingSM)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ? Theme.accent.opacity(0.12) : Color.clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+        }
+        .accessibilityIdentifier("channel-group-\(group.id)")
+    }
+
+    private func sidebarChannelProfileSubRow(profile: ChannelProfile) -> some View {
+        let isSelected = appState.selectedTab == .channels && appState.guideProfileFilter == profile.id
+        return Button {
+            appState.guideProfileFilter = profile.id
+            appState.guideGroupFilter = nil
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .channels
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                isSidebarOpen = false
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 28)
+                Text(profile.name)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.leading, Theme.spacingSM)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ? Theme.accent.opacity(0.12) : Color.clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+        }
+        .accessibilityIdentifier("channel-profile-\(profile.id)")
     }
     #endif
 
@@ -1185,6 +1289,19 @@ struct TVOSNavigation: View {
             }
             #endif
             return .tab(.guide)
+        case .channels:
+            #if DISPATCHERPVR
+            if guideSidebarPreferences.guideShowGroupsInSidebar || guideSidebarPreferences.guideShowProfilesInSidebar {
+                if let groupId = appState.guideGroupFilter {
+                    return .channelGroup(groupId)
+                }
+                if let profileId = appState.guideProfileFilter {
+                    return .channelProfile(profileId)
+                }
+                return .channelAll
+            }
+            #endif
+            return .tab(.channels)
         default:
             return .tab(appState.selectedTab)
         }
@@ -1302,6 +1419,84 @@ struct TVOSNavigation: View {
                                                 label: profile.name,
                                                 item: .guideProfile(profile.id),
                                                 isSelected: appState.selectedTab == .guide && appState.guideProfileFilter == profile.id
+                                            ) {
+                                                EmptyView()
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                tvOSSidebarRow(
+                                    icon: tab.icon,
+                                    label: tab.label,
+                                    item: .tab(tab),
+                                    isSelected: appState.selectedTab == tab,
+                                    isCompact: true
+                                ) {
+                                    appState.guideGroupFilter = nil
+                                    appState.guideProfileFilter = nil
+                                    appState.guideChannelFilter = ""
+                                    appState.selectedTab = tab
+                                    sidebarEnabled = false
+                                    focusedItem = nil
+                                } badge: { tvOSSidebarBadge(for: tab) }
+                            }
+                            #else
+                            tvOSSidebarRow(
+                                icon: tab.icon,
+                                label: tab.label,
+                                item: .tab(tab),
+                                isSelected: appState.selectedTab == tab,
+                                isCompact: true
+                            ) {
+                                appState.selectedTab = tab
+                                sidebarEnabled = false
+                                focusedItem = nil
+                            } badge: { tvOSSidebarBadge(for: tab) }
+                            #endif
+                        } else if tab == .channels {
+                            // Channels section mirrors the guide's sub-menu UX
+                            // (issue #105). Reuses the same group/profile filter
+                            // state and the existing `guideShowGroupsInSidebar` /
+                            // `guideShowProfilesInSidebar` preferences — no new
+                            // settings are required.
+                            #if DISPATCHERPVR
+                            if guideSidebarPreferences.guideShowGroupsInSidebar || guideSidebarPreferences.guideShowProfilesInSidebar {
+                                tvOSSidebarSection(icon: tab.icon, label: tab.label) {
+                                    EmptyView()
+                                } content: {
+                                    tvOSSidebarSubRow(
+                                        label: "All Channels",
+                                        item: .channelAll,
+                                        isSelected: appState.selectedTab == .channels && appState.guideGroupFilter == nil && appState.guideProfileFilter == nil
+                                    ) {
+                                        EmptyView()
+                                    }
+
+                                    if guideSidebarPreferences.guideShowGroupsInSidebar {
+                                        let populatedGroups = epgCache.channelGroups.filter { group in
+                                            epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                                        }
+                                        ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
+                                            tvOSSidebarSubRow(
+                                                label: group.name,
+                                                item: .channelGroup(group.id),
+                                                isSelected: appState.selectedTab == .channels && appState.guideGroupFilter == group.id
+                                            ) {
+                                                EmptyView()
+                                            }
+                                        }
+                                    }
+
+                                    if guideSidebarPreferences.guideShowProfilesInSidebar {
+                                        let populatedProfiles = epgCache.channelProfiles.filter { profile in
+                                            epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
+                                        }
+                                        ForEach(populatedProfiles.filter { guideSidebarPreferences.guideProfileIds.isEmpty || guideSidebarPreferences.guideProfileIds.contains($0.id) }) { profile in
+                                            tvOSSidebarSubRow(
+                                                label: profile.name,
+                                                item: .channelProfile(profile.id),
+                                                isSelected: appState.selectedTab == .channels && appState.guideProfileFilter == profile.id
                                             ) {
                                                 EmptyView()
                                             }
@@ -1485,6 +1680,21 @@ struct TVOSNavigation: View {
                 appState.guideGroupFilter = nil
                 appState.guideChannelFilter = ""
                 appState.selectedTab = .guide
+            case .channelAll:
+                appState.guideGroupFilter = nil
+                appState.guideProfileFilter = nil
+                appState.guideChannelFilter = ""
+                appState.selectedTab = .channels
+            case .channelGroup(let groupId):
+                appState.guideGroupFilter = groupId
+                appState.guideProfileFilter = nil
+                appState.guideChannelFilter = ""
+                appState.selectedTab = .channels
+            case .channelProfile(let profileId):
+                appState.guideProfileFilter = profileId
+                appState.guideGroupFilter = nil
+                appState.guideChannelFilter = ""
+                appState.selectedTab = .channels
             #endif
             default:
                 break
@@ -1541,6 +1751,12 @@ struct TVOSNavigation: View {
             return "guide-group-\(groupId)"
         case .guideProfile(let profileId):
             return "guide-profile-\(profileId)"
+        case .channelAll:
+            return "channel-all"
+        case .channelGroup(let groupId):
+            return "channel-group-\(groupId)"
+        case .channelProfile(let profileId):
+            return "channel-profile-\(profileId)"
         #endif
         }
     }
@@ -1598,6 +1814,12 @@ enum TVSidebarItem: Hashable {
     case guideAll
     case guideGroup(Int)
     case guideProfile(Int)
+    /// Channels-page sub-menu items (issue #105). Mirror the guide's
+    /// sub-menu items but target the channels tab; selection writes to the
+    /// same `guideGroupFilter` / `guideProfileFilter` state.
+    case channelAll
+    case channelGroup(Int)
+    case channelProfile(Int)
     #endif
 }
 #endif
@@ -1870,6 +2092,43 @@ struct MacOSNavigation: View {
                     #else
                     macSidebarRow(tab: tab)
                     #endif
+                } else if tab == .channels {
+                    // Channels section mirrors the guide's sub-menu UX
+                    // (issue #105). Reuses the same group/profile filter
+                    // state and the existing `guideShowGroupsInSidebar` /
+                    // `guideShowProfilesInSidebar` preferences — no new
+                    // settings are required.
+                    #if DISPATCHERPVR
+                    if guideSidebarPreferences.guideShowGroupsInSidebar || guideSidebarPreferences.guideShowProfilesInSidebar {
+                        Section {
+                            macSidebarChannelAllRow()
+
+                            if guideSidebarPreferences.guideShowGroupsInSidebar {
+                                let populatedGroups = epgCache.channelGroups.filter { group in
+                                    epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                                }
+                                ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
+                                    macSidebarChannelGroupSubRow(group: group)
+                                }
+                            }
+
+                            if guideSidebarPreferences.guideShowProfilesInSidebar {
+                                let populatedProfiles = epgCache.channelProfiles.filter { profile in
+                                    epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
+                                }
+                                ForEach(populatedProfiles.filter { guideSidebarPreferences.guideProfileIds.isEmpty || guideSidebarPreferences.guideProfileIds.contains($0.id) }) { profile in
+                                    macSidebarChannelProfileSubRow(profile: profile)
+                                }
+                            }
+                        } header: {
+                            macSidebarHeader(icon: tab.icon, label: tab.label)
+                        }
+                    } else {
+                        macSidebarRow(tab: tab)
+                    }
+                    #else
+                    macSidebarRow(tab: tab)
+                    #endif
                 } else {
                     macSidebarRow(tab: tab)
                 }
@@ -2070,6 +2329,84 @@ struct MacOSNavigation: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("guide-profile-\(profile.id)")
+    }
+
+    private func macSidebarChannelAllRow() -> some View {
+        let isSelected = appState.selectedTab == .channels && appState.guideGroupFilter == nil && appState.guideProfileFilter == nil
+        return Button {
+            appState.guideGroupFilter = nil
+            appState.guideProfileFilter = nil
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .channels
+        } label: {
+            HStack {
+                Text("All Channels")
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("channel-all-channels")
+    }
+
+    private func macSidebarChannelGroupSubRow(group: ChannelGroup) -> some View {
+        let isSelected = appState.selectedTab == .channels && appState.guideGroupFilter == group.id
+        return Button {
+            appState.guideGroupFilter = group.id
+            appState.guideProfileFilter = nil
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .channels
+        } label: {
+            HStack {
+                Text(group.name)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("channel-group-\(group.id)")
+    }
+
+    private func macSidebarChannelProfileSubRow(profile: ChannelProfile) -> some View {
+        let isSelected = appState.selectedTab == .channels && appState.guideProfileFilter == profile.id
+        return Button {
+            appState.guideProfileFilter = profile.id
+            appState.guideGroupFilter = nil
+            appState.guideChannelFilter = ""
+            appState.selectedTab = .channels
+        } label: {
+            HStack {
+                Text(profile.name)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("channel-profile-\(profile.id)")
     }
     #endif
 
