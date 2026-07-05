@@ -1693,15 +1693,17 @@ struct GuideView: View {
                             Label("Watch Live", systemImage: "dot.radiowaves.left.and.right")
                         }
 
-                        Button {
-                            Task {
-                                try? await client.cancelRecording(recordingId: recId)
-                                await viewModel.reloadRecordings(client: client)
+                        if !appState.hideRecordings {
+                            Button {
+                                Task {
+                                    try? await client.cancelRecording(recordingId: recId)
+                                    await viewModel.reloadRecordings(client: client)
+                                }
+                            } label: {
+                                Label("Cancel Recording", systemImage: "xmark.circle")
                             }
-                        } label: {
-                            Label("Cancel Recording", systemImage: "xmark.circle")
                         }
-                    } else if !program.hasEnded {
+                    } else if !program.hasEnded && !appState.hideRecordings {
                         if isScheduled, let recId = viewModel.recordingId(for: program) {
                             Button {
                                 Task {

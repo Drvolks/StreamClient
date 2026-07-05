@@ -87,7 +87,7 @@ struct SearchResultRow: View {
                     Spacer()
 
                     // Action button
-                    if !program.hasEnded {
+                    if !program.hasEnded && appState.showsRecordings {
                         Button {
                             toggleRecording()
                         } label: {
@@ -158,7 +158,9 @@ struct SearchResultRow: View {
             onShowDetails?(existingRecordingId, existingRecording)
         }
         .task {
-            await checkIfScheduled()
+            if appState.showsRecordings {
+                await checkIfScheduled()
+            }
         }
     }
 
@@ -237,8 +239,12 @@ struct SearchResultRowTV: View {
     @State private var existingRecording: Recording?
     @State private var earlierScheduled: Recording?
 
+    private var canRecord: Bool { appState.showsRecordings }
+
     private var actionLabel: String {
-        if isRecording {
+        if !canRecord && !program.hasEnded {
+            return "Details"
+        } else if isRecording {
             return "Recording"
         } else if isScheduled {
             return "Scheduled"
@@ -250,7 +256,9 @@ struct SearchResultRowTV: View {
     }
 
     private var actionIcon: String {
-        if isRecording {
+        if !canRecord && !program.hasEnded {
+            return "info.circle"
+        } else if isRecording {
             return "record.circle"
         } else if isScheduled {
             return "checkmark.circle.fill"
@@ -378,13 +386,19 @@ struct SearchResultRowTV: View {
         }
         .disabled(!isActionable || isProcessing)
         .task {
-            await checkIfScheduled()
+            if appState.showsRecordings {
+                await checkIfScheduled()
+            }
         }
     }
 
     private func performAction() {
         if !program.hasEnded {
-            toggleRecording()
+            if canRecord {
+                toggleRecording()
+            } else {
+                onShowDetails?()
+            }
         } else if let existing = existingRecording {
             playExistingRecording(existing)
         }

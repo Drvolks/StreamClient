@@ -53,6 +53,9 @@ Automatically scans your local network to find PVR servers. No manual IP entry r
 ### iCloud Sync
 Server configuration, topic keywords, seek preferences, and audio settings sync across all your Apple devices via iCloud.
 
+### Hide Recording Features
+Playback-only setup? Enable **Hide Recording Features** in Settings → General to remove the Recordings tab and every record button and menu from the app. The preference syncs across your devices via iCloud.
+
 ### Demo Mode
 Explore the full app without a server. Provides 15 simulated channels across 5 groups, 3 days of EPG data, sample recordings, and pre-configured topic keywords. Enter `demo` as the server host to activate.
 

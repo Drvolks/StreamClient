@@ -75,6 +75,17 @@ struct TabTests {
         #expect(cases.contains(.settings))
     }
 
+    @Test("Tab allCases hideRecordings excludes recordings at any user level")
+    func allCasesHideRecordings() {
+        let cases = Tab.allCases(userLevel: 10, hideRecordings: true)
+        #expect(cases.contains(.guide))
+        #expect(cases.contains(.channels))
+        #expect(!cases.contains(.recordings))
+        #expect(cases.contains(.topics))
+        #expect(cases.contains(.search))
+        #expect(cases.contains(.settings))
+    }
+
     @Test("Channels tab appears directly below Guide in allCases")
     func channelsAppearsAfterGuide() {
         let cases = Tab.allCases(userLevel: 10)
@@ -103,6 +114,14 @@ struct TabTests {
     func iOSTabsUserLevel1() {
         let cases = Tab.iOSTabs(userLevel: 1)
         #expect(cases.contains(.recordings))
+    }
+
+    @Test("Tab iOS tabs hideRecordings excludes recordings")
+    func iOSTabsHideRecordings() {
+        let cases = Tab.iOSTabs(userLevel: 10, hideRecordings: true)
+        #expect(!cases.contains(.recordings))
+        #expect(cases.contains(.guide))
+        #expect(cases.contains(.settings))
     }
 
     @Test("Channels tab appears directly below Guide in iOS tabs")
@@ -136,6 +155,14 @@ struct TabTests {
         #expect(cases.contains(.recordings))
     }
 
+    @Test("Tab macOS tabs hideRecordings excludes recordings")
+    func macOSTabsHideRecordings() {
+        let cases = Tab.macOSTabs(userLevel: 10, hideRecordings: true)
+        #expect(!cases.contains(.recordings))
+        #expect(cases.contains(.guide))
+        #expect(cases.contains(.settings))
+    }
+
     @Test("Channels tab appears directly below Guide in macOS tabs")
     func macOSTabsChannelsAfterGuide() {
         let cases = Tab.macOSTabs(userLevel: 10)
@@ -164,6 +191,14 @@ struct TabTests {
     func tvOSTabsUserLevel1() {
         let cases = Tab.tvOSTabs(userLevel: 1)
         #expect(cases.contains(.recordings))
+    }
+
+    @Test("Tab tvOS tabs hideRecordings excludes recordings")
+    func tvOSTabsHideRecordings() {
+        let cases = Tab.tvOSTabs(userLevel: 10, hideRecordings: true)
+        #expect(!cases.contains(.recordings))
+        #expect(cases.contains(.guide))
+        #expect(cases.contains(.settings))
     }
 
     @Test("Channels tab appears directly below Guide in tvOS tabs")

@@ -27,6 +27,8 @@ nonisolated struct UserPreferences: Codable {
     /// Stored as a `String` so this model stays free of UI dependencies;
     /// resolve via the `landingTab` computed property.
     var landingTabRawValue: String = LandingTabOption.defaultRawValue
+    /// When true, all recording features (tabs, menus, buttons) are hidden (#110).
+    var hideRecordings: Bool = false
     var updatedAt: Date = .distantPast
 
     /// The GPU API for the current platform.
@@ -91,6 +93,7 @@ nonisolated struct UserPreferences: Codable {
         case guideShowProfilesInSidebar
         case guideProfileIds
         case landingTabRawValue
+        case hideRecordings
         case updatedAt
     }
 
@@ -121,6 +124,7 @@ nonisolated struct UserPreferences: Codable {
         guideShowProfilesInSidebar = try container.decodeIfPresent(Bool.self, forKey: .guideShowProfilesInSidebar) ?? false
         guideProfileIds = try container.decodeIfPresent([Int].self, forKey: .guideProfileIds) ?? []
         landingTabRawValue = try container.decodeIfPresent(String.self, forKey: .landingTabRawValue) ?? LandingTabOption.defaultRawValue
+        hideRecordings = try container.decodeIfPresent(Bool.self, forKey: .hideRecordings) ?? false
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
@@ -142,6 +146,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(guideShowProfilesInSidebar, forKey: .guideShowProfilesInSidebar)
         try container.encode(guideProfileIds, forKey: .guideProfileIds)
         try container.encode(landingTabRawValue, forKey: .landingTabRawValue)
+        try container.encode(hideRecordings, forKey: .hideRecordings)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 

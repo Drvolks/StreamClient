@@ -93,9 +93,24 @@ final class AppState: ObservableObject {
     /// NexusPVR users always have full access
     var userLevel: Int { 10 }
     #endif
+
+    /// Whether the user chose to hide all recording features in Settings (#110).
+    @Published var hideRecordings: Bool = UserPreferences.load().hideRecordings {
+        didSet { reconcileSelectedTabForCurrentAccess() }
+    }
+
+    /// Whether recording-related UI (tabs, menus, buttons) should be shown.
+    var showsRecordings: Bool { userLevel >= 1 && !hideRecordings }
+
     #if DISPATCHERPVR
     /// Whether the current user can create/modify/delete recordings
-    var canManageRecordings: Bool { userLevel >= 10 }
+    var canManageRecordings: Bool { userLevel >= 10 && !hideRecordings }
+    #else
+    /// Whether the current user can create/modify/delete recordings
+    var canManageRecordings: Bool { !hideRecordings }
+    #endif
+
+    #if DISPATCHERPVR
     private var streamCountTask: Task<Void, Never>?
 
     func startStreamCountPolling(client: DispatcherClient) {
@@ -228,6 +243,9 @@ final class AppState: ObservableObject {
             return tab(for: override)
         }
         let prefs = UserPreferences.load()
+        if prefs.hideRecordings && prefs.landingTab == .completedRecordings {
+            return .guide
+        }
         return tab(for: prefs.landingTab)
     }
 
@@ -249,13 +267,14 @@ final class AppState: ObservableObject {
     /// options) and `applyLandingTab` (to redirect to Guide if needed).
     static func isLandingOptionAvailable(
         _ option: LandingTabOption,
-        forUserLevel userLevel: Int
+        forUserLevel userLevel: Int,
+        hideRecordings: Bool = false
     ) -> Bool {
         switch option {
         case .guide, .channels:
             return true
         case .completedRecordings:
-            return userLevel >= 1
+            return userLevel >= 1 && !hideRecordings
         }
     }
 
@@ -265,7 +284,7 @@ final class AppState: ObservableObject {
     /// user is a Streamer. Redirect in that case so the UI never stays on a
     /// tab that the sidebars have hidden.
     func reconcileSelectedTabForCurrentAccess() {
-        if selectedTab == .recordings && userLevel < 1 {
+        if selectedTab == .recordings && !showsRecordings {
             selectedTab = .guide
         }
     }
@@ -279,7 +298,7 @@ final class AppState: ObservableObject {
     /// lands on a hidden/non-existent destination.
     func applyLandingTab(_ option: LandingTabOption) {
         let resolved: LandingTabOption
-        if Self.isLandingOptionAvailable(option, forUserLevel: userLevel) {
+        if Self.isLandingOptionAvailable(option, forUserLevel: userLevel, hideRecordings: hideRecordings) {
             resolved = option
         } else {
             resolved = .guide

@@ -101,15 +101,17 @@ struct NavigationRouter: View {
             #endif
         }
         .task {
-            if appState.userLevel >= 1 {
-                #if !TOPSHELF_EXTENSION
+            #if !TOPSHELF_EXTENSION
+            if appState.showsRecordings {
                 await appState.refreshRecordingsSidebarData(client: client)
                 appState.startRecordingsActivityPolling(client: client)
-                #endif
-                #if DISPATCHERPVR
-                appState.startStreamCountPolling(client: client)
-                #endif
             }
+            #endif
+            #if DISPATCHERPVR
+            if appState.userLevel >= 1 {
+                appState.startStreamCountPolling(client: client)
+            }
+            #endif
         }
         .onChange(of: appState.userLevel) { level in
             guard level >= 1 else {
@@ -127,12 +129,35 @@ struct NavigationRouter: View {
                 return
             }
             #if !TOPSHELF_EXTENSION
-            Task { await appState.refreshRecordingsSidebarData(client: client) }
-            appState.startRecordingsActivityPolling(client: client)
+            if !appState.hideRecordings {
+                Task { await appState.refreshRecordingsSidebarData(client: client) }
+                appState.startRecordingsActivityPolling(client: client)
+            }
             #endif
             #if DISPATCHERPVR
             appState.startStreamCountPolling(client: client)
             #endif
+        }
+        .onChange(of: appState.hideRecordings) { hidden in
+            #if !TOPSHELF_EXTENSION
+            if hidden {
+                appState.stopRecordingsActivityPolling()
+                appState.activeRecordingCount = 0
+                appState.recordingsSeriesItems = []
+                appState.recordingsSeriesIsLoading = false
+            } else if appState.userLevel >= 1 {
+                Task { await appState.refreshRecordingsSidebarData(client: client) }
+                appState.startRecordingsActivityPolling(client: client)
+            }
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
+            // Keep the hide-recordings gate in sync when preferences change
+            // from Settings or from another device via iCloud.
+            let hidden = UserPreferences.load().hideRecordings
+            if appState.hideRecordings != hidden {
+                appState.hideRecordings = hidden
+            }
         }
         .onDisappear {
             #if !TOPSHELF_EXTENSION
@@ -519,7 +544,7 @@ struct IOSNavigation: View {
             // Tab items
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Tab.iOSTabs(userLevel: appState.userLevel)) { tab in
+                    ForEach(Tab.iOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings)) { tab in
                         if tab == .recordings {
                             // Recordings header (non-tappable)
                             sidebarRow(
@@ -1316,7 +1341,7 @@ struct TVOSNavigation: View {
         return VStack(alignment: .leading, spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Tab.tvOSTabs(userLevel: appState.userLevel)) { tab in
+                    ForEach(Tab.tvOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings)) { tab in
                         if tab == .recordings {
                             tvOSSidebarSection(icon: tab.icon, label: tab.label) {
                                 if appState.recordingsHasActive {
@@ -2042,7 +2067,7 @@ struct MacOSNavigation: View {
 
     private var macSidebar: some View {
         List {
-            ForEach(Tab.macOSTabs(userLevel: appState.userLevel)) { tab in
+            ForEach(Tab.macOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings)) { tab in
                 if tab == .recordings {
                     Section {
                         if appState.recordingsHasActive {

@@ -151,7 +151,7 @@ struct TopicProgramRow: View {
 
                     Spacer()
 
-                    if !program.hasEnded && appState.userLevel >= 1 {
+                    if !program.hasEnded && appState.showsRecordings {
                         Button {
                             vm.toggleRecording(using: client, onChanged: onRecordingChanged)
                         } label: {
@@ -189,7 +189,7 @@ struct TopicProgramRow: View {
         }
         #endif
         .task {
-            if appState.userLevel >= 1 {
+            if appState.showsRecordings {
                 await vm.checkIfScheduled(using: client)
             }
         }
@@ -263,7 +263,7 @@ struct TopicProgramRowTV: View {
         _vm = StateObject(wrappedValue: TopicProgramRowViewModel(program: program, channel: channel))
     }
 
-    private var canRecord: Bool { appState.userLevel >= 1 }
+    private var canRecord: Bool { appState.showsRecordings }
 
     private var actionLabel: String {
         if !canRecord {
@@ -419,7 +419,9 @@ struct TopicProgramRowTV: View {
         }
         .accessibilityIdentifier("topic-program-\(program.id)")
         .task {
-            await vm.checkIfScheduled(using: client)
+            if appState.showsRecordings {
+                await vm.checkIfScheduled(using: client)
+            }
         }
     }
 }

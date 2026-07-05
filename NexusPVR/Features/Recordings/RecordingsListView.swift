@@ -92,11 +92,7 @@ private struct RecordingsListContentView: View {
     }
 
     private var canManageRecordings: Bool {
-        #if DISPATCHERPVR
         appState.canManageRecordings
-        #else
-        true
-        #endif
     }
 
     var body: some View {

@@ -53,9 +53,13 @@ class ContentProvider: TVTopShelfContentProvider {
 
         var items: [TVTopShelfSectionedItem] = []
         var usedChannelIds: Set<Int> = []
+        let prefs = UserPreferences.loadFromAppGroup()
 
-        // Tier 1: Recent recordings (up to 4)
-        let recordings = await RecordingFetcher.fetchRecentRecordings(config: config, limit: 4)
+        // Tier 1: Recent recordings (up to 4) — skipped when recording features are hidden
+        var recordings: [Recording] = []
+        if !prefs.hideRecordings {
+            recordings = await RecordingFetcher.fetchRecentRecordings(config: config, limit: 4)
+        }
         for recording in recordings {
             items.append(makeRecordingItem(recording))
             if let chId = recording.channelId { usedChannelIds.insert(chId) }
@@ -63,7 +67,6 @@ class ContentProvider: TVTopShelfContentProvider {
 
         // Tier 2: Topic-matched live programs
         if items.count < 4 {
-            let prefs = UserPreferences.loadFromAppGroup()
             if !prefs.keywords.isEmpty {
                 let needed = 4 - items.count
                 let topicMatches = await LiveProgramFetcher.fetchCurrentByKeywords(

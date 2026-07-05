@@ -426,4 +426,79 @@ struct AppStateTests {
         let state = AppState()
         #expect(state.selectedTab == .channels)
     }
+
+    // MARK: - Hide Recordings (#110)
+
+    @Test("showsRecordings is false when hideRecordings is enabled")
+    func showsRecordingsRespectsHideRecordings() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.hideRecordings = false
+        #expect(state.showsRecordings == true)
+        state.hideRecordings = true
+        #expect(state.showsRecordings == false)
+    }
+
+    @Test("canManageRecordings is false when hideRecordings is enabled")
+    func canManageRecordingsRespectsHideRecordings() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.hideRecordings = false
+        #expect(state.canManageRecordings == true)
+        state.hideRecordings = true
+        #expect(state.canManageRecordings == false)
+    }
+
+    @Test("enabling hideRecordings redirects recordings tab to Guide")
+    func hideRecordingsRedirectsRecordingsTab() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.hideRecordings = false
+        state.selectedTab = .recordings
+
+        state.hideRecordings = true
+
+        #expect(state.selectedTab == .guide)
+    }
+
+    @Test("enabling hideRecordings leaves other tabs alone")
+    func hideRecordingsLeavesOtherTabsAlone() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.hideRecordings = false
+        state.selectedTab = .channels
+
+        state.hideRecordings = true
+
+        #expect(state.selectedTab == .channels)
+    }
+
+    @Test("applyLandingTab redirects completedRecordings to Guide when hideRecordings is enabled")
+    func applyLandingTabRedirectsWhenHideRecordings() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.hideRecordings = true
+        state.selectedTab = .channels
+        state.recordingsFilter = .scheduled
+        state.recordingsFilterUserOverride = true
+
+        state.applyLandingTab(.completedRecordings)
+
+        #expect(state.selectedTab == .guide)
+        #expect(state.recordingsFilter == .scheduled)
+        #expect(state.recordingsFilterUserOverride == true)
+    }
+
+    @Test("isLandingOptionAvailable gates completedRecordings on hideRecordings")
+    func isLandingOptionAvailableGatesOnHideRecordings() {
+        #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 10, hideRecordings: true) == false)
+        #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 10, hideRecordings: false) == true)
+        #expect(AppState.isLandingOptionAvailable(.guide, forUserLevel: 10, hideRecordings: true) == true)
+        #expect(AppState.isLandingOptionAvailable(.channels, forUserLevel: 10, hideRecordings: true) == true)
+    }
 }

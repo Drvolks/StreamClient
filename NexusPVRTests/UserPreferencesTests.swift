@@ -25,6 +25,7 @@ struct UserPreferencesTests {
         prefs.subtitleBackground = false
         prefs.preferredSubtitleLanguage = "eng"
         prefs.landingTab = .channels
+        prefs.hideRecordings = true
         prefs.updatedAt = Date(timeIntervalSince1970: 1_700_000_000)
 
         let data = try JSONEncoder().encode(prefs)
@@ -39,6 +40,7 @@ struct UserPreferencesTests {
         #expect(decoded.preferredSubtitleLanguage == prefs.preferredSubtitleLanguage)
         #expect(decoded.landingTab == prefs.landingTab)
         #expect(decoded.landingTabRawValue == prefs.landingTabRawValue)
+        #expect(decoded.hideRecordings == prefs.hideRecordings)
         #expect(decoded.updatedAt == prefs.updatedAt)
     }
 
@@ -55,6 +57,7 @@ struct UserPreferencesTests {
         #expect(prefs.preferredSubtitleLanguage == nil)
         #expect(prefs.landingTab == .guide)
         #expect(prefs.landingTabRawValue == LandingTabOption.guide.rawValue)
+        #expect(prefs.hideRecordings == false)
         #expect(prefs.updatedAt == .distantPast)
     }
 

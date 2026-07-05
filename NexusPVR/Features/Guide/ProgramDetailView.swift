@@ -525,11 +525,7 @@ struct ProgramDetailView: View {
                 .accessibilityIdentifier("watch-live-button")
             }
 
-            #if DISPATCHERPVR
             let canRecord = appState.canManageRecordings
-            #else
-            let canRecord = true
-            #endif
 
             if !program.hasEnded && canRecord {
                 if isScheduled {
@@ -690,7 +686,7 @@ struct ProgramDetailView: View {
                         }
                     }
                 }
-            } else if !program.hasEnded && !canRecord {
+            } else if !program.hasEnded && !canRecord && !appState.hideRecordings {
                 Label("Recording requires admin permissions", systemImage: "lock.fill")
                     .font(.subheadline)
                     .foregroundStyle(Theme.warning)

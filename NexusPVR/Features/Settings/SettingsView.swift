@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
+    @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
     #if DISPATCHERPVR
     @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
     @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
@@ -58,6 +59,7 @@ struct SettingsView: View {
         case subtitleBackground
         case renderer
         case landingTab
+        case hideRecordings
     }
     #endif
 
@@ -158,6 +160,13 @@ struct SettingsView: View {
                                 icon: "house.fill"
                             ) {
                                 activeTVPopup = .landingTab
+                            }
+                            tvSettingsRow(
+                                title: "Hide Recording Features",
+                                value: hideRecordings ? "On" : "Off",
+                                icon: "record.circle"
+                            ) {
+                                activeTVPopup = .hideRecordings
                             }
                         }
                     }
@@ -672,6 +681,8 @@ struct SettingsView: View {
             return "Renderer"
         case .landingTab:
             return "Landing Page"
+        case .hideRecordings:
+            return "Hide Recording Features"
         }
     }
 
@@ -804,6 +815,15 @@ struct SettingsView: View {
                         saveLandingTab(option)
                     }
                 }
+        case .hideRecordings:
+            return [
+                TVPopupOption(id: "settings-popup-hide-recordings-on", title: "On", isCurrent: hideRecordings, isDestructive: false) {
+                    saveHideRecordings(true)
+                },
+                TVPopupOption(id: "settings-popup-hide-recordings-off", title: "Off", isCurrent: !hideRecordings, isDestructive: false) {
+                    saveHideRecordings(false)
+                }
+            ]
         }
     }
 
@@ -821,10 +841,13 @@ struct SettingsView: View {
                 }
             }
             .accessibilityIdentifier("settings-landing-page-picker")
+
+            Toggle("Hide Recording Features", isOn: hideRecordingsSelection)
+                .accessibilityIdentifier("settings-hide-recordings-toggle")
         } header: {
             Text("General")
         } footer: {
-            Text("Choose which page opens when the app launches.")
+            Text("Choose which page opens when the app launches. Hiding recording features removes all recording menus and buttons from the app.")
         }
     }
 
@@ -835,9 +858,16 @@ struct SettingsView: View {
         )
     }
 
+    private var hideRecordingsSelection: Binding<Bool> {
+        Binding(
+            get: { hideRecordings },
+            set: { newValue in saveHideRecordings(newValue) }
+        )
+    }
+
     private var availableLandingOptions: [LandingTabOption] {
         LandingTabOption.allCases.filter { option in
-            AppState.isLandingOptionAvailable(option, forUserLevel: appState.userLevel)
+            AppState.isLandingOptionAvailable(option, forUserLevel: appState.userLevel, hideRecordings: hideRecordings)
         }
     }
 
@@ -851,6 +881,15 @@ struct SettingsView: View {
         prefs.landingTab = option
         prefs.save()
         NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
+
+    private func saveHideRecordings(_ hidden: Bool) {
+        hideRecordings = hidden
+        var prefs = UserPreferences.load()
+        prefs.hideRecordings = hidden
+        prefs.save()
+        // Apply immediately so tabs, menus and buttons update without relaunch.
+        appState.hideRecordings = hidden
     }
 
     private var serverSection: some View {

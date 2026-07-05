@@ -42,9 +42,9 @@ enum Tab: String, Identifiable, Codable {
         allCases(userLevel: 10)
     }
 
-    static func allCases(userLevel: Int) -> [Tab] {
+    static func allCases(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
-        if userLevel >= 1 { cases.append(.recordings) }
+        if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
         cases.append(contentsOf: [.topics, .search])
         #if DISPATCHERPVR
         if userLevel >= 1 { cases.append(.stats) }
@@ -55,9 +55,9 @@ enum Tab: String, Identifiable, Codable {
 
     #if os(iOS)
     /// Tabs shown in the iOS collapsible nav bar (search is integrated into the bar itself)
-    static func iOSTabs(userLevel: Int) -> [Tab] {
+    static func iOSTabs(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
-        if userLevel >= 1 { cases.append(.recordings) }
+        if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
         cases.append(contentsOf: [.topics, .calendar])
         #if DISPATCHERPVR
         if userLevel >= 1 { cases.append(.stats) }
@@ -69,9 +69,9 @@ enum Tab: String, Identifiable, Codable {
 
     #if os(macOS)
     /// Tabs shown in the macOS sidebar (search is integrated into the guide floating bar)
-    static func macOSTabs(userLevel: Int) -> [Tab] {
+    static func macOSTabs(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
-        if userLevel >= 1 { cases.append(.recordings) }
+        if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
         cases.append(contentsOf: [.topics, .calendar])
         #if DISPATCHERPVR
         if userLevel >= 1 { cases.append(.stats) }
@@ -83,9 +83,9 @@ enum Tab: String, Identifiable, Codable {
 
     #if os(tvOS)
     /// Tabs shown in the tvOS sidebar
-    static func tvOSTabs(userLevel: Int) -> [Tab] {
+    static func tvOSTabs(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
-        if userLevel >= 1 { cases.append(.recordings) }
+        if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
         cases.append(.topics)
         #if DISPATCHERPVR
         if userLevel >= 1 { cases.append(.stats) }
