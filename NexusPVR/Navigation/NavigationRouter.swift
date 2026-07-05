@@ -1212,6 +1212,9 @@ struct TVOSNavigation: View {
             if newItem == nil {
                 // When sidebar loses focus, disable it so content can receive focus
                 sidebarEnabled = false
+                if appState.selectedTab == .channels {
+                    appState.tvosChannelsFocusFirstRequest += 1
+                }
             }
         }
         .onChange(of: appState.selectedTab) { _, newTab in

@@ -26,6 +26,12 @@ struct ChannelsView: View {
     #if os(tvOS)
     @FocusState private var focusedChannelId: Int?
     @State private var requestTVSearchKeyboard = false
+    /// Set to the focused card at the end of each move command and cleared
+    /// whenever focus changes. Focus updates (and the resulting `onChange`)
+    /// happen *before* `.onMoveCommand` runs, so when the handler still sees
+    /// the pressed card in here, the press did not move focus — the card has
+    /// no neighbor to its left, i.e. it sits in the leftmost column.
+    @State private var lastKnownFocusedChannelId: Int?
     #if DISPATCHERPVR
     @State private var headerDrawerKind: ChannelsDrawerKind?
     @FocusState private var focusedDrawerItemId: String?
@@ -135,7 +141,23 @@ struct ChannelsView: View {
                     return
                 }
                 #endif
-                if direction == .left { requestSidebarFocus() }
+                // Matches the guide: left only hands focus to the sidebar from
+                // the leftmost column — everywhere else the focus engine moves
+                // to the adjacent card (#111). Focus has already been updated
+                // when this runs, so "unchanged after a left press" means the
+                // card had no neighbor to its left.
+                if direction == .left,
+                   let focusedChannelId,
+                   focusedChannelId == lastKnownFocusedChannelId {
+                    requestSidebarFocus()
+                }
+                lastKnownFocusedChannelId = focusedChannelId
+            }
+            .onChange(of: focusedChannelId) { _, _ in
+                // Any focus change (dpad move, programmatic reset, leaving the
+                // grid) invalidates the snapshot, so the move handler only ever
+                // matches when the press left focus where it was.
+                lastKnownFocusedChannelId = nil
             }
             .onExitCommand {
                 #if DISPATCHERPVR
@@ -157,6 +179,18 @@ struct ChannelsView: View {
                 }
                 if !visibleChannels.contains(where: { $0.id == focusedChannelId }) {
                     self.focusedChannelId = id
+                }
+            }
+            .onChange(of: appState.tvosChannelsFocusFirstRequest) { _, _ in
+                // Entering from the sidebar: land on the first channel card no
+                // matter where the focus engine put focus. Set immediately
+                // (covers dpad entry, where content focus is already resolved)
+                // and again a beat later (covers row selection, where the
+                // engine re-resolves focus after the sidebar is removed and
+                // can override the first assignment).
+                focusedChannelId = firstVisibleChannelId
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    focusedChannelId = firstVisibleChannelId
                 }
             }
         #elseif os(iOS)

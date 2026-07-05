@@ -71,6 +71,9 @@ final class AppState: ObservableObject {
     @Published var tvosSettingsDismissPopupRequest = 0
     @Published var tvosSettingsDismissEventLogRequest = 0
     @Published var tvosPlayerSettingsPanelOpen = false
+    /// Incremented when the sidebar hands focus to the Channels page so the
+    /// grid always starts on the first channel card (#111).
+    @Published var tvosChannelsFocusFirstRequest = 0
     #endif
 
     // Alert state
