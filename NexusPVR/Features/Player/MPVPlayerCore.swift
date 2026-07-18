@@ -665,7 +665,12 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         // Audio
         #if os(macOS)
-        mpv_set_option_string(mpv, "ao", "coreaudio")
+        // avfoundation is listed as a fallback: some macOS versions fail to open
+        // coreaudio for multichannel (5.1/7.1) sources with "unable to set the
+        // input channel layout on the audio unit" (bad channel map built from
+        // the source layout tag), which leaves playback silent. mpv tries each
+        // driver in order and moves on if one fails to open.
+        mpv_set_option_string(mpv, "ao", "coreaudio,avfoundation")
         mpv_set_option_string(mpv, "audio-buffer", "0.5")  // Larger buffer on macOS to avoid coreaudio race with raw TS streams
         mpv_set_option_string(mpv, "audio-wait-open", "0.5")  // Delay opening audio device until data is ready (prevents NULL buffer crash with raw TS streams)
         #elseif os(tvOS)
