@@ -441,13 +441,67 @@ function hslToRgb(h, s, l) {
 // Mock Proxy Status (0.24.0+ shape)
 // ---------------------------------------------------------------------------
 
+// M3U accounts the mock streams belong to
+const M3U_ACCOUNTS = [
+  {
+    id: 1,
+    name: "Primary Provider",
+    server_url: "http://provider-one.example/get.php",
+    is_active: true,
+    locked: false,
+    status: "success",
+    account_type: "xtream_codes",
+    updated_at: new Date().toISOString(),
+    profiles: [{ id: 7, name: "Default" }, { id: 8, name: "HD" }],
+  },
+  {
+    id: 2,
+    name: "Backup Provider",
+    server_url: "http://provider-two.example/playlist.m3u",
+    is_active: true,
+    locked: false,
+    status: "success",
+    account_type: "standard",
+    updated_at: new Date().toISOString(),
+    profiles: [{ id: 9, name: "Default" }],
+  },
+];
+
+// Streams available per channel, plus which one each channel is currently
+// playing. `POST /proxy/ts/change_stream/<uuid>` mutates the active stream so
+// the stats page switcher can be exercised end to end.
+const CHANNEL_STREAMS = new Map();
+const ACTIVE_STREAM = new Map();
+
+function streamsForChannel(ch) {
+  if (!CHANNEL_STREAMS.has(ch.id)) {
+    const streams = [1, 2, 3].map((k) => ({
+      id: ch.id * 100 + k,
+      name: `${ch.name} Source ${k}`,
+      url: `http://provider-${k === 3 ? "two" : "one"}.example/${ch.id}/${k}`,
+      m3u_account: k === 3 ? 2 : 1,
+      is_stale: false,
+      current_viewers: 0,
+    }));
+    CHANNEL_STREAMS.set(ch.id, streams);
+  }
+  return CHANNEL_STREAMS.get(ch.id);
+}
+
+function activeStreamId(ch) {
+  if (!ACTIVE_STREAM.has(ch.id)) {
+    ACTIVE_STREAM.set(ch.id, streamsForChannel(ch)[0].id);
+  }
+  return ACTIVE_STREAM.get(ch.id);
+}
+
 function generateMockProxyStatus() {
   // Pick a few channels to simulate as active proxy streams
   const active = CHANNELS.slice(0, Math.min(5, CHANNELS.length));
   const now = Date.now() / 1000; // epoch seconds
 
   return active.map((ch, i) => ({
-    channel_id: `00000000-0000-0000-0000-${String(ch.id).padStart(12, "0")}`,
+    channel_id: ch.uuid,
     state: i < 3 ? "active" : "idle",
     url: `http://localhost:${PORT}/proxy/ts/stream/${ch.id}`,
     stream_profile: String((i % 3) + 1),
@@ -456,7 +510,7 @@ function generateMockProxyStatus() {
     client_count: i < 3 ? 1 : 0,
     uptime: 60 + i * 30,
     channel_name: `${ch.name} (${ch.number})`,
-    stream_id: 340000 + ch.id,
+    stream_id: activeStreamId(ch),
     total_bytes: (100 + i * 50) * 1024 * 1024,
     avg_bitrate_kbps: 9574.21 - i * 1000,
     avg_bitrate: `${(9.57 - i).toFixed(2)} Mbps`,
@@ -541,6 +595,25 @@ function handleRequest(req, res) {
   if (path === "/api/channels/channels/") {
     const baseUrl = `http://${req.headers.host}${path}`;
     return json(res, paginate(CHANNELS, page, baseUrl, pageSize));
+  }
+
+  // Channels by UUID (used to resolve proxy status UUIDs to channel ids)
+  if (path === "/api/channels/channels/by-uuids/" && req.method === "POST") {
+    const uuids = Array.isArray(req.body?.uuids) ? req.body.uuids : [];
+    return json(res, CHANNELS.filter((c) => uuids.includes(c.uuid)));
+  }
+
+  // Streams assigned to a channel
+  const streamsMatch = path.match(/^\/api\/channels\/channels\/(\d+)\/streams\/$/);
+  if (streamsMatch) {
+    const channel = CHANNELS.find((c) => c.id === parseInt(streamsMatch[1], 10));
+    if (!channel) return notFound(res);
+    return json(res, streamsForChannel(channel));
+  }
+
+  // M3U accounts
+  if (path === "/api/m3u/accounts/") {
+    return json(res, M3U_ACCOUNTS);
   }
 
   // Channel profiles
@@ -634,6 +707,20 @@ function handleRequest(req, res) {
   // Stream (mock)
   if (path.startsWith("/proxy/ts/stream/")) {
     return json(res, { detail: "Mock server does not provide streams." }, 404);
+  }
+
+  // Switch the source an active channel is playing
+  const changeStreamMatch = path.match(/^\/proxy\/ts\/change_stream\/(.+)$/);
+  if (changeStreamMatch && req.method === "POST") {
+    const channel = CHANNELS.find((c) => c.uuid === changeStreamMatch[1]);
+    if (!channel) return notFound(res);
+    const streamId = parseInt(req.body?.stream_id, 10);
+    const stream = streamsForChannel(channel).find((s) => s.id === streamId);
+    if (!stream) {
+      return json(res, { error: "Stream not found", stream_id: req.body?.stream_id }, 404);
+    }
+    ACTIVE_STREAM.set(channel.id, stream.id);
+    return json(res, { message: "Stream changed successfully", stream_id: stream.id });
   }
 
   // Proxy status (0.24.0+ shape)
