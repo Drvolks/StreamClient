@@ -32,6 +32,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     private var channelIdToLogoId: [Int: Int] = [:]
     /// Maps channel id → UUID for stream URLs
     private var channelIdToUUID: [Int: String] = [:]
+    /// Maps channel UUID → channel id. The proxy status API reports UUIDs, while the
+    /// channel REST endpoints take ids, so stream switching needs the reverse lookup.
+    private var uuidToChannelId: [String: Int] = [:]
     /// Direct logo URLs from M3U/XC parsing, keyed by channel ID
     private var channelLogoURLs: [Int: String] = [:]
     /// Channel groups extracted from M3U group-title or XC categories
@@ -71,6 +74,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         useOutputEndpoints = false
         tvgIdToChannelIds = [:]
         epgDataIdToChannelIds = [:]
+        channelIdToUUID = [:]
+        uuidToChannelId = [:]
         isAuthenticated = false
     }
 
@@ -886,6 +891,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         epgDataIdToChannelIds = [:]
         channelIdToLogoId = [:]
         channelIdToUUID = [:]
+        uuidToChannelId = [:]
         for ch in items {
             if let tvgId = ch.tvgId, !tvgId.isEmpty {
                 tvgIdToChannelIds[tvgId, default: []].appendIfMissing(ch.id)
@@ -898,6 +904,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             }
             if let uuid = ch.uuid, !uuid.isEmpty {
                 channelIdToUUID[ch.id] = uuid
+                uuidToChannelId[uuid] = ch.id
                 tvgIdToChannelIds[uuid, default: []].appendIfMissing(ch.id)
             }
         }
@@ -973,6 +980,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         epgDataIdToChannelIds = [:]
         channelIdToLogoId = [:]
         channelIdToUUID = [:]
+        uuidToChannelId = [:]
         for ch in items {
             if let tvgId = ch.tvgId, !tvgId.isEmpty {
                 tvgIdToChannelIds[tvgId, default: []].appendIfMissing(ch.id)
@@ -985,6 +993,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             }
             if let uuid = ch.uuid, !uuid.isEmpty {
                 channelIdToUUID[ch.id] = uuid
+                uuidToChannelId[uuid] = ch.id
                 tvgIdToChannelIds[uuid, default: []].appendIfMissing(ch.id)
             }
         }
@@ -1670,6 +1679,51 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             throw PVRClientError.invalidResponse
         }
         return try await authenticatedRequest(url)
+    }
+
+    // MARK: - Stream Switching
+
+    /// Streams assigned to a channel, in the channel's configured order.
+    func getChannelStreams(channelId: Int) async throws -> [ChannelStream] {
+        guard !config.isDemoMode else { return [] }
+        if useOutputEndpoints { return [] }
+        guard let url = URL(string: "\(baseURL)/api/channels/channels/\(channelId)/streams/") else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequest(url)
+    }
+
+    /// Resolves a proxy channel UUID (as reported by `/proxy/ts/status`) to its
+    /// Dispatcharr channel id. Uses the map built while loading channels, falling
+    /// back to the `by-uuids` endpoint when the channel list hasn't been loaded yet.
+    func channelId(forUUID uuid: String) async -> Int? {
+        if let cached = uuidToChannelId[uuid] { return cached }
+        guard !config.isDemoMode, !useOutputEndpoints else { return nil }
+        guard let url = URL(string: "\(baseURL)/api/channels/channels/by-uuids/"),
+              let body = try? JSONSerialization.data(withJSONObject: ["uuids": [uuid]]) else { return nil }
+        guard let channels: [DispatcharrChannel] = try? await authenticatedRequest(url, method: "POST", body: body) else {
+            return nil
+        }
+        for channel in channels {
+            if let channelUUID = channel.uuid, !channelUUID.isEmpty {
+                uuidToChannelId[channelUUID] = channel.id
+                channelIdToUUID[channel.id] = channelUUID
+            }
+        }
+        return uuidToChannelId[uuid]
+    }
+
+    /// Switches the source an active channel is streaming from (admin only).
+    func switchStream(channelUUID: String, streamId: Int) async throws {
+        guard !config.isDemoMode else { return }
+        guard !useOutputEndpoints else {
+            throw PVRClientError.apiError("Stream switching requires API access")
+        }
+        guard let url = URL(string: "\(baseURL)/proxy/ts/change_stream/\(channelUUID)"),
+              let body = try? JSONSerialization.data(withJSONObject: ["stream_id": streamId]) else {
+            throw PVRClientError.invalidResponse
+        }
+        _ = try await authenticatedRequestData(url, method: "POST", body: body)
     }
 
     // MARK: - M3U Accounts

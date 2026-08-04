@@ -34,6 +34,9 @@ struct StatsView: View {
                 header
                     .padding(.horizontal)
 
+                switchErrorBanner
+                    .padding(.horizontal)
+
                 if vm.isLoading && vm.channels.isEmpty && vm.m3uAccounts.isEmpty {
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 200)
@@ -44,7 +47,7 @@ struct StatsView: View {
                 } else {
                     LazyVStack(spacing: Theme.spacingMD) {
                         ForEach(vm.channels) { channel in
-                            ChannelStatusCard(channel: channel, profileNameLookup: { vm.profileName(forId: $0) })
+                            card(for: channel)
                         }
                     }
                     .padding(.horizontal)
@@ -77,6 +80,9 @@ struct StatsView: View {
                 header
                     .padding(.horizontal, 80)
 
+                switchErrorBanner
+                    .padding(.horizontal, 80)
+
                 if vm.isLoading && vm.channels.isEmpty && vm.m3uAccounts.isEmpty {
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 300)
@@ -89,7 +95,7 @@ struct StatsView: View {
                 } else {
                     LazyVStack(spacing: Theme.spacingLG) {
                         ForEach(vm.channels) { channel in
-                            ChannelStatusCard(channel: channel, profileNameLookup: { vm.profileName(forId: $0) })
+                            card(for: channel)
                         }
                     }
                     .padding(.horizontal, 80)
@@ -128,6 +134,44 @@ struct StatsView: View {
     #endif
 
     // MARK: - Shared Components
+
+    /// Builds a channel card, wiring the stream switcher when the user is
+    /// allowed to change sources (#116).
+    private func card(for channel: ProxyChannelStatus) -> some View {
+        let canSwitch = vm.canSwitchStreams(client: client, appState: appState)
+        return ChannelStatusCard(
+            channel: channel,
+            profileNameLookup: { vm.profileName(forId: $0) },
+            streams: canSwitch ? vm.streams(for: channel) : [],
+            activeStreamId: vm.activeStreamId(for: channel),
+            isSwitchingStream: vm.isSwitching(channel),
+            accountNameLookup: { vm.m3uAccountName(forId: $0) },
+            onSelectStream: canSwitch ? { stream in
+                Task { await vm.switchStream(channel: channel, to: stream, client: client, appState: appState) }
+            } : nil
+        )
+        .task(id: channel.id) {
+            guard canSwitch else { return }
+            await vm.loadStreams(for: channel, client: client)
+        }
+    }
+
+    @ViewBuilder
+    private var switchErrorBanner: some View {
+        if let message = vm.switchError {
+            HStack(spacing: Theme.spacingSM) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.warning)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+            }
+            .padding()
+            .background(Theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+        }
+    }
 
     private var header: some View {
         HStack {
@@ -266,6 +310,12 @@ struct M3UAccountRow: View {
 struct ChannelStatusCard: View {
     let channel: ProxyChannelStatus
     var profileNameLookup: ((Int) -> String?)? = nil
+    /// Streams the channel can play. Empty hides the switcher (#116).
+    var streams: [ChannelStream] = []
+    var activeStreamId: Int? = nil
+    var isSwitchingStream = false
+    var accountNameLookup: ((Int) -> String?)? = nil
+    var onSelectStream: ((ChannelStream) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacingMD) {
@@ -288,6 +338,17 @@ struct ChannelStatusCard: View {
                 statsRows
             }
             #endif
+
+            // Stream switcher
+            if let onSelectStream, !streams.isEmpty {
+                StreamSelectorView(
+                    streams: streams,
+                    activeStreamId: activeStreamId,
+                    isSwitching: isSwitchingStream,
+                    accountNameLookup: accountNameLookup,
+                    onSelect: onSelectStream
+                )
+            }
 
             // Connected clients
             if let clients = channel.clients, !clients.isEmpty {
