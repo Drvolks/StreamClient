@@ -29,6 +29,10 @@ nonisolated struct UserPreferences: Codable {
     var landingTabRawValue: String = LandingTabOption.defaultRawValue
     /// When true, all recording features (tabs, menus, buttons) are hidden (#110).
     var hideRecordings: Bool = false
+    /// Persisted raw value of the appearance override (#108). Stored as a
+    /// `String` for the same reason as `landingTabRawValue`: this model stays
+    /// free of UI (SwiftUI) dependencies. Resolve via the `theme` property.
+    var themeRawValue: String = AppTheme.defaultRawValue
     var updatedAt: Date = .distantPast
 
     /// The GPU API for the current platform.
@@ -47,6 +51,35 @@ nonisolated struct UserPreferences: Codable {
     var landingTab: LandingTabOption {
         get { LandingTabOption(rawValue: landingTabRawValue) ?? .guide }
         set { landingTabRawValue = newValue.rawValue }
+    }
+
+    /// The appearance the app should use. The raw value is stored on disk so
+    /// this struct doesn't need to import SwiftUI.
+    var theme: AppTheme {
+        get { AppTheme(rawValue: themeRawValue) ?? .system }
+        set { themeRawValue = newValue.rawValue }
+    }
+
+    /// User-selectable appearance override (#108). Nested here for the same
+    /// reason as `LandingTabOption` — the tvOS Top Shelf extension shares
+    /// `UserPreferences.swift` but not its sibling Core/Models files.
+    nonisolated enum AppTheme: String, CaseIterable, Identifiable, Codable {
+        case system = "System"
+        case light = "Light"
+        case dark = "Dark"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .system: return "System"
+            case .light: return "Light"
+            case .dark: return "Dark"
+            }
+        }
+
+        /// The raw value used when no preference has been persisted.
+        static var defaultRawValue: String { AppTheme.system.rawValue }
     }
 
     /// User-selectable landing page option. Nested inside `UserPreferences`
@@ -94,6 +127,7 @@ nonisolated struct UserPreferences: Codable {
         case guideProfileIds
         case landingTabRawValue
         case hideRecordings
+        case themeRawValue
         case updatedAt
     }
 
@@ -125,6 +159,7 @@ nonisolated struct UserPreferences: Codable {
         guideProfileIds = try container.decodeIfPresent([Int].self, forKey: .guideProfileIds) ?? []
         landingTabRawValue = try container.decodeIfPresent(String.self, forKey: .landingTabRawValue) ?? LandingTabOption.defaultRawValue
         hideRecordings = try container.decodeIfPresent(Bool.self, forKey: .hideRecordings) ?? false
+        themeRawValue = try container.decodeIfPresent(String.self, forKey: .themeRawValue) ?? AppTheme.defaultRawValue
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
@@ -147,6 +182,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(guideProfileIds, forKey: .guideProfileIds)
         try container.encode(landingTabRawValue, forKey: .landingTabRawValue)
         try container.encode(hideRecordings, forKey: .hideRecordings)
+        try container.encode(themeRawValue, forKey: .themeRawValue)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 

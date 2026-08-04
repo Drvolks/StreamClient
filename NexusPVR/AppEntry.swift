@@ -55,6 +55,19 @@ struct PVRApp: App {
                 #if !os(macOS)
                 .ignoresSafeArea()
                 #endif
+                // Appearance override (#108). `nil` follows the device setting.
+                .preferredColorScheme(appState.theme.colorScheme)
+                #if os(macOS)
+                .onAppear { applyAppearance(appState.theme) }
+                .onChange(of: appState.theme) { _, newTheme in applyAppearance(newTheme) }
+                #endif
+                .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
+                    // Picks up a theme changed on another device via iCloud.
+                    let theme = UserPreferences.load().theme
+                    if theme != appState.theme {
+                        appState.theme = theme
+                    }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: NSUbiquitousKeyValueStore.didChangeExternallyNotification)) { _ in
                     // Reload server config if it changed from iCloud.
                     // Skip if the user just unlinked — the iCloud removal
@@ -80,6 +93,14 @@ struct PVRApp: App {
         .defaultSize(width: 1200, height: 800)
         #endif
     }
+
+    #if os(macOS)
+    /// Applies the theme to the AppKit layer so the title bar, menus and
+    /// popovers follow the override too (#108).
+    private func applyAppearance(_ theme: AppTheme) {
+        NSApplication.shared.appearance = theme.nsAppearance
+    }
+    #endif
 
     private func validateAuthenticationOnForeground() {
         guard client.isConfigured else { return }

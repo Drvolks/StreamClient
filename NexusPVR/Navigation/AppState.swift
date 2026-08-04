@@ -99,6 +99,10 @@ final class AppState: ObservableObject {
         didSet { reconcileSelectedTabForCurrentAccess() }
     }
 
+    /// The appearance the user chose in Settings (#108). Applied at the root
+    /// of the scene so a change takes effect immediately, without a relaunch.
+    @Published var theme: AppTheme = UserPreferences.load().theme
+
     /// Whether recording-related UI (tabs, menus, buttons) should be shown.
     var showsRecordings: Bool { userLevel >= 1 && !hideRecordings }
 

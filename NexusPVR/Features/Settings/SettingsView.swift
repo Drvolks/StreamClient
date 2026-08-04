@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
+    @State private var theme: AppTheme = UserPreferences.load().theme
     #if DISPATCHERPVR
     @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
     @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
@@ -60,6 +61,7 @@ struct SettingsView: View {
         case renderer
         case landingTab
         case hideRecordings
+        case theme
     }
     #endif
 
@@ -160,6 +162,13 @@ struct SettingsView: View {
                                 icon: "house.fill"
                             ) {
                                 activeTVPopup = .landingTab
+                            }
+                            tvSettingsRow(
+                                title: "Theme",
+                                value: theme.label,
+                                icon: theme.icon
+                            ) {
+                                activeTVPopup = .theme
                             }
                             tvSettingsRow(
                                 title: "Hide Recording Features",
@@ -683,6 +692,8 @@ struct SettingsView: View {
             return "Landing Page"
         case .hideRecordings:
             return "Hide Recording Features"
+        case .theme:
+            return "Theme"
         }
     }
 
@@ -824,6 +835,17 @@ struct SettingsView: View {
                     saveHideRecordings(false)
                 }
             ]
+        case .theme:
+            return AppTheme.allCases.map { option in
+                TVPopupOption(
+                    id: "settings-popup-theme-\(option.rawValue)",
+                    title: option.label,
+                    isCurrent: theme == option,
+                    isDestructive: false
+                ) {
+                    saveTheme(option)
+                }
+            }
         }
     }
 
@@ -842,12 +864,19 @@ struct SettingsView: View {
             }
             .accessibilityIdentifier("settings-landing-page-picker")
 
+            Picker("Theme", selection: themeSelection) {
+                ForEach(AppTheme.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .accessibilityIdentifier("settings-theme-picker")
+
             Toggle("Hide Recording Features", isOn: hideRecordingsSelection)
                 .accessibilityIdentifier("settings-hide-recordings-toggle")
         } header: {
             Text("General")
         } footer: {
-            Text("Choose which page opens when the app launches. Hiding recording features removes all recording menus and buttons from the app.")
+            Text("Choose which page opens when the app launches. Theme overrides the device appearance — System follows your device setting. Hiding recording features removes all recording menus and buttons from the app.")
         }
     }
 
@@ -855,6 +884,13 @@ struct SettingsView: View {
         Binding(
             get: { displayedLandingTab },
             set: { newValue in saveLandingTab(newValue) }
+        )
+    }
+
+    private var themeSelection: Binding<AppTheme> {
+        Binding(
+            get: { theme },
+            set: { newValue in saveTheme(newValue) }
         )
     }
 
@@ -881,6 +917,15 @@ struct SettingsView: View {
         prefs.landingTab = option
         prefs.save()
         NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
+
+    private func saveTheme(_ option: AppTheme) {
+        theme = option
+        var prefs = UserPreferences.load()
+        prefs.theme = option
+        prefs.save()
+        // Apply immediately so the appearance changes without a relaunch.
+        appState.theme = option
     }
 
     private func saveHideRecordings(_ hidden: Bool) {
