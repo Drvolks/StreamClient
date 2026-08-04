@@ -460,7 +460,11 @@ struct SearchResultRowTV: View {
     private func playExistingRecording(_ recording: Recording) {
         Task {
             do {
-                let url = try await client.recordingStreamURL(recordingId: recording.id)
+                let url = try await appState.preparingStream {
+
+                    try await client.recordingStreamURL(recordingId: recording.id)
+
+                }
                 appState.playStream(
                     url: url,
                     title: recording.name,

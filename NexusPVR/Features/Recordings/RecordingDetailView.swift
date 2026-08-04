@@ -47,14 +47,18 @@ struct RecordingDetailView: View {
                     Text(error)
                 }
             }
+            .streamPreparingOverlay()
         #elseif os(iOS)
         if UIDevice.current.userInterfaceIdiom == .pad {
             iPadSheetContent
+                .streamPreparingOverlay()
         } else {
             iPhoneSheetContent
+                .streamPreparingOverlay()
         }
         #else
         macOSContent
+            .streamPreparingOverlay()
         #endif
     }
 

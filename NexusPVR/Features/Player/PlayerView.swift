@@ -75,6 +75,16 @@ struct PlayerView: View {
     #if os(tvOS)
     @State private var tvFocusedTrackIndex: Int = -1  // -1 = tabs focused, 0+ = track list index
     #endif
+    @State private var liveKeepaliveTask: Task<Void, Never>?
+    @State private var reloadURLFunc: ((URL) -> Void)?
+    /// Latest server-side buffer state, plus when it arrived so the live edge can be
+    /// extrapolated between polls (the buffer grows in real time).
+    @State private var liveStreamInfo: LiveStreamInfo?
+    @State private var liveStreamInfoAt: Date = .distantPast
+    /// Buffer position (seconds from buffer start) that the current stream begins at.
+    /// Non-zero after a live seek, since reopening at a byte offset resets mpv to 0.
+    @State private var liveBaseOffset: Double = 0
+    @State private var isLiveSeeking = false
     @State private var isBuffering = false
     @State private var lastBufferingCheckPosition: Double = -1
     @State private var bufferingStallCount = 0
@@ -129,6 +139,7 @@ struct PlayerView: View {
                 seekForward: $seekForward,
                 seekBackward: $seekBackward,
                 seekToPosition: $seekToPositionFunc,
+                reloadURL: $reloadURLFunc,
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
@@ -217,6 +228,7 @@ struct PlayerView: View {
                 seekForward: $seekForward,
                 seekBackward: $seekBackward,
                 seekToPosition: $seekToPositionFunc,
+                reloadURL: $reloadURLFunc,
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
@@ -271,6 +283,7 @@ struct PlayerView: View {
                 seekForward: $seekForward,
                 seekBackward: $seekBackward,
                 seekToPosition: $seekToPositionFunc,
+                reloadURL: $reloadURLFunc,
                 seekBackwardTime: seekBackwardTime,
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
@@ -383,7 +396,8 @@ struct PlayerView: View {
                         ? geo.size.width / videoAspect
                         : geo.size.height
                     let blackBarHeight = (geo.size.height - videoHeight) / 2
-                    let controlsOffset: CGFloat = showControls && !isLiveStream && duration > 0 ? 80 : 20
+                    let hasBottomControls = (!isLiveStream && duration > 0) || canSeekLive
+                    let controlsOffset: CGFloat = showControls && hasBottomControls ? 80 : 20
                     let bottomY = geo.size.height - blackBarHeight - controlsOffset
 
                     subtitleLabel(subtitleText, size: subPrefs.subtitleSize, showBackground: subPrefs.subtitleBackground)
@@ -494,6 +508,7 @@ struct PlayerView: View {
             // Prevent screen from sleeping during video playback
             UIApplication.shared.isIdleTimerDisabled = true
             #endif
+            startLiveKeepalive()
             #if DISPATCHERPVR
             startDispatchProfileRefreshLoop()
             #endif
@@ -512,13 +527,15 @@ struct PlayerView: View {
             let session = activePlayerSession
             let nativePiPActive = isUsingPixelBufferRenderer && (session.isPiPActive || session.dismissingForPiP)
             if nativePiPActive {
-                // Don't stop player — mpv continues feeding PiP
+                // Don't stop player — mpv continues feeding PiP, so the server-side
+                // stream and its keepalive have to stay up too.
             } else {
                 cleanupAction?()
                 cleanupAction = nil
                 if appState.isShowingPlayer {
                     appState.stopPlayback()
                 }
+                endLiveStream()
             }
             #else
             cleanupAction?()
@@ -526,6 +543,7 @@ struct PlayerView: View {
             if appState.isShowingPlayer {
                 appState.stopPlayback()
             }
+            endLiveStream()
             #endif
             // Notify recordings list to refresh with updated progress.
             // Delay slightly so the async position save completes first.
@@ -624,6 +642,111 @@ struct PlayerView: View {
         }
     }
 
+    /// Renews the server-side live stream handle on a timer.
+    ///
+    /// NextPVR reclaims the tuner and deletes the timeshift buffer after 15
+    /// seconds without a renewal. While playing, mpv's socket reads mask this;
+    /// once paused, mpv fills its demuxer cache and stops reading, so without
+    /// this loop the stream is torn down mid-pause and resume plays only the
+    /// local cache before dying (issue #120).
+    ///
+    /// Runs for the whole live session rather than only while paused — the
+    /// renewal contract doesn't care whether we're reading, and the request is
+    /// cheap. Ticks well under the 15s expiry so one slow or failed renewal
+    /// can't lose the stream; the client throttles the buffer-state call it
+    /// piggybacks on this loop.
+    private func startLiveKeepalive() {
+        liveKeepaliveTask?.cancel()
+        liveStreamInfo = nil
+        liveStreamInfoAt = .distantPast
+        liveBaseOffset = 0
+        guard isLiveStream else {
+            liveKeepaliveTask = nil
+            return
+        }
+        liveKeepaliveTask = Task {
+            while !Task.isCancelled {
+                if let info = try? await client.renewLiveStream() {
+                    liveStreamInfo = info
+                    liveStreamInfoAt = Date()
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    // MARK: - Live timeshift buffer
+
+    /// Length of the server-side buffer, extrapolated from the last poll — it grows
+    /// in real time, so waiting for the next 10s `stream.info` would make the live
+    /// edge visibly stutter.
+    private var liveBufferDuration: Double {
+        guard let liveStreamInfo, liveStreamInfoAt > .distantPast else { return 0 }
+        return liveStreamInfo.streamDuration + Date().timeIntervalSince(liveStreamInfoAt)
+    }
+
+    /// Play position measured from the start of the buffer, not from the start of
+    /// the current stream — those differ once a seek has reopened at an offset.
+    private var livePlayPosition: Double {
+        liveBaseOffset + max(0, currentPosition)
+    }
+
+    private var secondsBehindLive: Double {
+        max(0, liveBufferDuration - livePlayPosition)
+    }
+
+    /// Live seeking needs a buffer with a usable byte-rate ratio, a way to reload,
+    /// and enough content to be worth offering.
+    private var canSeekLive: Bool {
+        isLiveStream
+            && liveStreamInfo?.bytesPerSecond != nil
+            && reloadURLFunc != nil
+            && liveBufferDuration > Self.minimumLiveBuffer
+    }
+
+    /// Never seek right up to the write head — the last moments of the buffer may
+    /// not be fully flushed, which yields a truncated frame and an immediate EOF.
+    private static let liveEdgeMargin: Double = 8
+    private static let minimumLiveBuffer: Double = 30
+
+    /// Reopens the stream at `position` (seconds from buffer start). NextPVR can't
+    /// seek an open `/live` response, so this is a reload rather than an mpv seek.
+    private func seekLive(to position: Double) {
+        guard canSeekLive, let info = liveStreamInfo, let reload = reloadURLFunc else { return }
+
+        let target = min(max(0, position), max(0, liveBufferDuration - Self.liveEdgeMargin))
+        guard let offset = info.byteOffset(forPosition: target),
+              let url = client.liveStreamSeekURL(byteOffset: offset) else { return }
+
+        // mpv restarts at 0 in the reopened stream, so the buffer position it maps
+        // to has to be carried separately.
+        liveBaseOffset = target
+        currentPosition = 0
+        isLiveSeeking = true
+        reload(url)
+        isPlaying = true
+        scheduleHideControls()
+
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            isLiveSeeking = false
+        }
+    }
+
+    private func seekLiveBy(_ delta: Double) {
+        seekLive(to: livePlayPosition + delta)
+    }
+
+    /// Stops renewing and releases the server-side stream so the tuner is freed
+    /// right away instead of after the renewal timeout. Not called while PiP is
+    /// still playing.
+    private func endLiveStream() {
+        liveKeepaliveTask?.cancel()
+        liveKeepaliveTask = nil
+        guard isLiveStream else { return }
+        Task { await client.stopLiveStream() }
+    }
+
     /// Detects when playback has stalled (position not advancing while
     /// playing) and triggers a stream reload to recover.
     private func detectBuffering() {
@@ -702,9 +825,11 @@ struct PlayerView: View {
 
             Spacer()
 
-            // Bottom controls: progress bar and time (recordings only)
+            // Bottom controls: progress bar and time
             if !isLiveStream && duration > 0 {
                 bottomControls
+            } else if canSeekLive {
+                liveBottomControls
             }
         }
         .background(
@@ -720,14 +845,19 @@ struct PlayerView: View {
 
     private var centerControls: some View {
         HStack(spacing: 48) {
-            if !isLiveStream {
+            if !isLiveStream || canSeekLive {
                 // Seek backward button
                 Button {
-                    seekBackward?()
+                    if isLiveStream {
+                        seekLiveBy(-Double(seekBackwardTime))
+                    } else {
+                        seekBackward?()
+                    }
                 } label: {
                     playerControlIcon(systemName: "gobackward.\(seekBackwardTime)", size: 40)
                 }
                 .buttonStyle(.plain)
+                .disabled(isLiveStream && livePlayPosition <= 0)
             }
 
             // Play/pause button
@@ -738,14 +868,31 @@ struct PlayerView: View {
             }
             .buttonStyle(.plain)
 
-            if !isLiveStream {
+            if !isLiveStream || canSeekLive {
                 // Seek forward button
                 Button {
-                    seekForward?()
+                    if isLiveStream {
+                        seekLiveBy(Double(seekForwardTime))
+                    } else {
+                        seekForward?()
+                    }
                 } label: {
                     playerControlIcon(systemName: "goforward.\(seekForwardTime)", size: 40)
                 }
                 .buttonStyle(.plain)
+                // Nothing to skip into once we're at the live edge.
+                .disabled(isLiveStream && secondsBehindLive <= Self.liveEdgeMargin)
+            }
+
+            if isLiveStream && canSeekLive {
+                // Jump to the live edge
+                Button {
+                    seekLive(to: liveBufferDuration)
+                } label: {
+                    playerControlIcon(systemName: "forward.end.alt.fill", size: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(secondsBehindLive <= Self.liveEdgeMargin)
             }
         }
     }
@@ -824,6 +971,77 @@ struct PlayerView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
+    }
+
+    /// Timeshift bar: spans the whole server-side buffer, from where it started
+    /// recording to the live edge, with the play position on it.
+    private var liveBottomControls: some View {
+        VStack(spacing: 8) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(height: 4)
+
+                    Rectangle()
+                        .fill(Theme.recording)
+                        .frame(width: liveProgressWidth(for: geometry.size.width), height: 4)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 14, height: 14)
+                        .offset(x: liveProgressWidth(for: geometry.size.width) - 7)
+                }
+                .frame(height: 14)
+                .contentShape(Rectangle())
+                #if !os(tvOS)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onEnded { value in
+                            let progress = max(0, min(1, value.location.x / geometry.size.width))
+                            seekLive(to: progress * liveBufferDuration)
+                        }
+                )
+                #endif
+            }
+            .frame(height: 14)
+
+            HStack {
+                Text(formatTime(livePlayPosition))
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+
+                Spacer()
+
+                if secondsBehindLive > Self.liveEdgeMargin {
+                    Text("-\(formatTime(secondsBehindLive)) behind live")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .monospacedDigit()
+                } else {
+                    Label("LIVE", systemImage: "dot.radiowaves.left.and.right")
+                        .font(.caption)
+                        .foregroundStyle(Theme.recording)
+                }
+
+                Spacer()
+
+                Text(formatTime(liveBufferDuration))
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 24)
+    }
+
+    private func liveProgressWidth(for totalWidth: CGFloat) -> CGFloat {
+        let buffer = liveBufferDuration
+        guard buffer > 0 else { return 0 }
+        let progress = livePlayPosition / buffer
+        return max(0, min(totalWidth, CGFloat(progress) * totalWidth))
     }
 
     private func progressWidth(for totalWidth: CGFloat) -> CGFloat {

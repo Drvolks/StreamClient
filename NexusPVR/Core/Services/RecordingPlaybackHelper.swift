@@ -15,7 +15,9 @@ enum RecordingPlaybackHelper {
         appState: AppState,
         dismiss: (() -> Void)? = nil
     ) async throws {
-        let url = try await client.recordingStreamURL(recordingId: recording.id)
+        let url = try await appState.preparingStream {
+            try await client.recordingStreamURL(recordingId: recording.id)
+        }
         appState.playStream(
             url: url,
             title: recording.name,
@@ -34,7 +36,9 @@ enum RecordingPlaybackHelper {
         dismiss: (() -> Void)? = nil
     ) async throws {
         try await client.setRecordingPosition(recordingId: recording.id, positionSeconds: 0)
-        let url = try await client.recordingStreamURL(recordingId: recording.id)
+        let url = try await appState.preparingStream {
+            try await client.recordingStreamURL(recordingId: recording.id)
+        }
         appState.playStream(
             url: url,
             title: recording.name,
@@ -54,7 +58,9 @@ enum RecordingPlaybackHelper {
         dismiss: (() -> Void)? = nil
     ) async throws {
         guard let channelId = recording.channelId else { return }
-        let url = try await client.liveStreamURL(channelId: channelId)
+        let url = try await appState.preparingStream {
+            try await client.liveStreamURL(channelId: channelId)
+        }
         appState.playStream(
             url: url,
             title: recording.name,

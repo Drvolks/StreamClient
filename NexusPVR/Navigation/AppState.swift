@@ -80,6 +80,12 @@ final class AppState: ObservableObject {
     @Published var alertMessage: String?
     @Published var isShowingAlert = false
 
+    /// True while a stream URL is being resolved, before the player can open.
+    /// For NextPVR live TV this covers starting the server-side timeshift buffer
+    /// and waiting for it to fill, which takes a few seconds — long enough that
+    /// without feedback it looks like the tap did nothing.
+    @Published var isPreparingStream = false
+
     #if DISPATCHERPVR
     // Active stream count for badge
     @Published var activeStreamCount = 0
@@ -334,6 +340,14 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Runs stream-URL resolution behind the "starting stream" indicator. Clears
+    /// the indicator however the work ends, so a thrown error can't leave it stuck.
+    func preparingStream<T>(_ work: () async throws -> T) async rethrows -> T {
+        isPreparingStream = true
+        defer { isPreparingStream = false }
+        return try await work()
+    }
+
     func playStream(
         url: URL,
         title: String,
@@ -365,6 +379,7 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelName = channelName
         currentlyPlayingIsRecordingInProgress = isRecordingInProgress
         currentlyPlayingRecordingStartTime = recordingStartTime
+        isPreparingStream = false
         isShowingPlayer = true
     }
 

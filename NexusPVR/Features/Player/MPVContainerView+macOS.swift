@@ -29,6 +29,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
     @Binding var seekForward: (() -> Void)?
     @Binding var seekBackward: (() -> Void)?
     @Binding var seekToPosition: ((Double) -> Void)?
+    @Binding var reloadURL: ((URL) -> Void)?
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
@@ -87,6 +88,9 @@ struct MPVContainerView: NSViewControllerRepresentable {
             }
             self.seekToPosition = { position in
                 controller.seekTo(position: position)
+            }
+            self.reloadURL = { newURL in
+                controller.loadURL(newURL)
             }
             self.getTrackListFunc = { controller.getTrackList() }
             self.setAudioTrackFunc = { controller.setAudioTrack($0) }

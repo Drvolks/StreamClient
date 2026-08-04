@@ -18,11 +18,23 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     private var sid: String?
     private let session: URLSession
     private let deviceName = Brand.deviceName
-    private let liveClientName: String
     private var authInProgress: Task<Void, Error>?
     private let networkEventLogger: any NetworkEventLogging
+    /// Channel of the live timeshift stream currently registered with the server,
+    /// so it can be released on teardown or channel change.
+    private var activeLiveChannelId: Int?
+    /// Set while `startLiveStream` polls for readiness, before the stream is marked
+    /// active — the readiness poll uses the same renewal call.
+    private var isStartingLiveStream = false
+    private var lastStreamInfoAt: Date = .distantPast
+    /// Base `/live` URL of the active timeshift stream, used to build seek URLs.
+    private var activeLiveStreamURL: URL?
 
-    private static let liveClientIDKey = "NextPVRLiveClientID"
+    /// How long to wait for the server-side buffer to fill before opening the
+    /// stream anyway.
+    private static let liveStreamReadyTimeout: TimeInterval = 5
+    /// Buffer-state polling cadence, matching Kodi's `LeaseWorker`.
+    private static let streamInfoInterval: TimeInterval = 10
 
     init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
         self.config = config ?? ServerConfig.load()
@@ -32,17 +44,6 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: configuration)
-        self.liveClientName = Self.makeLiveClientName()
-    }
-
-    private static func makeLiveClientName() -> String {
-        let defaults = UserDefaults.standard
-        if let existing = defaults.string(forKey: liveClientIDKey), !existing.isEmpty {
-            return "\(Brand.deviceName)-\(existing)"
-        }
-        let id = String(UUID().uuidString.prefix(8))
-        defaults.set(id, forKey: liveClientIDKey)
-        return "\(Brand.deviceName)-\(id)"
     }
 
     var baseURL: String {
@@ -682,21 +683,123 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
     // MARK: - Streaming URLs
 
+    /// Opens a live stream using NextPVR's client-timeshift protocol:
+    /// `channel.stream.start` registers a server-side timeshift buffer for this
+    /// session, which is what makes `channel.stream.info` renewals valid (issue #120).
+    ///
+    /// The alternative "realtime" shape (`client=<device>-<uuid>`, no stream.start)
+    /// has no renewal mechanism at all — the server reclaims the tuner 15s after the
+    /// client stops reading, which is exactly what happens when mpv pauses behind its
+    /// demuxer cache. Kodi makes the same split in `OpenLiveStream`; `client` being the
+    /// SID rather than a device name is what its timeshift path sends.
     func liveStreamURL(channelId: Int) async throws -> URL {
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
+
+        // Release any previous stream before rotating the SID, otherwise the old
+        // handle lingers until the server times it out and may hold a tuner.
+        await stopLiveStream()
+
         try await refreshSessionForStreaming()
         guard let sid else { throw NextPVRError.sessionExpired }
+
+        // Degrade to the realtime shape if the server won't start a timeshift
+        // stream (older NextPVR, no free tuner). Playback still works; it just
+        // can't survive a long pause, which is the pre-existing behaviour.
+        let timeshifted = await startLiveStream(channelId: channelId)
+        activeLiveChannelId = timeshifted ? channelId : nil
 
         var components = URLComponents(string: "\(baseURL)/live")
         components?.queryItems = [
             URLQueryItem(name: "channeloid", value: String(channelId)),
-            URLQueryItem(name: "client", value: liveClientName),
+            URLQueryItem(name: "client", value: timeshifted ? sid : "\(deviceName)-\(sid)"),
             URLQueryItem(name: "sid", value: sid)
         ]
         guard let url = components?.url else {
             throw NextPVRError.invalidResponse
         }
+        activeLiveStreamURL = timeshifted ? url : nil
         return url
+    }
+
+    /// URL that replays the timeshift buffer from `byteOffset`, for seeking within
+    /// a live stream. NextPVR can't seek an open `/live` response, so the player has
+    /// to reopen at an offset — the same thing `ClientTimeShift::Seek` does. The
+    /// trailing `-` makes it an open-ended range.
+    ///
+    /// Returns nil when the stream isn't timeshifted, i.e. there's nothing to seek in.
+    func liveStreamSeekURL(byteOffset: Int64) -> URL? {
+        guard let base = activeLiveStreamURL,
+              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        var items = (components.queryItems ?? []).filter { $0.name != "seek" }
+        items.append(URLQueryItem(name: "seek", value: "\(max(0, byteOffset))-"))
+        components.queryItems = items
+        return components.url
+    }
+
+    /// Registers the server-side timeshift buffer and waits briefly for it to hold
+    /// enough data to be playable. Kodi waits for 50KB before opening the stream;
+    /// we cap the wait so a slow tuner can't stall the UI — mpv copes with an early
+    /// open, it just buffers a little longer.
+    ///
+    /// Returns whether the timeshift stream was registered. A failure is not fatal:
+    /// the caller falls back to a plain realtime stream.
+    private func startLiveStream(channelId: Int) async -> Bool {
+        do {
+            try await streamAction("channel.stream.start", params: ["channel_id": String(channelId)])
+        } catch {
+            print("[NextPVR] channel.stream.start failed, falling back to realtime "
+                + "stream (no pause keepalive): \(error.localizedDescription)")
+            return false
+        }
+
+        isStartingLiveStream = true
+        defer { isStartingLiveStream = false }
+        lastStreamInfoAt = .distantPast
+
+        let deadline = Date().addingTimeInterval(Self.liveStreamReadyTimeout)
+        while Date() < deadline {
+            if let info = try? await fetchStreamInfo(), info.streamLength > 50_000 {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        return true
+    }
+
+    /// Releases the server-side timeshift buffer so the tuner is freed immediately
+    /// rather than after the 15s renewal timeout. Best-effort: teardown must not
+    /// throw or block.
+    func stopLiveStream() async {
+        guard !config.isDemoMode, activeLiveChannelId != nil else { return }
+        activeLiveChannelId = nil
+        activeLiveStreamURL = nil
+        try? await streamAction("channel.stream.stop")
+    }
+
+    /// Issues one of the `channel.stream.*` methods. These live under `/service`
+    /// (not `/services/service` like every other method here) and answer raw XML.
+    private func streamAction(_ method: String, params: [String: String] = [:]) async throws {
+        guard let sid else { throw NextPVRError.sessionExpired }
+
+        var components = URLComponents(string: "\(baseURL)/service")!
+        var items = [
+            URLQueryItem(name: "method", value: method),
+            URLQueryItem(name: "sid", value: sid)
+        ]
+        for (key, value) in params {
+            items.append(URLQueryItem(name: key, value: value))
+        }
+        components.queryItems = items
+        guard let url = components.url else {
+            throw NextPVRError.invalidResponse
+        }
+
+        let (_, response) = try await loggedData(from: url)
+        if let status = (response as? HTTPURLResponse)?.statusCode, !(200...299).contains(status) {
+            throw NextPVRError.apiError("\(method) failed with HTTP \(status)")
+        }
     }
 
     func recordingStreamURL(recordingId: Int) async throws -> URL {
@@ -707,6 +810,83 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             throw NextPVRError.invalidResponse
         }
         return url
+    }
+
+    /// Renews the live stream handle. NextPVR expires a live stream (releasing the
+    /// tuner and deleting the timeshift buffer) if the client goes 15 seconds without
+    /// a renewal, which is what happens once mpv stops reading the socket on pause.
+    ///
+    /// `channel.transcode.lease` is the renewal — `channel.stream.info` only reports
+    /// state, so polling it alone lets the stream expire mid-playback. Kodi's
+    /// `LeaseWorker` sends the lease every 7s and stream.info every 10s; this mirrors
+    /// that, with the info call throttled since it's only for buffer state.
+    ///
+    /// Deliberately never rotates the SID: the renewal has to target the session that
+    /// opened `/live`, so calling `refreshSessionForStreaming()` here would orphan the
+    /// handle we're trying to keep alive.
+    @discardableResult
+    func renewLiveStream() async throws -> LiveStreamInfo? {
+        guard !config.isDemoMode else { return nil }
+        // Nothing to renew when the stream fell back to realtime — the server would
+        // just 404, once every keepalive tick.
+        guard activeLiveChannelId != nil || isStartingLiveStream else { return nil }
+
+        // Tolerate a failed lease rather than dropping out of the loop: a server that
+        // doesn't implement it shouldn't stop us fetching buffer state.
+        do {
+            try await streamAction("channel.transcode.lease")
+        } catch {
+            print("[NextPVR] channel.transcode.lease failed: \(error.localizedDescription)")
+        }
+
+        guard Date().timeIntervalSince(lastStreamInfoAt) >= Self.streamInfoInterval else {
+            return nil
+        }
+        lastStreamInfoAt = Date()
+        return try await fetchStreamInfo()
+    }
+
+    /// Fetches the timeshift buffer state. Reports only — does not renew the handle.
+    @discardableResult
+    private func fetchStreamInfo() async throws -> LiveStreamInfo? {
+        guard let sid else { throw NextPVRError.sessionExpired }
+
+        // NextPVR only routes this method under `/service` — `/services/service`
+        // (used by every other method here) answers 404.
+        var components = URLComponents(string: "\(baseURL)/service")!
+        components.queryItems = [
+            URLQueryItem(name: "method", value: "channel.stream.info"),
+            URLQueryItem(name: "sid", value: sid)
+        ]
+        guard let url = components.url else {
+            throw NextPVRError.invalidResponse
+        }
+
+        let (data, response) = try await loggedData(from: url)
+        if let status = (response as? HTTPURLResponse)?.statusCode, !(200...299).contains(status) {
+            // A 404 here means the server already dropped the stream — surface it
+            // rather than returning a silent nil.
+            throw NextPVRError.apiError("channel.stream.info failed with HTTP \(status)")
+        }
+        // An unparseable body isn't fatal; it just means no buffer state this tick.
+        return Self.parseStreamInfo(data)
+    }
+
+    /// Parses the `<map>` document returned by `channel.stream.info`. This method
+    /// answers with raw XML rather than the usual JSON method response, so it can't
+    /// go through `request(_:params:)`.
+    nonisolated static func parseStreamInfo(_ data: Data) -> LiveStreamInfo? {
+        let parser = StreamInfoXMLParser()
+        guard parser.parse(data),
+              let duration = parser.streamDuration,
+              let length = parser.streamLength else {
+            return nil
+        }
+        return LiveStreamInfo(
+            streamDurationMs: duration,
+            streamLength: length,
+            isComplete: parser.isComplete ?? false
+        )
     }
 
     func streamAuthHeaders() -> [String: String] {
