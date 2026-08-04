@@ -373,6 +373,25 @@ struct GuideView: View {
                 .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
                 Spacer()
 
+                // macOS has no pull-to-refresh gesture, so the guide gets an
+                // explicit refresh button next to the filter toggle (#118).
+                Button {
+                    Task { await refreshGuide() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+                .disabled(epgCache.isRefreshing)
+                .accessibilityLabel("Refresh guide")
+                .accessibilityIdentifier("guide-refresh-button")
+                .padding(.trailing, Theme.spacingSM)
+
                 #if DISPATCHERPVR
                 if hasFilterData {
                     Button {
@@ -700,6 +719,9 @@ struct GuideView: View {
                 .modifier(MacScrollDirectionalLockModifier())
                 #endif
             }
+            .refreshable {
+                await refreshGuide()
+            }
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 geo.containerSize.height
             } action: { _, new in
@@ -780,6 +802,7 @@ struct GuideView: View {
         case group
         case profile
         #endif
+        case refresh
     }
 
     private var tvHeaderItems: [TVGuideHeaderItem] {
@@ -787,6 +810,7 @@ struct GuideView: View {
         #if DISPATCHERPVR
         items.append(contentsOf: [.group, .profile])
         #endif
+        items.append(.refresh)
         return items
     }
 
@@ -1159,6 +1183,15 @@ struct GuideView: View {
                 isFocused: isFocused && focusedItem == .profile
             )
             #endif
+
+            // Reload channels + EPG from the server (#118)
+            tvOSHeaderField(
+                imageName: "arrow.clockwise",
+                isFocused: isFocused && focusedItem == .refresh,
+                isEnabled: !epgCache.isRefreshing
+            )
+            .accessibilityLabel("Refresh guide")
+            .accessibilityIdentifier("guide-refresh-button")
 
             Spacer()
         }
@@ -1536,6 +1569,10 @@ struct GuideView: View {
             endTVSearchEditing()
             openHeaderDrawer(.profile)
         #endif
+        case .refresh:
+            guard !epgCache.isRefreshing else { return }
+            endTVSearchEditing()
+            Task { await refreshGuide() }
         }
     }
 
@@ -1775,6 +1812,14 @@ struct GuideView: View {
         if let targetHour = viewModel.hoursToShow.first(where: { calendar.component(.hour, from: $0) == targetHourComponent }) {
             scrollTargetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
         }
+    }
+
+    /// Pull-to-refresh (iOS/macOS) and the tvOS refresh button both land here:
+    /// re-fetch channels/EPG/recordings so server-side changes show up without
+    /// restarting the app (#118).
+    private func refreshGuide() async {
+        await viewModel.refresh(using: client)
+        viewModel.updateKeywordMatches(keywords: keywords)
     }
 
     private func refreshRecordings() async {

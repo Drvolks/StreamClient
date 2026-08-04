@@ -184,6 +184,18 @@ final class GuideViewModel: ObservableObject {
         }
     }
 
+    /// User-initiated refresh of the guide: re-fetch channels + EPG from the
+    /// server (so channels added server-side appear) and reload recordings.
+    /// The grid keeps showing the current data while this runs.
+    func refresh(using client: PVRClient) async {
+        guard let cache = epgCache, client.isConfigured else { return }
+        sportCache = [:]
+        await cache.refresh(using: client, profileId: selectedProfileId)
+        showChannelSearch = cache.channels.count > 25
+        error = cache.error
+        await reloadRecordings(client: client)
+    }
+
     /// Handle date navigation — ensure EPG data is cached for the new date
     func navigateToDate(using client: PVRClient) async {
         guard let cache = epgCache else { return }

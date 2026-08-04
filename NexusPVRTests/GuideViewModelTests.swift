@@ -175,6 +175,28 @@ struct GuideViewModelTests {
         #expect(vm.visiblePrograms(for: channel).isEmpty)
     }
 
+    // MARK: - refresh
+
+    @Test("refresh is a no-op when no EPGCache is attached")
+    func refreshWithoutCache() async {
+        let vm = GuideViewModel()
+        await vm.refresh(using: PVRClient(config: ServerConfig(host: "demo", pin: "", useHTTPS: false)))
+        #expect(vm.error == nil)
+        #expect(vm.hasLoaded == false)
+    }
+
+    @Test("refresh keeps cached channels when the server is not configured")
+    func refreshUnconfigured() async {
+        let vm = GuideViewModel()
+        let cache = EPGCache()
+        cache.visibleChannels = [Channel(id: 1, name: "A", number: 1)]
+        vm.epgCache = cache
+
+        await vm.refresh(using: PVRClient(config: ServerConfig(host: "", pin: "", useHTTPS: false)))
+
+        #expect(vm.channels.count == 1)
+    }
+
     // MARK: - updateKeywordMatches
 
     @Test("updateKeywordMatches clears the set when keywords are empty")

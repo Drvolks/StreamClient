@@ -255,6 +255,15 @@ struct ChannelsView: View {
         }
     }
 
+    /// Re-fetch channels + EPG so channels added server-side appear without
+    /// restarting the app (#118). Refreshes the unfiltered channel list —
+    /// profile/group narrowing stays client-side, as everywhere else on this
+    /// page.
+    private func refreshChannels() async {
+        await epgCache.refresh(using: client)
+        now = Date()
+    }
+
     private func tickCurrentTime() async {
         // Re-evaluate "current" once a minute so progress bars animate
         // and programs flip over as the day progresses.
@@ -408,6 +417,9 @@ struct ChannelsView: View {
             ScrollView {
                 cardsGrid
             }
+            .refreshable {
+                await refreshChannels()
+            }
         }
         #endif
     }
@@ -485,6 +497,8 @@ struct ChannelsView: View {
                 }
                 #endif
 
+                tvOSRefreshButton
+
                 Spacer()
             }
             .padding(.horizontal, Theme.spacingLG)
@@ -509,6 +523,22 @@ struct ChannelsView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
         .focusSection()
+    }
+
+    /// Reload channels + EPG from the server (#118). tvOS has no pull gesture,
+    /// so the refresh lives in the filter bar next to the search/filter fields.
+    private var tvOSRefreshButton: some View {
+        Button {
+            Task { await refreshChannels() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 16, weight: .semibold))
+        }
+        .buttonStyle(TVPillFieldButtonStyle(unfocusedForeground: Theme.textTertiary))
+        .focusEffectDisabled()
+        .disabled(epgCache.isRefreshing)
+        .accessibilityLabel("Refresh channels")
+        .accessibilityIdentifier("channels-refresh-button")
     }
 
     /// The visible search "field" is a focusable `Button` so it picks up the
@@ -799,6 +829,24 @@ struct ChannelsView: View {
                 .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
 
                 Spacer()
+
+                // macOS has no pull-to-refresh gesture, so the page gets an
+                // explicit refresh button next to the filter toggle (#118).
+                Button {
+                    Task { await refreshChannels() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+                .disabled(epgCache.isRefreshing)
+                .accessibilityLabel("Refresh channels")
+                .accessibilityIdentifier("channels-refresh-button")
 
                 #if DISPATCHERPVR
                 if hasFilterData {

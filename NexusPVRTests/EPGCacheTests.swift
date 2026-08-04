@@ -41,6 +41,30 @@ struct EPGCacheTests {
         #expect(cache.isFullyLoaded == false)
     }
 
+    // MARK: - Refresh
+
+    @Test("refresh keeps cached data when the server is not configured")
+    func refreshUnconfiguredKeepsData() async {
+        let cache = EPGCache()
+        cache.channels = makeChannels()
+        cache.visibleChannels = makeChannels()
+
+        await cache.refresh(using: PVRClient(config: ServerConfig(host: "", pin: "", useHTTPS: false)))
+
+        // Unlike reloadData (which invalidates first), refresh must never blank
+        // the grid — the user keeps seeing the channels they had.
+        #expect(cache.channels.count == 3)
+        #expect(cache.visibleChannels.count == 3)
+        #expect(cache.error != nil)
+        #expect(cache.isRefreshing == false)
+    }
+
+    @Test("isRefreshing initially false")
+    func isRefreshingInitiallyFalse() {
+        let cache = EPGCache()
+        #expect(cache.isRefreshing == false)
+    }
+
     // MARK: - Channel Filtering
 
     @Test("filteredChannels returns all when search is empty")
