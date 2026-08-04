@@ -123,7 +123,9 @@ struct PVRApp: App {
         case "recording":
             Task {
                 do {
-                    let streamURL = try await client.recordingStreamURL(recordingId: id)
+                    let streamURL = try await appState.preparingStream {
+                        try await client.recordingStreamURL(recordingId: id)
+                    }
                     appState.playStream(url: streamURL, title: "Recording", recordingId: id)
                 } catch {
                     appState.showAlert("Failed to play recording: \(error.localizedDescription)")
@@ -140,7 +142,9 @@ struct PVRApp: App {
                     if let directURL = channel?.streamURL, let url = URL(string: directURL) {
                         streamURL = url
                     } else {
-                        streamURL = try await client.liveStreamURL(channelId: id)
+                        streamURL = try await appState.preparingStream {
+                            try await client.liveStreamURL(channelId: id)
+                        }
                     }
                     appState.playStream(url: streamURL, title: channelName, channelId: id, channelName: channelName)
                 } catch {

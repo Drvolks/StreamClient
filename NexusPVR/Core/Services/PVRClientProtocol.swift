@@ -32,6 +32,16 @@ protocol PVRClientProtocol: ObservableObject {
     func getRecurringRecordings() async throws -> [RecurringRecording]
     func setRecordingPosition(recordingId: Int, positionSeconds: Int) async throws
     func liveStreamURL(channelId: Int) async throws -> URL
+    /// Renew the server-side live stream handle so the backend doesn't reclaim the
+    /// tuner while the client isn't reading (e.g. while paused). Returns the current
+    /// timeshift buffer state when the backend reports it.
+    /// Default is a no-op for backends that don't require renewals.
+    func renewLiveStream() async throws -> LiveStreamInfo?
+    /// Release any server-side live stream resources. Best-effort; must not throw.
+    func stopLiveStream() async
+    /// URL replaying the live buffer from `byteOffset`, or nil when the backend
+    /// has no seekable server-side buffer.
+    func liveStreamSeekURL(byteOffset: Int64) -> URL?
     func recordingStreamURL(recordingId: Int) async throws -> URL
     func streamAuthHeaders() -> [String: String]
     func channelIconURL(channelId: Int) throws -> URL?
@@ -47,4 +57,10 @@ extension PVRClientProtocol {
     func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
         try await getAllListings(for: channels)
     }
+
+    func renewLiveStream() async throws -> LiveStreamInfo? { nil }
+
+    func stopLiveStream() async {}
+
+    func liveStreamSeekURL(byteOffset: Int64) -> URL? { nil }
 }

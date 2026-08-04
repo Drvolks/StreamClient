@@ -334,6 +334,7 @@ function hslToRgb(h, s, l) {
 // ---------------------------------------------------------------------------
 
 const sessions = new Map();
+const LIVE_STREAM_TTL_MS = 15000;
 
 function createSession() {
   const sid = crypto.randomUUID().replace(/-/g, "").substring(0, 32);
@@ -413,6 +414,75 @@ function handleRequest(req, res) {
       programs = programs.filter((p) => p.end > startTs && p.start < endTs);
     }
     return json(res, { listings: programs });
+  }
+
+  // -- Client-timeshift live stream protocol --
+  // These three methods answer raw XML and are routed only under /service (not
+  // /services/service). channel.stream.info reports on a stream registered by
+  // channel.stream.start — 404 otherwise, which is how real NextPVR behaves and
+  // how the wrong client shape gets caught here instead of on a user's server.
+  if (
+    method &&
+    (method.startsWith("channel.stream.") || method === "channel.transcode.lease")
+  ) {
+    if (url.pathname !== "/service") {
+      return json(res, { stat: "fail", error: "Not found" }, 404);
+    }
+    const session = sessions.get(sid);
+
+    // A stream that hasn't been leased inside the window is gone, exactly as
+    // NextPVR reports it ("Live stream expired without 15 second renewal").
+    // Only the lease renews — stream.info reports state and must NOT count,
+    // otherwise the mock hides a client that polls the wrong method.
+    if (
+      session.liveStream &&
+      Date.now() - session.liveStream.leasedMs > LIVE_STREAM_TTL_MS
+    ) {
+      console.log("Live stream expired without renewal");
+      delete session.liveStream;
+    }
+
+    if (method === "channel.transcode.lease") {
+      if (!session.liveStream) {
+        return json(res, { stat: "fail", error: "No active stream" }, 404);
+      }
+      session.liveStream.leasedMs = Date.now();
+      return xml(res, `<rsp stat="ok"/>`);
+    }
+
+    if (method === "channel.stream.start") {
+      const channelId = parseInt(url.searchParams.get("channel_id") || "0", 10);
+      if (!channelId) {
+        return xml(res, `<rsp stat="fail"><err code="1"/></rsp>`, 400);
+      }
+      session.liveStream = {
+        channelId,
+        startedMs: Date.now(),
+        leasedMs: Date.now(),
+      };
+      return xml(res, `<rsp stat="ok"/>`);
+    }
+
+    if (method === "channel.stream.stop") {
+      delete session.liveStream;
+      return xml(res, `<rsp stat="ok"/>`);
+    }
+
+    if (method === "channel.stream.info") {
+      if (!session.liveStream) {
+        return json(res, { stat: "fail", error: "No active stream" }, 404);
+      }
+      const elapsedMs = Date.now() - session.liveStream.startedMs;
+      return xml(
+        res,
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+          `<map>\n` +
+          `  <stream_duration>${elapsedMs}</stream_duration>\n` +
+          `  <stream_length>${Math.round((elapsedMs / 1000) * 500000)}</stream_length>\n` +
+          `  <complete>false</complete>\n` +
+          `</map>\n`
+      );
+    }
   }
 
   // -- Channel icon --
@@ -510,6 +580,14 @@ function json(res, data, status = 200) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
     "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function xml(res, body, status = 200) {
+  res.writeHead(status, {
+    "Content-Type": "text/xml",
     "Content-Length": Buffer.byteLength(body),
   });
   res.end(body);

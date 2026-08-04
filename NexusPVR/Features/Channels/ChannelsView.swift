@@ -447,7 +447,9 @@ struct ChannelsView: View {
                 // valid session, so preferring it can produce unplayable
                 // URLs. The PVR client knows the correct base URL, query
                 // parameters, and session for live playback.
-                let url = try await client.liveStreamURL(channelId: channel.id)
+                let url = try await appState.preparingStream {
+                    try await client.liveStreamURL(channelId: channel.id)
+                }
                 appState.playStream(
                     url: url,
                     title: "\(channel.name) - \(programName)",

@@ -1603,7 +1603,11 @@ private struct RecordingsListContentView: View {
         Task {
             do {
                 // Use viewModel.playRecording for URL (handles stream URL logic)
-                let url = try await viewModel.playRecording(recording)
+                let url = try await appState.preparingStream {
+
+                    try await viewModel.playRecording(recording)
+
+                }
                 appState.playStream(
                     url: url,
                     title: recording.name,

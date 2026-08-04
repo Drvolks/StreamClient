@@ -295,7 +295,9 @@ struct GuideView: View {
     private func playLiveChannel(_ channel: Channel) {
         Task {
             do {
-                let url = try await client.liveStreamURL(channelId: channel.id)
+                let url = try await appState.preparingStream {
+                    try await client.liveStreamURL(channelId: channel.id)
+                }
                 appState.playStream(url: url, title: channel.name, channelId: channel.id, channelName: channel.name)
             } catch {
                 streamError = error.localizedDescription
@@ -1676,7 +1678,11 @@ struct GuideView: View {
                         Button {
                             Task {
                                 do {
-                                    let url = try await client.recordingStreamURL(recordingId: recId)
+                                    let url = try await appState.preparingStream {
+
+                                        try await client.recordingStreamURL(recordingId: recId)
+
+                                    }
                                     appState.playStream(url: url, title: program.name, recordingId: recId)
                                 } catch {
                                     streamError = error.localizedDescription

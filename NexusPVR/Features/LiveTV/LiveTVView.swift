@@ -155,7 +155,9 @@ struct LiveTVView: View {
     private func playChannel(_ channel: Channel, vm: LiveTVViewModel) {
         Task {
             do {
-                let url = try await vm.streamURL(for: channel)
+                let url = try await appState.preparingStream {
+                    try await vm.streamURL(for: channel)
+                }
                 let programName = vm.currentProgram(for: channel)?.name ?? "Live"
                 appState.playStream(url: url, title: "\(channel.name) - \(programName)", channelId: channel.id, channelName: channel.name)
             } catch {

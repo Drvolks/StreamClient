@@ -69,6 +69,7 @@ struct ContentView: View {
                 #endif
             }
         }
+        .streamPreparingOverlay()
         #if !os(tvOS)
         .sheet(item: $sheetConfig) { config in
             ServerConfigView(prefillConfig: config.prefill)

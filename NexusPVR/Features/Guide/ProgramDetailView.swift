@@ -59,11 +59,14 @@ struct ProgramDetailView: View {
             .task {
                 await checkIfScheduled()
             }
+            .streamPreparingOverlay()
         #elseif os(iOS)
         if UIDevice.current.userInterfaceIdiom == .pad {
             iPadSheetContent
+                .streamPreparingOverlay()
         } else {
             iPhoneSheetContent
+                .streamPreparingOverlay()
         }
         #else
         NavigationStack {
@@ -85,6 +88,7 @@ struct ProgramDetailView: View {
         .task {
             await checkIfScheduled()
         }
+        .streamPreparingOverlay()
         #endif
     }
 
@@ -700,7 +704,11 @@ struct ProgramDetailView: View {
     private func playRecording(_ recording: Recording) {
         Task {
             do {
-                let url = try await client.recordingStreamURL(recordingId: recording.id)
+                let url = try await appState.preparingStream {
+
+                    try await client.recordingStreamURL(recordingId: recording.id)
+
+                }
                 appState.playStream(
                     url: url,
                     title: recording.name,
@@ -718,7 +726,11 @@ struct ProgramDetailView: View {
         Task {
             do {
                 try await client.setRecordingPosition(recordingId: recording.id, positionSeconds: 0)
-                let url = try await client.recordingStreamURL(recordingId: recording.id)
+                let url = try await appState.preparingStream {
+
+                    try await client.recordingStreamURL(recordingId: recording.id)
+
+                }
                 appState.playStream(
                     url: url,
                     title: recording.name,
@@ -737,7 +749,9 @@ struct ProgramDetailView: View {
     private func watchLive() {
         Task {
             do {
-                let url = try await client.liveStreamURL(channelId: channel.id)
+                let url = try await appState.preparingStream {
+                    try await client.liveStreamURL(channelId: channel.id)
+                }
                 appState.playStream(url: url, title: "\(channel.name) - \(program.name)", channelId: channel.id, channelName: channel.name)
                 dismiss()
             } catch {

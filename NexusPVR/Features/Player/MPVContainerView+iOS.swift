@@ -23,6 +23,7 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var seekForward: (() -> Void)?
     @Binding var seekBackward: (() -> Void)?
     @Binding var seekToPosition: ((Double) -> Void)?
+    @Binding var reloadURL: ((URL) -> Void)?
     let seekBackwardTime: Int
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
@@ -89,6 +90,9 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.reloadURL = { newURL in
+                view.loadURL(newURL)
+            }
             self.getTrackListFunc = { view.getTrackList() }
             self.setAudioTrackFunc = { view.setAudioTrack($0) }
             self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
@@ -109,6 +113,9 @@ struct MPVContainerView: UIViewRepresentable {
             self.seekToPosition = { position in
                 view.seekTo(position: position)
             }
+            self.reloadURL = { newURL in
+                view.loadURL(newURL)
+            }
             self.getTrackListFunc = { view.getTrackList() }
             self.setAudioTrackFunc = { view.setAudioTrack($0) }
             self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
@@ -128,6 +135,9 @@ struct MPVContainerView: UIViewRepresentable {
             }
             self.seekToPosition = { position in
                 view.seekTo(position: position)
+            }
+            self.reloadURL = { newURL in
+                view.loadURL(newURL)
             }
             self.getTrackListFunc = { view.getTrackList() }
             self.setAudioTrackFunc = { view.setAudioTrack($0) }

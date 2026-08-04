@@ -99,7 +99,11 @@ final class TopicProgramRowViewModel: ObservableObject {
     func playExistingRecording(_ recording: Recording, using client: PVRClient, appState: AppState) {
         Task {
             do {
-                let url = try await client.recordingStreamURL(recordingId: recording.id)
+                let url = try await appState.preparingStream {
+
+                    try await client.recordingStreamURL(recordingId: recording.id)
+
+                }
                 appState.playStream(
                     url: url,
                     title: recording.name,
