@@ -26,6 +26,7 @@ struct UserPreferencesTests {
         prefs.preferredSubtitleLanguage = "eng"
         prefs.landingTab = .channels
         prefs.hideRecordings = true
+        prefs.theme = .light
         prefs.updatedAt = Date(timeIntervalSince1970: 1_700_000_000)
 
         let data = try JSONEncoder().encode(prefs)
@@ -41,6 +42,8 @@ struct UserPreferencesTests {
         #expect(decoded.landingTab == prefs.landingTab)
         #expect(decoded.landingTabRawValue == prefs.landingTabRawValue)
         #expect(decoded.hideRecordings == prefs.hideRecordings)
+        #expect(decoded.theme == prefs.theme)
+        #expect(decoded.themeRawValue == prefs.themeRawValue)
         #expect(decoded.updatedAt == prefs.updatedAt)
     }
 
@@ -58,6 +61,8 @@ struct UserPreferencesTests {
         #expect(prefs.landingTab == .guide)
         #expect(prefs.landingTabRawValue == LandingTabOption.guide.rawValue)
         #expect(prefs.hideRecordings == false)
+        #expect(prefs.theme == .system)
+        #expect(prefs.themeRawValue == AppTheme.system.rawValue)
         #expect(prefs.updatedAt == .distantPast)
     }
 
@@ -80,6 +85,32 @@ struct UserPreferencesTests {
             let decoded = try JSONDecoder().decode(UserPreferences.self, from: data)
             #expect(decoded.landingTab == option)
         }
+    }
+
+    @Test("AppTheme round-trips through the raw value")
+    func themeRoundTrips() throws {
+        for option in AppTheme.allCases {
+            var prefs = UserPreferences()
+            prefs.theme = option
+            let data = try JSONEncoder().encode(prefs)
+            let decoded = try JSONDecoder().decode(UserPreferences.self, from: data)
+            #expect(decoded.theme == option)
+            #expect(decoded.themeRawValue == option.rawValue)
+        }
+    }
+
+    @Test("Decoding legacy JSON without a theme defaults to System")
+    func decodeLegacyWithoutTheme() throws {
+        let json = #"{"keywords": ["news"]}"#
+        let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+        #expect(prefs.theme == .system)
+    }
+
+    @Test("An unknown persisted theme falls back to System")
+    func decodeUnknownTheme() throws {
+        let json = #"{"themeRawValue": "Sepia"}"#
+        let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+        #expect(prefs.theme == .system)
     }
 
     @Test("Decoding legacy seekTimeSeconds migrates to seekForwardSeconds")
