@@ -25,6 +25,9 @@ final class EPGCache: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var hasLoaded = false
     @Published private(set) var isFullyLoaded = false
+    /// True while a user-initiated refresh is in flight (see `refresh(using:profileId:)`).
+    /// Unlike `isLoading`, the existing data stays on screen while this is true.
+    @Published private(set) var isRefreshing = false
     @Published private(set) var error: String?
 
     private(set) var channelMap: [Int: Channel] = [:]
@@ -113,49 +116,7 @@ final class EPGCache: ObservableObject {
                 print("[EPGCache] Fast EPG failed (\(error.localizedDescription)), falling back to full load")
             }
 
-            backgroundLoadTask = Task { [weak self] in
-                let epgStart = CFAbsoluteTimeGetCurrent()
-                do {
-                    let listings = try await client.getAllListings(for: channelsForEPG)
-                    guard let self, !Task.isCancelled else { return }
-                    defer { self.isLoadInProgress = false }
-                    // Merge into existing fast-window data, deduping per program id.
-                    var merged = self.epg
-                    for (channelId, programs) in listings {
-                        if var existing = merged[channelId], !existing.isEmpty {
-                            let existingIds = Set(existing.map(\.id))
-                            for p in programs where !existingIds.contains(p.id) {
-                                existing.append(p)
-                            }
-                            existing.sort { $0.start < $1.start }
-                            merged[channelId] = existing
-                        } else {
-                            merged[channelId] = programs
-                        }
-                    }
-                    self.epg = merged
-                    // Compute loaded days off main actor
-                    let snapshot = merged
-                    let days = await Task.detached(priority: .utility) {
-                        var daySet = Set<String>()
-                        for programs in snapshot.values {
-                            for program in programs {
-                                daySet.insert(Self.dayFormatter.string(from: program.startDate))
-                            }
-                        }
-                        return daySet
-                    }.value
-                    self.loadedDays = days
-                    let programCount = merged.values.reduce(0) { $0 + $1.count }
-                    self.isFullyLoaded = true
-                    print("[EPGCache] EPG (full): \(programCount) programs across \(merged.count) channels in \(self.ms(since: epgStart))ms")
-                    print("[EPGCache] Total load: \(self.ms(since: totalStart))ms")
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self?.isLoadInProgress = false
-                    print("[EPGCache] EPG load failed: \(error.localizedDescription)")
-                }
-            }
+            startBackgroundFullLoad(using: client, channels: channelsForEPG, totalStart: totalStart)
 
         } catch {
             self.error = error.localizedDescription
@@ -163,6 +124,129 @@ final class EPGCache: ObservableObject {
             isLoadInProgress = false
             hasLoaded = true
             print("[EPGCache] Load failed after \(ms(since: totalStart))ms: \(error.localizedDescription)")
+        }
+    }
+
+    /// Phase 2 of a load: fetch the full multi-day EPG in the background and merge
+    /// it into whatever the fast window already put in the cache.
+    private func startBackgroundFullLoad(using client: PVRClient, channels channelsForEPG: [Channel], totalStart: CFAbsoluteTime) {
+        isLoadInProgress = true
+        backgroundLoadTask = Task { [weak self] in
+            let epgStart = CFAbsoluteTimeGetCurrent()
+            do {
+                let listings = try await client.getAllListings(for: channelsForEPG)
+                guard let self, !Task.isCancelled else { return }
+                defer { self.isLoadInProgress = false }
+                // Merge into existing fast-window data, deduping per program id.
+                var merged = self.epg
+                for (channelId, programs) in listings {
+                    if var existing = merged[channelId], !existing.isEmpty {
+                        let existingIds = Set(existing.map(\.id))
+                        for p in programs where !existingIds.contains(p.id) {
+                            existing.append(p)
+                        }
+                        existing.sort { $0.start < $1.start }
+                        merged[channelId] = existing
+                    } else {
+                        merged[channelId] = programs
+                    }
+                }
+                self.epg = merged
+                // Compute loaded days off main actor
+                let snapshot = merged
+                let days = await Task.detached(priority: .utility) {
+                    var daySet = Set<String>()
+                    for programs in snapshot.values {
+                        for program in programs {
+                            daySet.insert(Self.dayFormatter.string(from: program.startDate))
+                        }
+                    }
+                    return daySet
+                }.value
+                self.loadedDays = days
+                let programCount = merged.values.reduce(0) { $0 + $1.count }
+                self.isFullyLoaded = true
+                print("[EPGCache] EPG (full): \(programCount) programs across \(merged.count) channels in \(self.ms(since: epgStart))ms")
+                print("[EPGCache] Total load: \(self.ms(since: totalStart))ms")
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.isLoadInProgress = false
+                print("[EPGCache] EPG load failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// User-initiated refresh (pull-to-refresh on iOS/macOS, refresh button on
+    /// tvOS): re-fetch channels, groups/profiles and EPG from the server so
+    /// server-side changes (a new channel, an updated EPG) show up without
+    /// restarting the app.
+    ///
+    /// Unlike `reloadData`, the currently cached data stays on screen for the
+    /// whole refresh — `hasLoaded`/`isFullyLoaded` are never flipped back to
+    /// false, so the guide doesn't collapse into its loading state and then
+    /// rebuild. New data is swapped in only once it has arrived.
+    func refresh(using client: PVRClient, profileId: Int? = nil) async {
+        guard !isRefreshing else { return }
+        guard client.isConfigured else {
+            error = "Server not configured"
+            return
+        }
+
+        // Drop any in-flight full-EPG load: it would merge stale listings on top
+        // of the data we are about to fetch.
+        backgroundLoadTask?.cancel()
+        backgroundLoadTask = nil
+        isLoadInProgress = false
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+        let totalStart = CFAbsoluteTimeGetCurrent()
+
+        do {
+            if !client.isAuthenticated {
+                try await client.authenticate()
+            }
+
+            #if DISPATCHERPVR
+            let loaded = try await client.getChannelSummary(profileId: profileId)
+            #else
+            let loaded = try await client.getChannels()
+            #endif
+            let sorted = loaded.sorted { $0.number < $1.number }
+
+            #if DISPATCHERPVR
+            let profiles = try? await client.getChannelProfiles()
+            let groups = try? await client.getChannelGroups()
+            #endif
+
+            // Fetch the fast window before publishing anything, so the grid never
+            // shows a channel row without its programs.
+            let fastListings = try? await client.getFastListings(for: sorted)
+
+            channels = sorted
+            if profileId == nil || guideSidebarChannels.isEmpty {
+                guideSidebarChannels = sorted
+            }
+            channelMap = Dictionary(sorted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            visibleChannels = sorted
+            #if DISPATCHERPVR
+            if let profiles { channelProfiles = profiles }
+            if let groups { channelGroups = groups }
+            #endif
+            if let fastListings {
+                // Replace rather than merge: programs removed server-side must go.
+                epg = fastListings
+                loadedDays = []
+                markLoadedDays(from: fastListings)
+            }
+            error = nil
+            hasLoaded = true
+            print("[EPGCache] Refresh: \(sorted.count) channels in \(ms(since: totalStart))ms")
+
+            startBackgroundFullLoad(using: client, channels: sorted, totalStart: totalStart)
+        } catch {
+            self.error = error.localizedDescription
+            print("[EPGCache] Refresh failed after \(ms(since: totalStart))ms: \(error.localizedDescription)")
         }
     }
 
