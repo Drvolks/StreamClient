@@ -1681,6 +1681,110 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return try await authenticatedRequest(url)
     }
 
+    // MARK: - VOD / Movies / Series (#17)
+
+    /// All VOD categories, both movies and series. The view layer
+    /// filters client-side by `categoryType`. The server-side
+    /// endpoint accepts `?category_type=movie` / `category_type=series`
+    /// but the broad listing is what the picker wants.
+    func fetchVODCategories(categoryType: String? = nil) async throws -> [VODCategory] {
+        guard !config.isDemoMode else { return [] }
+        if useOutputEndpoints { return [] }
+        var components = URLComponents(string: "\(baseURL)/api/vod/categories/")!
+        if let categoryType {
+            components.queryItems = [URLQueryItem(name: "category_type", value: categoryType)]
+        }
+        guard let url = components.url else { throw PVRClientError.invalidResponse }
+        return try await authenticatedRequest(url)
+    }
+
+    /// Unified browse — movies + series in a single paginated
+    /// list. The view layer filters by `category` query param (the
+    /// format is `"CategoryName|movie"` or `"CategoryName|series"`
+    /// per issue #17 spec). `search` is a server-side substring
+    /// match on name.
+    func fetchVODContent(page: Int = 1, pageSize: Int = 20, search: String? = nil, category: String? = nil) async throws -> VODPage {
+        guard !config.isDemoMode else { return VODPage(count: 0, next: false, previous: false, results: []) }
+        if useOutputEndpoints { return VODPage(count: 0, next: false, previous: false, results: []) }
+        var components = URLComponents(string: "\(baseURL)/api/vod/all/")!
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "page_size", value: String(pageSize))
+        ]
+        if let search, !search.isEmpty {
+            items.append(URLQueryItem(name: "search", value: search))
+        }
+        if let category, !category.isEmpty {
+            items.append(URLQueryItem(name: "category", value: category))
+        }
+        components.queryItems = items
+        guard let url = components.url else { throw PVRClientError.invalidResponse }
+        return try await authenticatedRequest(url)
+    }
+
+    /// Movie detail including provider info, plot, cast, backdrop.
+    /// Pass `forceRefresh: true` to bypass Dispatcharr's TMDB cache
+    /// (rare; the cached shape is what you want).
+    func fetchMovieDetail(id: Int, forceRefresh: Bool = false) async throws -> VODMovieDetail {
+        guard !config.isDemoMode else { throw PVRClientError.invalidResponse }
+        if useOutputEndpoints { throw PVRClientError.invalidResponse }
+        var components = URLComponents(string: "\(baseURL)/api/vod/movies/\(id)/provider-info/")!
+        if forceRefresh {
+            components.queryItems = [URLQueryItem(name: "force_refresh", value: "true")]
+        }
+        guard let url = components.url else { throw PVRClientError.invalidResponse }
+        return try await authenticatedRequest(url)
+    }
+
+    /// Multi-provider list for a movie. The `VODMovieDetail.streamId`
+    /// is the default; this returns the alternatives if the movie
+    /// exists across multiple M3U accounts.
+    func fetchMovieProviders(id: Int) async throws -> [VODProvider] {
+        guard !config.isDemoMode else { return [] }
+        if useOutputEndpoints { return [] }
+        guard let url = URL(string: "\(baseURL)/api/vod/movies/\(id)/providers/") else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequest(url)
+    }
+
+    /// Series detail with episodes. `includeEpisodes` defaults to
+    /// true because that's what the SeriesDetailView needs; pass
+    /// false only if you want a lightweight header.
+    func fetchSeriesDetail(id: Int, includeEpisodes: Bool = true) async throws -> VODSeriesDetail {
+        guard !config.isDemoMode else { throw PVRClientError.invalidResponse }
+        if useOutputEndpoints { throw PVRClientError.invalidResponse }
+        var components = URLComponents(string: "\(baseURL)/api/vod/series/\(id)/provider-info/")!
+        if includeEpisodes {
+            components.queryItems = [URLQueryItem(name: "include_episodes", value: "true")]
+        }
+        guard let url = components.url else { throw PVRClientError.invalidResponse }
+        return try await authenticatedRequest(url)
+    }
+
+    /// Build the proxy URL for a VOD movie or episode. `URLSession`
+    /// will follow the 301 to the session URL automatically with
+    /// `allowRedirects: true` (the Swift default), which is how
+    /// Dispatcharr reuses the upstream slot for connection
+    /// persistence. Optional `m3uAccountId` / `streamId` pick a
+    /// specific provider when the content exists across multiple
+    /// M3U accounts; pass nil to let the server pick the highest
+    /// priority one.
+    func vodStreamURL(contentType: String, uuid: String, m3uAccountId: Int? = nil, streamId: String? = nil) -> URL? {
+        var components = URLComponents(string: "\(baseURL)/proxy/vod/\(contentType)/\(uuid)")!
+        var items: [URLQueryItem] = []
+        if let m3uAccountId {
+            items.append(URLQueryItem(name: "m3u_account_id", value: String(m3uAccountId)))
+        }
+        if let streamId {
+            items.append(URLQueryItem(name: "stream_id", value: streamId))
+        }
+        if !items.isEmpty {
+            components.queryItems = items
+        }
+        return components.url
+    }
+
     // MARK: - Stream Switching
 
     /// Streams assigned to a channel, in the channel's configured order.
