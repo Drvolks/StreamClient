@@ -1681,6 +1681,45 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return try await authenticatedRequest(url)
     }
 
+    // MARK: - Catch-up / Timeshift (#119)
+
+    /// Mint a catch-up (timeshift) playback session for the given
+    /// channel UUID and programme start. Returns the server's
+    /// response, which contains the relative `playback_url` that
+    /// the caller resolves via `CatchupService.playbackURL(for:)`.
+    /// Spec: issue #119's pinned comment + Dispatcharr commit
+    /// 223dff33.
+    ///
+    /// Error responses:
+    ///   400 — invalid `start` or no catch-up streams
+    ///   403 — network or channel ACL denied
+    ///   404 — channel not found
+    ///   503 — session service unavailable
+    func startCatchupSession(channelUuid: String, startISO8601: String) async throws -> CatchupSessionCreateResponse {
+        guard !config.isDemoMode else { throw PVRClientError.invalidResponse }
+        if useOutputEndpoints { throw PVRClientError.invalidResponse }
+        guard let url = URL(string: "\(baseURL)/api/catchup/sessions/") else {
+            throw PVRClientError.invalidResponse
+        }
+        let request = CatchupSessionRequest(channelUuid: channelUuid, startISO8601: startISO8601)
+        let body = try JSONEncoder().encode(request)
+        return try await authenticatedRequest(url, method: "POST", body: body)
+    }
+
+    /// Best-effort DELETE for a catch-up session. Server returns
+    /// 204 on success, 404 if the session is gone or owned by
+    /// another user (the existence-check hides other users'
+    /// sessions — see issue #119 comment §1). The caller is
+    /// expected to swallow errors; the server reaps on idle TTL.
+    func endCatchupSession(_ sessionId: String) async {
+        guard !config.isDemoMode else { return }
+        if useOutputEndpoints { return }
+        guard let url = URL(string: "\(baseURL)/api/catchup/sessions/\(sessionId)/") else {
+            return
+        }
+        try? await authenticatedRequestNoContent(url, method: "DELETE")
+    }
+
     // MARK: - Stream Switching
 
     /// Streams assigned to a channel, in the channel's configured order.
