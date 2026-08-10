@@ -18,6 +18,10 @@ nonisolated struct UserPreferences: Codable {
     var subtitleMode: SubtitleMode = .manual
     var subtitleSize: SubtitleSize = .medium
     var subtitleBackground: Bool = true
+    /// User-selectable tvOS UI font size (#107). Default `.medium`
+    /// preserves the pre-feature visual output exactly — existing
+    /// users see zero change on first launch after upgrade.
+    var uiFontSize: UIFontSize = .medium
     var preferredSubtitleLanguage: String? = nil
     var guideShowGroupsInSidebar: Bool = false
     var guideGroupIds: [Int] = []
@@ -120,6 +124,7 @@ nonisolated struct UserPreferences: Codable {
         case subtitleMode
         case subtitleSize
         case subtitleBackground
+        case uiFontSize
         case preferredSubtitleLanguage
         case guideShowGroupsInSidebar
         case guideGroupIds
@@ -152,6 +157,10 @@ nonisolated struct UserPreferences: Codable {
         subtitleMode = try container.decodeIfPresent(SubtitleMode.self, forKey: .subtitleMode) ?? .manual
         subtitleSize = try container.decodeIfPresent(SubtitleSize.self, forKey: .subtitleSize) ?? .medium
         subtitleBackground = try container.decodeIfPresent(Bool.self, forKey: .subtitleBackground) ?? true
+        // Forward- and backward-compat: a blob without `uiFontSize`
+        // (any prefs written before #107) decodes to .medium so
+        // existing users see no visual change.
+        uiFontSize = try container.decodeIfPresent(UIFontSize.self, forKey: .uiFontSize) ?? .medium
         preferredSubtitleLanguage = try container.decodeIfPresent(String.self, forKey: .preferredSubtitleLanguage)
         guideShowGroupsInSidebar = try container.decodeIfPresent(Bool.self, forKey: .guideShowGroupsInSidebar) ?? false
         guideGroupIds = try container.decodeIfPresent([Int].self, forKey: .guideGroupIds) ?? []
@@ -175,6 +184,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(subtitleMode, forKey: .subtitleMode)
         try container.encode(subtitleSize, forKey: .subtitleSize)
         try container.encode(subtitleBackground, forKey: .subtitleBackground)
+        try container.encode(uiFontSize, forKey: .uiFontSize)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
         try container.encode(guideShowGroupsInSidebar, forKey: .guideShowGroupsInSidebar)
         try container.encode(guideGroupIds, forKey: .guideGroupIds)

@@ -7,12 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3968FBDB863AFFB39A6E611C /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
 		6E9E3CF02F31559900D2B8DF /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6E9E3CEF2F31559900D2B8DF /* MPVKit */; };
 		6E9E3CF22F31559900D2B8E0 /* MPVPixelBufferBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 6E9E3CF12F31559900D2B8E0 /* MPVPixelBufferBridge */; };
 		6EA347F62F48EF9C00E0A324 /* TVServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6EA347F52F48EF9C00E0A324 /* TVServices.framework */; };
 		6EA347FD2F48EF9D00E0A324 /* NexusPVR TopShelf.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6EA347F32F48EF9C00E0A324 /* NexusPVR TopShelf.appex */; platformFilters = (tvos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6EA348082F48EFB600E0A324 /* TVServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6EA347F52F48EF9C00E0A324 /* TVServices.framework */; };
 		6EA3480F2F48EFB600E0A324 /* DispatcherPVR TopShelf.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6EA348072F48EFB600E0A324 /* DispatcherPVR TopShelf.appex */; platformFilters = (tvos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		713B403662894F9A050E684E /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
+		9F4ADD54EE55C33F214EED53 /* UIFontSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037CBFB23148FFF12B2C56AB /* UIFontSizeTests.swift */; };
+		A4225DD6A2AC799DEC768C91 /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
+		ADC4F0BD98170AAADBEBF94C /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
 		D1AAAA0A2F31559900D2B8DF /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = D1AAAA0B2F31559900D2B8DF /* MPVKit */; };
 		D1AAAA0D2F31559900D2B8E1 /* MPVPixelBufferBridge in Frameworks */ = {isa = PBXBuildFile; productRef = D1AAAA0C2F31559900D2B8E1 /* MPVPixelBufferBridge */; };
 /* End PBXBuildFile section */
@@ -74,6 +79,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		037CBFB23148FFF12B2C56AB /* UIFontSizeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UIFontSizeTests.swift; path = NexusPVRTests/UIFontSizeTests.swift; sourceTree = "<group>"; };
+		5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UIFontSize.swift; path = NexusPVR/Core/Models/UIFontSize.swift; sourceTree = "<group>"; };
 		6E74158C2F315368001FE083 /* StreamClient for NextPVR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "StreamClient for NextPVR.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6E74159B2F315369001FE083 /* NexusPVRTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NexusPVRTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6E7415A52F315369001FE083 /* NexusPVRUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NexusPVRUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -136,6 +143,7 @@
 				Core/Services/TopShelfProgram.swift,
 				Design/SportIcon.swift,
 				Design/Theme.swift,
+				Core/Models/UIFontSize.swift,
 			);
 			target = 6EA347F22F48EF9C00E0A324 /* NexusPVR TopShelf */;
 		};
@@ -175,6 +183,7 @@
 				Core/Services/TopShelfProgram.swift,
 				Design/SportIcon.swift,
 				Design/Theme.swift,
+				Core/Models/UIFontSize.swift,
 			);
 			target = 6EA348062F48EFB600E0A324 /* DispatcherPVR TopShelf */;
 		};
@@ -183,6 +192,7 @@
 			membershipExceptions = (
 				Assets.xcassets,
 				LaunchScreen.storyboard,
+				Core/Models/UIFontSize.swift,
 			);
 			target = D1AAAA062F31559900D2B8DF /* Dispatcharr */;
 		};
@@ -296,6 +306,8 @@
 				6EA348092F48EFB600E0A324 /* DispatcherPVR TopShelf */,
 				6EA347F42F48EF9C00E0A324 /* Frameworks */,
 				6E74158D2F315368001FE083 /* Products */,
+				5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */,
+				037CBFB23148FFF12B2C56AB /* UIFontSizeTests.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -584,6 +596,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ADC4F0BD98170AAADBEBF94C /* UIFontSize.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -591,6 +604,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9F4ADD54EE55C33F214EED53 /* UIFontSizeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -605,6 +619,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A4225DD6A2AC799DEC768C91 /* UIFontSize.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -612,6 +627,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				713B403662894F9A050E684E /* UIFontSize.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -619,6 +635,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3968FBDB863AFFB39A6E611C /* UIFontSize.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
