@@ -110,6 +110,7 @@ struct NavigationRouter: View {
             #if DISPATCHERPVR
             if appState.userLevel >= 1 {
                 appState.startStreamCountPolling(client: client)
+                appState.startEnvironmentSettingsRefresh(client: client)
             }
             #endif
         }
@@ -125,6 +126,8 @@ struct NavigationRouter: View {
                 appState.stopStreamCountPolling()
                 appState.activeStreamCount = 0
                 appState.hasM3UErrors = false
+                appState.stopEnvironmentSettingsRefresh()
+                appState.environmentSettings = nil
                 #endif
                 return
             }
@@ -136,6 +139,7 @@ struct NavigationRouter: View {
             #endif
             #if DISPATCHERPVR
             appState.startStreamCountPolling(client: client)
+            appState.startEnvironmentSettingsRefresh(client: client)
             #endif
         }
         .onChange(of: appState.hideRecordings) { hidden in

@@ -75,6 +75,7 @@ struct SettingsView: View {
                 generalSection
                 playbackSection
                 #if DISPATCHERPVR
+                networkSection
                 guideSection
                 #endif
                 #if DEBUG
@@ -242,6 +243,9 @@ struct SettingsView: View {
                     .focusSection()
 
                 #if DISPATCHERPVR
+                    tvOSNetworkSettingsSection
+                        .focusSection()
+
                     tvOSGuideSettingsSection
                         .focusSection()
 
@@ -454,6 +458,64 @@ struct SettingsView: View {
     }
 
     #if DISPATCHERPVR
+    private var tvOSNetworkSettingsSection: some View {
+        TVSettingsSection(
+            title: "Network",
+            icon: "network"
+        ) {
+            VStack(spacing: Theme.spacingMD) {
+                if !appState.environmentAvailable {
+                    tvOSInfoRow(label: "Status", value: "Not available on this server version")
+                } else if let env = appState.environmentSettings {
+                    if !env.ipLookupEnabled {
+                        tvOSInfoRow(label: "Status", value: "IP lookup disabled on server")
+                    } else if env.ipLookupPending {
+                        tvOSInfoRow(label: "Status", value: "Looking up…")
+                    } else if env.publicIP == nil && env.localIP == nil {
+                        tvOSInfoRow(label: "Status", value: "No IP info reported by server")
+                    }
+                    tvOSInfoRow(label: "Public IP", value: env.publicIP ?? "—")
+                    tvOSInfoRow(label: "Local IP", value: env.localIP ?? "—")
+                    if let country = env.countryName ?? env.countryCode {
+                        let detail = [env.city, env.countryCode].compactMap { $0 }
+                            .filter { $0 != country }
+                            .joined(separator: ", ")
+                        tvOSInfoRow(label: "Location", value: detail.isEmpty ? country : "\(country) (\(detail))")
+                    } else if let city = env.city {
+                        tvOSInfoRow(label: "City", value: city)
+                    }
+                } else {
+                    tvOSInfoRow(label: "Status", value: "Loading…")
+                }
+            }
+        }
+    }
+
+    /// Read-only row used inside `tvOSNetworkSettingsSection`. Mirrors
+    /// the `tvSettingsRow` chrome but doesn't open a popup — the network
+    /// panel is informational only (#112).
+    private func tvOSInfoRow(label: String, value: String) -> some View {
+        HStack(spacing: Theme.spacingMD) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(Theme.textTertiary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(value)
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, Theme.spacingMD)
+        .padding(.vertical, Theme.spacingSM)
+        .background(Theme.guideNowPlaying.opacity(0.78))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+    }
+
     private var tvOSGuideSettingsSection: some View {
         TVSettingsSection(
             title: "Guide",
@@ -1243,6 +1305,71 @@ struct SettingsView: View {
             }
         } header: {
             Text("Guide")
+        }
+    }
+    #endif
+
+    #if DISPATCHERPVR
+    /// Network / environment panel (#112). Surfaces the Dispatcharr
+    /// `GET /api/core/settings/env/` payload — the public IP, local IP,
+    /// country / city / lookup state that the Dispatcharr web UI shows
+    /// in its sidebar. Falls back to a "not available" placeholder when
+    /// the endpoint isn't reachable (older Dispatcharr builds, output-only
+    /// deployments, demo mode) and a "loading" placeholder while the
+    /// first poll is still in flight.
+    private var networkSection: some View {
+        Section {
+            if !appState.environmentAvailable {
+                envStatusRow(value: "Not available on this server version", identifier: "env-status-not-available")
+            } else if let env = appState.environmentSettings {
+                if !env.ipLookupEnabled {
+                    envStatusRow(value: "IP lookup disabled on server", identifier: "env-status-disabled")
+                } else if env.ipLookupPending {
+                    envStatusRow(value: "Looking up…", identifier: "env-status-pending")
+                } else if env.publicIP == nil && env.localIP == nil {
+                    envStatusRow(value: "No IP info reported by server", identifier: "env-status-empty")
+                }
+                envRow(label: "Public IP", value: env.publicIP)
+                envRow(label: "Local IP", value: env.localIP)
+                if let country = env.countryName ?? env.countryCode {
+                    let detail = [env.city, env.countryCode].compactMap { $0 }
+                        .filter { $0 != country }
+                        .joined(separator: ", ")
+                    envRow(label: "Location", value: detail.isEmpty ? country : "\(country) (\(detail))")
+                } else if let city = env.city {
+                    envRow(label: "City", value: city)
+                }
+            } else {
+                envStatusRow(value: "Loading…", identifier: "env-status-loading")
+            }
+        } header: {
+            Text("Network")
+                .accessibilityIdentifier("settings-network-section")
+        } footer: {
+            Text("Reported by \(Brand.serverName). Polled every 30 s while the app is foreground.")
+                .font(.caption)
+        }
+    }
+
+    private func envRow(label: String, value: String?) -> some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(value ?? "—")
+                .foregroundStyle(value == nil ? Theme.textTertiary : Theme.textPrimary)
+                .accessibilityIdentifier("env-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))")
+        }
+    }
+
+    private func envStatusRow(value: String, identifier: String) -> some View {
+        HStack {
+            Text("Status")
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(value)
+                .foregroundStyle(Theme.textTertiary)
+                .accessibilityIdentifier(identifier)
         }
     }
     #endif

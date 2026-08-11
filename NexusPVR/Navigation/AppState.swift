@@ -95,6 +95,15 @@ final class AppState: ObservableObject {
     @Published var userLevel: Int = 10 {
         didSet { reconcileSelectedTabForCurrentAccess() }
     }
+
+    /// Most recent `EnvironmentSettings` payload from
+    /// `GET /api/core/settings/env/`. Nil until the first poll completes, or
+    /// when running in demo / output-only mode (where the endpoint is not
+    /// reachable). When nil and `environmentAvailable` is false, the UI
+    /// shows "not available on this server version"; when nil and
+    /// `environmentAvailable` is true, the UI shows a "loading" placeholder.
+    /// (#112)
+    @Published var environmentSettings: EnvironmentSettings?
     #else
     /// NexusPVR users always have full access
     var userLevel: Int { 10 }
@@ -155,6 +164,57 @@ final class AppState: ObservableObject {
     func stopStreamCountPolling() {
         streamCountTask?.cancel()
         streamCountTask = nil
+    }
+
+    /// Whether the `EnvironmentSettings` endpoint is reachable for this
+    /// client. Used by the Settings UI to decide between "loading…",
+    /// "not available on this server version", and the populated IP/
+    /// country panel. (#112)
+    var environmentAvailable: Bool {
+        guard let envClient = _lastEnvClient else { return false }
+        return !envClient.useOutputEndpoints && !envClient.config.isDemoMode
+    }
+    /// Holds the most recent client used to fetch environment settings.
+    /// Tracked so `environmentAvailable` can answer without callers
+    /// needing to thread the client through. (#112)
+    private var _lastEnvClient: DispatcherClient?
+
+    private var environmentSettingsTask: Task<Void, Never>?
+
+    /// Refresh the server environment settings on a slow polling cadence.
+    /// Endpoint data changes rarely (only on Dispatcharr restart), so a
+    /// 30 s interval is plenty — and the response is small. Cancels any
+    /// in-flight refresh task first. (#112)
+    func startEnvironmentSettingsRefresh(client: DispatcherClient) {
+        stopEnvironmentSettingsRefresh()
+        _lastEnvClient = client
+        // Output-only deployments don't have the env endpoint, and the
+        // demo-mode codepath explicitly returns nil. Either way, no work.
+        guard !client.useOutputEndpoints, !client.config.isDemoMode else {
+            environmentSettings = nil
+            return
+        }
+        environmentSettingsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                // Skip during playback to reduce network chatter.
+                if self?.isShowingPlayer != true {
+                    do {
+                        let result = try await client.getEnvironmentSettings()
+                        self?.environmentSettings = result
+                    } catch {
+                        // Silently ignore — the UI keeps showing the last
+                        // good value. Nil is treated as "still loading" if
+                        // the endpoint is reachable.
+                    }
+                }
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    func stopEnvironmentSettingsRefresh() {
+        environmentSettingsTask?.cancel()
+        environmentSettingsTask = nil
     }
     #endif
 
