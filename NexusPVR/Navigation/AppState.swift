@@ -172,7 +172,8 @@ final class AppState: ObservableObject {
     /// country panel. (#112)
     var environmentAvailable: Bool {
         guard let envClient = _lastEnvClient else { return false }
-        return !envClient.useOutputEndpoints && !envClient.config.isDemoMode
+        return !envClient.useOutputEndpoints
+            && (!envClient.config.isDemoMode || envClient.config.isMockServer)
     }
     /// Holds the most recent client used to fetch environment settings.
     /// Tracked so `environmentAvailable` can answer without callers
@@ -188,9 +189,10 @@ final class AppState: ObservableObject {
     func startEnvironmentSettingsRefresh(client: DispatcherClient) {
         stopEnvironmentSettingsRefresh()
         _lastEnvClient = client
-        // Output-only deployments don't have the env endpoint, and the
-        // demo-mode codepath explicitly returns nil. Either way, no work.
-        guard !client.useOutputEndpoints, !client.config.isDemoMode else {
+        // Output-only deployments don't have the env endpoint. Built-in demo
+        // mode is offline, but the local mock fixture exposes the endpoint.
+        guard !client.useOutputEndpoints,
+              !client.config.isDemoMode || client.config.isMockServer else {
             environmentSettings = nil
             return
         }
