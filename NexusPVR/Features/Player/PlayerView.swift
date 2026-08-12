@@ -111,6 +111,7 @@ struct PlayerView: View {
     #endif
     #if os(macOS)
     @State private var sleepAssertionID: IOPMAssertionID = 0
+    @State private var heldAssertion: PlayerPowerAssertion = .none
     #endif
 
     init(
@@ -517,8 +518,7 @@ struct PlayerView: View {
         .onAppear {
             scheduleHideControls()
             #if os(macOS)
-            // Prevent display sleep during video playback
-            disableScreenSaver()
+            updatePowerAssertion()
             #else
             // Prevent screen from sleeping during video playback
             UIApplication.shared.isIdleTimerDisabled = true
@@ -571,8 +571,7 @@ struct PlayerView: View {
             #if os(macOS)
             // Ensure cursor is visible when leaving the player
             NSCursor.setHiddenUntilMouseMoves(false)
-            // Re-enable display sleep
-            enableScreenSaver()
+            releasePowerAssertion()
             #else
             // Re-enable screen sleeping
             UIApplication.shared.isIdleTimerDisabled = false
@@ -614,14 +613,12 @@ struct PlayerView: View {
         .onChange(of: isPlaying) { newValue in
             if !isPlaying {
                 savePlaybackPosition()
-                #if os(macOS)
-                enableScreenSaver()
-                #endif
-            } else {
-                #if os(macOS)
-                disableScreenSaver()
-                #endif
             }
+            #if os(macOS)
+            // Pausing live TV still has to hold the system awake — see
+            // PlayerPowerAssertion.
+            updatePowerAssertion()
+            #endif
         }
         .task(id: isPlayerReady) {
             guard isPlayerReady else { return }
@@ -1888,23 +1885,37 @@ struct PlayerView: View {
     }
 
     #if os(macOS)
-    private func disableScreenSaver() {
+    /// Takes whatever assertion the current playback state calls for, swapping the
+    /// held one when the requirement changes. Idempotent, so it's safe to call from
+    /// every state change.
+    private func updatePowerAssertion() {
+        let required = PlayerPowerAssertion.required(isLiveStream: isLiveStream, isPlaying: isPlaying)
+        guard required != heldAssertion else { return }
+        releasePowerAssertion()
+        guard let type = required.ioKitType else { return }
+
+        var id: IOPMAssertionID = 0
+        let reason = required == .noIdleSleep ? "StreamClient paused live stream" : "StreamClient video playback"
         let result = IOPMAssertionCreateWithName(
-            kIOPMAssertionTypeNoDisplaySleep as CFString,
+            type as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "NexusPVR video playback" as CFString,
-            &sleepAssertionID
+            reason as CFString,
+            &id
         )
-        if result != kIOReturnSuccess {
-            print("Failed to disable screen saver: \(result)")
+        guard result == kIOReturnSuccess else {
+            print("[Player] Failed to take \(type) assertion: \(result)")
+            return
         }
+        sleepAssertionID = id
+        heldAssertion = required
     }
 
-    private func enableScreenSaver() {
+    private func releasePowerAssertion() {
         if sleepAssertionID != 0 {
             IOPMAssertionRelease(sleepAssertionID)
             sleepAssertionID = 0
         }
+        heldAssertion = .none
     }
     #endif
 
