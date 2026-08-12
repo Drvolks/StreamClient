@@ -85,6 +85,13 @@ struct PlayerView: View {
     /// Non-zero after a live seek, since reopening at a byte offset resets mpv to 0.
     @State private var liveBaseOffset: Double = 0
     @State private var isLiveSeeking = false
+    /// Target of skip presses not yet committed to a reload — see `seekLiveBy`.
+    @State private var pendingLiveSeekTarget: Double?
+    @State private var liveSeekCommitTask: Task<Void, Never>?
+    /// When the last live reload was issued, and how many times we've retried it
+    /// after an immediate EOF — see `recoverFromLiveEdgeEOF()`.
+    @State private var lastLiveSeekAt: Date = .distantPast
+    @State private var liveEdgeRetryCount = 0
     @State private var isBuffering = false
     @State private var lastBufferingCheckPosition: Double = -1
     @State private var bufferingStallCount = 0
@@ -148,12 +155,18 @@ struct PlayerView: View {
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
+                    if recoverFromLiveEdgeEOF() { return }
                     savePlaybackPosition()
                     markAsWatched()
                     if !isRecordingInProgress {
                         appState.stopPlayback()
                     }
                 },
+                onLiveSeek: isLiveStream ? { delta in
+                    guard canSeekLive else { return false }
+                    seekLiveBy(delta)
+                    return true
+                } : nil,
                 onTogglePlayPause: {
                     isPlaying.toggle()
                     showControls = true
@@ -237,6 +250,7 @@ struct PlayerView: View {
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
+                    if recoverFromLiveEdgeEOF() { return }
                     savePlaybackPosition()
                     markAsWatched()
                     if !isRecordingInProgress {
@@ -291,6 +305,7 @@ struct PlayerView: View {
                 streamHeaders: client.streamAuthHeaders(),
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
+                    if recoverFromLiveEdgeEOF() { return }
                     savePlaybackPosition()
                     markAsWatched()
                     if !isRecordingInProgress {
@@ -623,7 +638,12 @@ struct PlayerView: View {
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
-        .onChange(of: currentPosition) { _ in
+        .onChange(of: currentPosition) { position in
+            // Playback got going again, so the previous live reload landed on
+            // readable data — start the retry budget over for the next seek.
+            if liveEdgeRetryCount > 0 && position > 2 {
+                liveEdgeRetryCount = 0
+            }
             detectBuffering()
         }
         #if os(tvOS)
@@ -692,7 +712,7 @@ struct PlayerView: View {
     }
 
     private var secondsBehindLive: Double {
-        max(0, liveBufferDuration - livePlayPosition)
+        max(0, liveBufferDuration - displayLivePosition)
     }
 
     /// Live seeking needs a buffer with a usable byte-rate ratio, a way to reload,
@@ -704,17 +724,19 @@ struct PlayerView: View {
             && liveBufferDuration > Self.minimumLiveBuffer
     }
 
-    /// Never seek right up to the write head — the last moments of the buffer may
-    /// not be fully flushed, which yields a truncated frame and an immediate EOF.
-    private static let liveEdgeMargin: Double = 8
-    private static let minimumLiveBuffer: Double = 30
+    private static let liveEdgeMargin = LiveTimeshift.edgeMargin
+    private static let minimumLiveBuffer = LiveTimeshift.minimumBuffer
 
     /// Reopens the stream at `position` (seconds from buffer start). NextPVR can't
     /// seek an open `/live` response, so this is a reload rather than an mpv seek.
     private func seekLive(to position: Double) {
         guard canSeekLive, let info = liveStreamInfo, let reload = reloadURLFunc else { return }
 
-        let target = min(max(0, position), max(0, liveBufferDuration - Self.liveEdgeMargin))
+        liveSeekCommitTask?.cancel()
+        liveSeekCommitTask = nil
+        pendingLiveSeekTarget = nil
+
+        let target = LiveTimeshift.clampedTarget(position, bufferDuration: liveBufferDuration)
         guard let offset = info.byteOffset(forPosition: target),
               let url = client.liveStreamSeekURL(byteOffset: offset) else { return }
 
@@ -723,6 +745,7 @@ struct PlayerView: View {
         liveBaseOffset = target
         currentPosition = 0
         isLiveSeeking = true
+        lastLiveSeekAt = Date()
         reload(url)
         isPlaying = true
         scheduleHideControls()
@@ -733,8 +756,55 @@ struct PlayerView: View {
         }
     }
 
+    /// Coalesces rapid skip presses into a single reload. Every live seek reopens
+    /// the stream server-side, and tvOS hold-to-scrub fires every 250ms, so applying
+    /// them one for one would thrash the tuner. The pending target drives the
+    /// timeshift bar in the meantime, so each press still shows up immediately.
     private func seekLiveBy(_ delta: Double) {
-        seekLive(to: livePlayPosition + delta)
+        guard canSeekLive else { return }
+        let base = pendingLiveSeekTarget ?? livePlayPosition
+        let target = LiveTimeshift.clampedTarget(base + delta, bufferDuration: liveBufferDuration)
+        // Already there — skip-forward at the live edge shouldn't churn the tuner.
+        // (tvOS drives this from remote presses, which have no disabled state.)
+        guard abs(target - base) >= 1 else { return }
+        pendingLiveSeekTarget = target
+        liveSeekCommitTask?.cancel()
+        liveSeekCommitTask = Task {
+            try? await Task.sleep(for: LiveTimeshift.seekCommitDelay)
+            guard !Task.isCancelled, let target = pendingLiveSeekTarget else { return }
+            seekLive(to: target)
+        }
+    }
+
+    /// Play position as the controls should show it: the pending skip target while
+    /// presses are still being coalesced, otherwise where playback actually is.
+    private var displayLivePosition: Double {
+        pendingLiveSeekTarget ?? livePlayPosition
+    }
+
+    /// Handles the EOF that a live reload can hit when it reopens at a byte offset
+    /// the server hasn't flushed yet: mpv reads zero bytes and reports end-of-file,
+    /// which would otherwise tear the player down and drop the user back to the
+    /// guide. NextPVR's `/live` is raw MPEG-TS, so the HLS recovery path in
+    /// `MPVPlayerCore` doesn't cover it.
+    ///
+    /// Retries a little further back each time — the previous offset already proved
+    /// it wasn't readable — and gives up after a few attempts so a genuinely dead
+    /// stream still ends.
+    ///
+    /// Returns true when the EOF was absorbed and the caller should not tear down.
+    private func recoverFromLiveEdgeEOF() -> Bool {
+        guard isLiveStream, canSeekLive else { return false }
+        guard LiveTimeshift.shouldRetryAfterEOF(
+            secondsSinceLastSeek: Date().timeIntervalSince(lastLiveSeekAt),
+            retryCount: liveEdgeRetryCount
+        ) else { return false }
+
+        liveEdgeRetryCount += 1
+        let target = LiveTimeshift.retryTarget(from: livePlayPosition, attempt: liveEdgeRetryCount)
+        print("[Player] Live-edge EOF, retrying at \(Int(target))s (attempt \(liveEdgeRetryCount))")
+        seekLive(to: target)
+        return true
     }
 
     /// Stops renewing and releases the server-side stream so the tuner is freed
@@ -743,6 +813,9 @@ struct PlayerView: View {
     private func endLiveStream() {
         liveKeepaliveTask?.cancel()
         liveKeepaliveTask = nil
+        liveSeekCommitTask?.cancel()
+        liveSeekCommitTask = nil
+        pendingLiveSeekTarget = nil
         guard isLiveStream else { return }
         Task { await client.stopLiveStream() }
     }
@@ -857,7 +930,7 @@ struct PlayerView: View {
                     playerControlIcon(systemName: "gobackward.\(seekBackwardTime)", size: 40)
                 }
                 .buttonStyle(.plain)
-                .disabled(isLiveStream && livePlayPosition <= 0)
+                .disabled(isLiveStream && displayLivePosition <= 0)
             }
 
             // Play/pause button
@@ -884,8 +957,13 @@ struct PlayerView: View {
                 .disabled(isLiveStream && secondsBehindLive <= Self.liveEdgeMargin)
             }
 
+            #if !os(tvOS)
+            // Jump to the live edge. Not offered on tvOS: the controls overlay is
+            // display-only there (the mpv view keeps focus and drives everything
+            // from remote presses), so the button can never be reached — up on the
+            // remote opens the settings panel. The Siri Remote's skip-forward is
+            // the live-edge path on tvOS instead; it clamps to the head.
             if isLiveStream && canSeekLive {
-                // Jump to the live edge
                 Button {
                     seekLive(to: liveBufferDuration)
                 } label: {
@@ -894,6 +972,7 @@ struct PlayerView: View {
                 .buttonStyle(.plain)
                 .disabled(secondsBehindLive <= Self.liveEdgeMargin)
             }
+            #endif
         }
     }
 
@@ -1007,7 +1086,7 @@ struct PlayerView: View {
             .frame(height: 14)
 
             HStack {
-                Text(formatTime(livePlayPosition))
+                Text(formatTime(displayLivePosition))
                     .font(.caption)
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -1040,7 +1119,7 @@ struct PlayerView: View {
     private func liveProgressWidth(for totalWidth: CGFloat) -> CGFloat {
         let buffer = liveBufferDuration
         guard buffer > 0 else { return 0 }
-        let progress = livePlayPosition / buffer
+        let progress = displayLivePosition / buffer
         return max(0, min(totalWidth, CGFloat(progress) * totalWidth))
     }
 
