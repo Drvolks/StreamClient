@@ -539,6 +539,18 @@ extension Font {
     static func tvSidebarScaled(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: Theme.scaledSidebarFont(size), weight: weight)
     }
+    #else
+    // The UI font size preference is tvOS-only (#107), but a few shared
+    // views call these helpers from code paths that also build for iOS and
+    // macOS. Passing the baseline size straight through keeps those views
+    // rendering exactly as they did while letting them scale on tvOS.
+    static func tvScaled(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+
+    static func tvSidebarScaled(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
     #endif
 }
 
