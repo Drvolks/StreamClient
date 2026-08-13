@@ -132,11 +132,10 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 self.recordingMonitor.updateBaseline(duration: duration)
                 self.recordingMonitor.refreshIfNeeded()
                 let estimated = self.recordingMonitor.estimatedDuration
-                if estimated > duration {
-                    duration = estimated
-                }
-                duration = max(0, duration - 15)
+                let knownEnd = max(duration, estimated)
+                duration = max(0, knownEnd - 15)
                 self.reportedDuration = duration
+                self.checkRecordingStalled(position: position, knownEnd: knownEnd)
             }
 
             // Only query full video info every 2 seconds (4 ticks) to reduce mpv lock contention.
@@ -319,6 +318,69 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     func startRecordingMonitor(url: URL) {
         guard let mpv = mpv else { return }
         recordingMonitor.start(mpv: mpv, url: url.absoluteString)
+    }
+
+    // MARK: - Stalled in-progress recording recovery (#127)
+
+    private var lastAdvancingPosition: Double = 0
+    private var positionStalledSince: Date = .distantPast
+    private var lastStallReloadAt: Date = .distantPast
+    private var lastStallReloadTarget: Double?
+
+    /// Detects playback parked at the write edge of a growing recording — which
+    /// the demuxer's EOF retry loop will never resolve on its own — and reopens
+    /// the stream far enough behind the edge to have decodable content.
+    /// See `StalledRecordingRecovery` for the rules.
+    private func checkRecordingStalled(position: Double, knownEnd: Double) {
+        if position > lastAdvancingPosition + 0.5 {
+            lastAdvancingPosition = position
+            positionStalledSince = Date()
+            return
+        }
+        // A user pause is not a stall. (mpv's `pause` is the user's; rebuffering
+        // shows up as paused-for-cache, which is exactly what we want to catch.)
+        guard !isPaused else {
+            positionStalledSince = Date()
+            return
+        }
+        // First tick after a load: start the clock rather than counting the gap
+        // since .distantPast as an eternity-long stall.
+        guard positionStalledSince > .distantPast else {
+            positionStalledSince = Date()
+            return
+        }
+
+        let now = Date()
+        guard StalledRecordingRecovery.shouldReload(
+            position: position,
+            knownEnd: knownEnd,
+            stalledFor: now.timeIntervalSince(positionStalledSince),
+            sinceLastReload: now.timeIntervalSince(lastStallReloadAt),
+            lastReloadTarget: lastStallReloadTarget
+        ) else { return }
+
+        let target = StalledRecordingRecovery.reloadTarget(position: position, knownEnd: knownEnd)
+        lastStallReloadAt = now
+        lastStallReloadTarget = target
+        reloadRecording(at: target, position: position, knownEnd: knownEnd)
+    }
+
+    private func reloadRecording(at target: Double, position: Double, knownEnd: Double) {
+        guard let mpv, let url = recordingMonitor.currentURL else { return }
+
+        let command = "loadfile \"\(url)\" replace -1 start=\(String(format: "%.1f", target))"
+        let result = mpv_command_string(mpv, command)
+        if result < 0 {
+            print("MPV: stalled-recording reload failed: \(String(cString: mpv_error_string(result)))")
+            return
+        }
+        print("MPV: recording stalled at \(String(format: "%.1f", position))s "
+            + "(edge \(String(format: "%.1f", knownEnd))s) — reopening at \(String(format: "%.1f", target))s")
+        // The reopened file re-probes its duration, so the size/duration anchor
+        // the estimate extrapolates from has to be taken again.
+        recordingMonitor.resetBaseline()
+        positionStalledSince = .distantPast
+        lastAdvancingPosition = 0
     }
 
 

@@ -33,6 +33,13 @@ struct MPVContainerView: UIViewRepresentable {
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
+    /// Set for live streams. NextPVR can't seek an open `/live` response, so the
+    /// remote's skip buttons have to reopen the stream at a byte offset instead of
+    /// issuing an mpv seek — an mpv seek only moves inside the demuxer cache, which
+    /// leaves the viewer permanently behind the live edge after a pause (#126).
+    /// Takes a signed delta in seconds and returns whether it handled the seek;
+    /// when it returns false the plain mpv seek is used instead.
+    var onLiveSeek: ((Double) -> Bool)?
     var onTogglePlayPause: (() -> Void)?
     var onToggleControls: (() -> Void)?
     var onShowControls: (() -> Void)?
@@ -62,11 +69,17 @@ struct MPVContainerView: UIViewRepresentable {
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
         view.onSeekForward = { multiplier in
-            view.seek(seconds: self.seekForwardTime * multiplier)
+            let delta = self.seekForwardTime * multiplier
+            if self.onLiveSeek?(Double(delta)) != true {
+                view.seek(seconds: delta)
+            }
             self.onShowControls?()
         }
         view.onSeekBackward = { multiplier in
-            view.seek(seconds: -self.seekBackwardTime * multiplier)
+            let delta = -self.seekBackwardTime * multiplier
+            if self.onLiveSeek?(Double(delta)) != true {
+                view.seek(seconds: delta)
+            }
             self.onShowControls?()
         }
         view.onSelect = onToggleControls
@@ -84,11 +97,17 @@ struct MPVContainerView: UIViewRepresentable {
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
         view.onSeekForward = { multiplier in
-            view.seek(seconds: self.seekForwardTime * multiplier)
+            let delta = self.seekForwardTime * multiplier
+            if self.onLiveSeek?(Double(delta)) != true {
+                view.seek(seconds: delta)
+            }
             self.onShowControls?()
         }
         view.onSeekBackward = { multiplier in
-            view.seek(seconds: -self.seekBackwardTime * multiplier)
+            let delta = -self.seekBackwardTime * multiplier
+            if self.onLiveSeek?(Double(delta)) != true {
+                view.seek(seconds: delta)
+            }
             self.onShowControls?()
         }
         view.onSelect = onToggleControls
@@ -106,11 +125,17 @@ struct MPVContainerView: UIViewRepresentable {
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
         view.onSeekForward = { multiplier in
-            view.seek(seconds: self.seekForwardTime * multiplier)
+            let delta = self.seekForwardTime * multiplier
+            if self.onLiveSeek?(Double(delta)) != true {
+                view.seek(seconds: delta)
+            }
             self.onShowControls?()
         }
         view.onSeekBackward = { multiplier in
-            view.seek(seconds: -self.seekBackwardTime * multiplier)
+            let delta = -self.seekBackwardTime * multiplier
+            if self.onLiveSeek?(Double(delta)) != true {
+                view.seek(seconds: delta)
+            }
             self.onShowControls?()
         }
         view.onSelect = onToggleControls
