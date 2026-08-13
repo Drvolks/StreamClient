@@ -534,7 +534,7 @@ struct ChannelsView: View {
             Task { await refreshChannels() }
         } label: {
             Image(systemName: "arrow.clockwise")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.tvScaled(size: 16, weight: .semibold))
         }
         .buttonStyle(TVPillFieldButtonStyle(unfocusedForeground: Theme.textTertiary))
         .focusEffectDisabled()

@@ -118,6 +118,22 @@ final class AppState: ObservableObject {
     /// of the scene so a change takes effect immediately, without a relaunch.
     @Published var theme: AppTheme = UserPreferences.load().theme
 
+    #if os(tvOS)
+    /// The tvOS UI font size the user chose in Settings (#107).
+    ///
+    /// The value that fonts and metrics actually read is the
+    /// `Theme.uiFontSize` global — `Font` extensions are static, so they
+    /// can't observe an environment object. This published mirror exists
+    /// to *invalidate* the view tree: every view holding `appState` as an
+    /// `@EnvironmentObject` re-evaluates its body when this changes, and
+    /// picks up the new global on the way through. That applies the new
+    /// size live without an `.id()` bump at the root, which would reset
+    /// navigation and bounce the user out of Settings mid-change.
+    @Published var uiFontSize: UIFontSize = UserPreferences.load().uiFontSize {
+        didSet { Theme.uiFontSize = uiFontSize }
+    }
+    #endif
+
     /// Whether recording-related UI (tabs, menus, buttons) should be shown.
     var showsRecordings: Bool { userLevel >= 1 && !hideRecordings }
 

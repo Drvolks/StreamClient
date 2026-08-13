@@ -79,4 +79,49 @@ struct UIFontSizeTests {
         let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(legacy.utf8))
         #expect(prefs.uiFontSize == .medium)
     }
+
+    // MARK: - Sidebar / layout scales
+
+    @Test("Sidebar scale increases with size")
+    func sidebarScaleIncreases() {
+        #expect(UIFontSize.small.sidebarScale < UIFontSize.medium.sidebarScale)
+        #expect(UIFontSize.medium.sidebarScale < UIFontSize.large.sidebarScale)
+        #expect(UIFontSize.large.sidebarScale < UIFontSize.xLarge.sidebarScale)
+    }
+
+    /// The sidebar deliberately reacts harder to the setting than the rest
+    /// of the app: its baseline point sizes are small, so the shared curve
+    /// made changing the setting look like it had barely moved the menu.
+    @Test("Sidebar scale spreads wider than the font scale")
+    func sidebarScaleSpreadsWiderThanFontScale() {
+        #expect(UIFontSize.small.sidebarScale < UIFontSize.small.scale)
+        #expect(UIFontSize.large.sidebarScale > UIFontSize.large.scale)
+        #expect(UIFontSize.xLarge.sidebarScale > UIFontSize.xLarge.scale)
+    }
+
+    @Test("Sidebar scale stays within a sane range")
+    func sidebarScaleBounded() {
+        for size in UIFontSize.allCases {
+            #expect(size.sidebarScale > 0)
+            #expect(size.sidebarScale <= 1.6, "sidebar scale \(size.sidebarScale) for \(size) is unreasonably large")
+        }
+    }
+
+    @Test("Layout scale matches the font scale")
+    func layoutScaleMatchesFontScale() {
+        // Row heights and icons grow with the text they hold; if these ever
+        // diverge, text starts clipping at the larger steps.
+        for size in UIFontSize.allCases {
+            #expect(size.layoutScale == size.scale)
+        }
+    }
+
+    @Test("Medium is the baseline for every scale")
+    func mediumIsBaselineEverywhere() {
+        // Upgrade safety: the default must leave fonts, sidebar and layout
+        // metrics byte-for-byte identical to the pre-#107 build.
+        #expect(UIFontSize.medium.scale == 1.0)
+        #expect(UIFontSize.medium.sidebarScale == 1.0)
+        #expect(UIFontSize.medium.layoutScale == 1.0)
+    }
 }

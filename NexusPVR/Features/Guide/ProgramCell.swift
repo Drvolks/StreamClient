@@ -31,6 +31,27 @@ struct ProgramCell: View {
         #endif
     }
 
+    /// tvOS runs the guide noticeably smaller than the platform's semantic
+    /// `.caption` (~25pt), which crowded long program names out of a cell
+    /// at typical channel widths. iOS / macOS keep the semantic styles
+    /// they've always used. Both tvOS sizes follow the Text Size setting
+    /// (#107).
+    private var titleFont: Font {
+        #if os(tvOS)
+        .tvScaled(size: 20, weight: .medium)
+        #else
+        .caption
+        #endif
+    }
+
+    private var timeFont: Font {
+        #if os(tvOS)
+        .tvScaled(size: 17)
+        #else
+        .caption2
+        #endif
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             // Background
@@ -44,13 +65,13 @@ struct ProgramCell: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(program.cleanName)
-                        .font(.caption)
+                        .font(titleFont)
                         .fontWeight(.medium)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
 
                     Text(timeString)
-                        .font(.caption2)
+                        .font(timeFont)
                         .foregroundStyle(Theme.textTertiary)
                 }
 
