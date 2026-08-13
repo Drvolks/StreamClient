@@ -98,6 +98,7 @@ struct PlayerView: View {
     #if DISPATCHERPVR
     @State private var dispatchProfileBadge: String?
     @State private var dispatchProfileRefreshTask: Task<Void, Never>?
+    @StateObject private var streamSwitcher = PlayerStreamSwitcher()
     #endif
     #if os(tvOS)
     @State private var hasSetDisplayCriteria = false
@@ -1363,9 +1364,20 @@ struct PlayerView: View {
         !isLiveStream && !isRecordingInProgress && duration > 0
     }
 
+    /// Rows the video tab offers to the remote: chapters for recordings, and the
+    /// stream picker for a live channel (#117). The two never coexist — chapters
+    /// need a seekable recording, streams a live proxy channel.
+    private var tvVideoTabRowCount: Int {
+        if hasChapters { return 10 }
+        #if DISPATCHERPVR
+        if canSwitchDispatchStreams { return streamSwitcher.streams.count }
+        #endif
+        return 0
+    }
+
     private var tvTrackCount: Int {
         switch settingsTab {
-        case .video: return hasChapters ? 10 : 0
+        case .video: return tvVideoTabRowCount
         case .audio: return trackList.filter { $0.type == "audio" }.count
         case .subtitles: return trackList.filter { $0.type == "sub" }.count + 1 // +1 for "None"
         }
@@ -1375,10 +1387,18 @@ struct PlayerView: View {
         guard tvFocusedTrackIndex >= 0 else { return }
         switch settingsTab {
         case .video:
-            if hasChapters && tvFocusedTrackIndex < 10 {
-                let chapterPosition = duration / 10.0 * Double(tvFocusedTrackIndex)
-                seekToPosition(chapterPosition)
+            if hasChapters {
+                if tvFocusedTrackIndex < 10 {
+                    let chapterPosition = duration / 10.0 * Double(tvFocusedTrackIndex)
+                    seekToPosition(chapterPosition)
+                }
+                return
             }
+            #if DISPATCHERPVR
+            if canSwitchDispatchStreams, tvFocusedTrackIndex < streamSwitcher.streams.count {
+                selectDispatchStream(streamSwitcher.streams[tvFocusedTrackIndex])
+            }
+            #endif
         case .audio:
             let audioTracks = trackList.filter { $0.type == "audio" }
             if tvFocusedTrackIndex < audioTracks.count {
@@ -1532,6 +1552,10 @@ struct PlayerView: View {
             if droppedFrames > 0 {
                 videoInfoRow("Dropped", "\(droppedFrames)")
             }
+
+            #if DISPATCHERPVR
+            dispatchStreamSection
+            #endif
 
             if !isLiveStream && !isRecordingInProgress && duration > 0 {
                 Divider()
@@ -1771,6 +1795,73 @@ struct PlayerView: View {
     }
 
     #if DISPATCHERPVR
+    /// Stream picker for the playing channel, inside the video information
+    /// panel (#117) — the same switch the stats page offers per channel (#116).
+    @ViewBuilder
+    private var dispatchStreamSection: some View {
+        if canSwitchDispatchStreams && !streamSwitcher.streams.isEmpty {
+            Divider()
+                .background(.gray.opacity(0.5))
+                .padding(.vertical, Theme.spacingSM)
+
+            HStack(spacing: Theme.spacingSM) {
+                Text("Streams")
+                    .font(panelLabelFont)
+                    .foregroundStyle(.gray)
+                if streamSwitcher.isSwitching {
+                    #if os(tvOS)
+                    ProgressView()
+                    #else
+                    ProgressView()
+                        .controlSize(.small)
+                    #endif
+                }
+            }
+            .padding(.bottom, 4)
+
+            ForEach(Array(streamSwitcher.streams.enumerated()), id: \.element.id) { index, stream in
+                dispatchStreamRow(stream, index: index)
+            }
+
+            if let message = streamSwitcher.errorMessage {
+                Text(message)
+                    .font(panelLabelFont)
+                    .foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Theme.spacingMD)
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    private func dispatchStreamRow(_ stream: ChannelStream, index: Int) -> some View {
+        let isActive = stream.id == streamSwitcher.activeStreamId
+        return Button {
+            selectDispatchStream(stream)
+        } label: {
+            HStack {
+                Text(streamSwitcher.label(for: stream))
+                    .font(panelTextFont)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Theme.spacingSM)
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+            .padding(.horizontal, Theme.spacingMD)
+            .padding(.vertical, 10)
+            .background(tvOSFocused(index) ? Color.white.opacity(0.2) : Color.clear)
+            .cornerRadius(6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(streamSwitcher.isSwitching)
+        .accessibilityIdentifier("player-stream-row")
+    }
+
     private var canQueryDispatchProxyStatus: Bool {
         // Streamer/output-only users don't have access to /proxy/ts/status.
         appState.userLevel >= 1 && !client.useOutputEndpoints
@@ -1784,11 +1875,36 @@ struct PlayerView: View {
             return
         }
         dispatchProfileRefreshTask = Task {
+            // Load the channel's streams first so the status polls below can
+            // report which one is playing (#117).
+            await loadDispatchStreams()
             await refreshDispatchProfileBadge()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(8))
                 await refreshDispatchProfileBadge()
             }
+        }
+    }
+
+    /// Stream switching is an admin action, and only applies to a live channel
+    /// going through the proxy — recordings are plain files.
+    private var canSwitchDispatchStreams: Bool {
+        isLiveStream && PlayerStreamSwitcher.canSwitchStreams(client: client, appState: appState)
+    }
+
+    private func loadDispatchStreams() async {
+        guard canSwitchDispatchStreams else {
+            streamSwitcher.reset()
+            return
+        }
+        await streamSwitcher.load(channelId: appState.currentlyPlayingChannelId, client: client)
+    }
+
+    private func selectDispatchStream(_ stream: ChannelStream) {
+        Task {
+            await streamSwitcher.select(stream, client: client)
+            // Reflect the new source (and its profile) as soon as the proxy settles.
+            await refreshDispatchProfileBadge()
         }
     }
 
@@ -1814,6 +1930,7 @@ struct PlayerView: View {
         do {
             let status = try await client.getProxyStatus()
             guard let channels = status.channels, !channels.isEmpty else { return nil }
+            streamSwitcher.applyStatus(channels)
 
             // Prefer active channels only when available.
             let activeChannels = channels.filter { $0.state.lowercased() == "active" }

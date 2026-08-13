@@ -1733,6 +1733,13 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return uuidToChannelId[uuid]
     }
 
+    /// Proxy channel UUID for a Dispatcharr channel id, from the map built while
+    /// loading channels. The player knows the channel it started from, but the
+    /// proxy endpoints (`/proxy/ts/status`, `change_stream`) are keyed by UUID.
+    func channelUUID(forId id: Int) -> String? {
+        channelIdToUUID[id]
+    }
+
     /// Switches the source an active channel is streaming from (admin only).
     func switchStream(channelUUID: String, streamId: Int) async throws {
         guard !config.isDemoMode else { return }
