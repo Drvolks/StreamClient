@@ -202,6 +202,16 @@ struct ServerConfigTests {
         #expect(c.isDemoMode == false)
     }
 
+    @Test("isMockServer identifies the local demo fixture")
+    func isMockServer_fixture() {
+        #expect(config(host: "demo", port: 9191).isMockServer)
+        #expect(config(host: "DEMO", port: 9191).isMockServer)
+        #expect(config(host: "localhost", port: 9191).isMockServer)
+        #expect(config(host: "127.0.0.1", port: 9191).isMockServer)
+        #expect(config(host: "demo", port: 9192).isMockServer == false)
+        #expect(config(host: "example.com", port: 9191).isMockServer == false)
+    }
+
     @Test("isConfigured true when host is set")
     func isConfigured_withHost() {
         #expect(config(host: "example.com").isConfigured)

@@ -13,8 +13,12 @@
 		6EA347FD2F48EF9D00E0A324 /* NexusPVR TopShelf.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6EA347F32F48EF9C00E0A324 /* NexusPVR TopShelf.appex */; platformFilters = (tvos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6EA348082F48EFB600E0A324 /* TVServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6EA347F52F48EF9C00E0A324 /* TVServices.framework */; };
 		6EA3480F2F48EFB600E0A324 /* DispatcherPVR TopShelf.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6EA348072F48EFB600E0A324 /* DispatcherPVR TopShelf.appex */; platformFilters = (tvos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		817A88F5C90065EB693401BF /* EnvironmentSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */; };
+		99C7F5E150A21246D8640FB2 /* EnvironmentSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */; };
+		A83093984C3C5D84D7103688 /* EnvironmentSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7401BD837C474E2CB5FA370 /* EnvironmentSettingsTests.swift */; };
 		D1AAAA0A2F31559900D2B8DF /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = D1AAAA0B2F31559900D2B8DF /* MPVKit */; };
 		D1AAAA0D2F31559900D2B8E1 /* MPVPixelBufferBridge in Frameworks */ = {isa = PBXBuildFile; productRef = D1AAAA0C2F31559900D2B8E1 /* MPVPixelBufferBridge */; };
+		F7695B7ADD8DFB4824B99144 /* EnvironmentSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,6 +87,8 @@
 		CCCC00012F60000000CCCC01 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		CCCC00022F60000000CCCC02 /* Secret.xcconfig.template */ = {isa = PBXFileReference; lastKnownFileType = text; path = Secret.xcconfig.template; sourceTree = "<group>"; };
 		D1AAAA012F31559900D2B8DF /* StreamClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StreamClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EnvironmentSettings.swift; path = NexusPVR/Core/Models/EnvironmentSettings.swift; sourceTree = "<group>"; };
+		F7401BD837C474E2CB5FA370 /* EnvironmentSettingsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EnvironmentSettingsTests.swift; path = NexusPVRTests/EnvironmentSettingsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -296,6 +302,8 @@
 				6EA348092F48EFB600E0A324 /* DispatcherPVR TopShelf */,
 				6EA347F42F48EF9C00E0A324 /* Frameworks */,
 				6E74158D2F315368001FE083 /* Products */,
+				F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */,
+				F7401BD837C474E2CB5FA370 /* EnvironmentSettingsTests.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -591,6 +599,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A83093984C3C5D84D7103688 /* EnvironmentSettingsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -605,6 +614,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F7695B7ADD8DFB4824B99144 /* EnvironmentSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -612,6 +622,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				817A88F5C90065EB693401BF /* EnvironmentSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -619,6 +630,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				99C7F5E150A21246D8640FB2 /* EnvironmentSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1334,7 +1346,6 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DISPATCHERPVR $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

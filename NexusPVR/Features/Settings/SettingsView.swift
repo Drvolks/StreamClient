@@ -144,7 +144,8 @@ struct SettingsView: View {
                         tvSettingsRow(
                             title: "Server",
                             value: serverSummaryValue,
-                            icon: "network"
+                            icon: "network",
+                            detail: environmentSubtitle
                         ) {
                             activeTVPopup = .server
                         }
@@ -453,7 +454,13 @@ struct SettingsView: View {
         .buttonStyle(TVSettingsRowButtonStyle())
     }
 
-    #if DISPATCHERPVR
+    /// tvOS sub-line under the Server row showing the server's public IP
+    /// and geo location (#112). The full address line already shows the
+    /// host + status; the detail line below it carries the environment
+    /// info so the Network panel is no longer needed.
+    #endif
+
+    #if os(tvOS) && DISPATCHERPVR
     private var tvOSGuideSettingsSection: some View {
         TVSettingsSection(
             title: "Guide",
@@ -611,6 +618,60 @@ struct SettingsView: View {
         return "\(host) \(status)"
     }
 
+    #if DISPATCHERPVR
+    /// One-line summary of the server's public IP and geo location
+    /// (#112), shared by the tvOS Server row's detail line and the
+    /// iOS / macOS Public IP row inside the Server section.
+    ///
+    /// Returns `nil` when the data isn't ready yet, so the tvOS row can
+    /// hide the sub-line until something meaningful exists while iOS /
+    /// macOS substitute an explicit fallback via `environmentServerValue`.
+    private var environmentSubtitle: String? {
+        guard appState.environmentAvailable,
+              let env = appState.environmentSettings else {
+            return nil
+        }
+        if !env.ipLookupEnabled { return "IP lookup disabled on server" }
+        if env.ipLookupPending { return "Looking up…" }
+        if env.publicIP == nil && (env.countryName ?? env.countryCode) == nil {
+            return "No IP info reported by server"
+        }
+        let publicIP = env.publicIP ?? "—"
+        guard let location = environmentLocationString(for: env) else {
+            return publicIP
+        }
+        return "\(publicIP) (\(location))"
+    }
+
+    /// iOS / macOS variant of `environmentSubtitle`. Substitutes a
+    /// non-empty fallback so the row always reads something rather than
+    /// appearing blank while the first poll is still in flight.
+    private var environmentServerValue: String {
+        if let subtitle = environmentSubtitle { return subtitle }
+        if appState.environmentSettings == nil {
+            return "Loading…"
+        }
+        return "Not available on this server version"
+    }
+
+    private func environmentLocationString(for env: EnvironmentSettings) -> String? {
+        let country = env.countryName ?? env.countryCode
+        let city = env.city
+        switch (country, city) {
+        case let (.some(country), .some(city)) where country.contains(city):
+            return country
+        case let (.some(country), .some(city)):
+            return "\(city), \(country)"
+        case let (.some(country), .none):
+            return country
+        case let (.none, .some(city)):
+            return city
+        case (.none, .none):
+            return nil
+        }
+    }
+    #endif
+
     private func rendererName(for api: GPUAPI) -> String {
         switch api {
         case .metal:
@@ -622,6 +683,7 @@ struct SettingsView: View {
         }
     }
 
+    #if os(tvOS)
     @ViewBuilder
     private func tvSettingsPopup(for popup: TVSettingsPopup) -> some View {
         let options = popupOptions(for: popup)
@@ -848,7 +910,6 @@ struct SettingsView: View {
             }
         }
     }
-
     #endif
 
     private var generalSection: some View {
@@ -946,6 +1007,10 @@ struct SettingsView: View {
                 Text(verbatim: client.config.displayAddress)
                     .foregroundStyle(Theme.textPrimary)
             }
+
+            #if DISPATCHERPVR
+            environmentServerRow
+            #endif
 
             HStack {
                 Text("Status")
@@ -1243,6 +1308,24 @@ struct SettingsView: View {
             }
         } header: {
             Text("Guide")
+        }
+    }
+    #endif
+
+    #if DISPATCHERPVR
+    /// iOS / macOS row showing the server's public IP and geo location
+    /// (#112). Lives inside the Server section beneath the Host row so the
+    /// identity of the server (host + public IP + location) stays grouped
+    /// together instead of being split into a separate Network section.
+    private var environmentServerRow: some View {
+        HStack {
+            Text("Server Public IP")
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(verbatim: environmentServerValue)
+                .foregroundStyle(Theme.textPrimary)
+                .multilineTextAlignment(.trailing)
+                .accessibilityIdentifier("env-public-ip-and-location")
         }
     }
     #endif

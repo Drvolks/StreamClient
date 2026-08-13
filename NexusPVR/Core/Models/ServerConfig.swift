@@ -144,6 +144,19 @@ nonisolated struct ServerConfig: Codable, Equatable {
             || apiKey.lowercased() == "demo"
     }
 
+    /// True for the local Node.js Dispatcharr fixture used by screenshot and
+    /// integration testing. Unlike the built-in offline demo mode, this
+    /// fixture exposes the REST endpoints exercised by the client.
+    var isMockServer: Bool {
+        let normalizedHost = host
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let isFixtureHost = normalizedHost == "demo"
+            || normalizedHost == "localhost"
+            || normalizedHost == "127.0.0.1"
+        return isFixtureHost && effectivePort == 9191 && !useHTTPS
+    }
+
     var isConfigured: Bool {
         !host.isEmpty || isDemoMode
     }

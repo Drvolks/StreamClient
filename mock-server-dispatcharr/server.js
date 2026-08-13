@@ -591,6 +591,24 @@ function handleRequest(req, res) {
     });
   }
 
+  // Environment diagnostics used by Settings → Network. The addresses are
+  // TEST-NET/documentation values, not public or local machine addresses.
+  if (path === "/api/core/settings/env/" && req.method === "GET") {
+    return json(res, {
+      authenticated: true,
+      public_ip: "203.0.113.42",
+      local_ip: "192.0.2.10",
+      country_code: "US",
+      country_name: "Exampleland",
+      city: "Test City",
+      ip_lookup_enabled: true,
+      ip_lookup_pending: false,
+      env_mode: "core",
+      redis_tls: null,
+      postgres_tls: null,
+    });
+  }
+
   // Channels
   if (path === "/api/channels/channels/") {
     const baseUrl = `http://${req.headers.host}${path}`;
