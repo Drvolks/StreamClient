@@ -182,6 +182,68 @@ struct EnvironmentSettingsTests {
         #expect(env.publicIP == "203.0.113.99")
     }
 
+    // MARK: - Pending-lookup polling (#112)
+
+    #if DISPATCHERPVR
+    /// Dispatcharr resolves the public IP lazily: the first request to
+    /// `/api/core/settings/env/` returns `ip_lookup_pending: true` and starts a
+    /// background thread. `isEnvironmentLookupPending` is what makes the client
+    /// re-poll quickly instead of waiting a full steady-state interval.
+    @Test("Pending payloads ask for a fast re-poll")
+    func pendingPayloadIsPending() {
+        let pending = EnvironmentSettings(
+            publicIP: nil, localIP: "192.0.2.10", countryCode: nil,
+            countryName: nil, city: nil, ipLookupEnabled: true,
+            ipLookupPending: true, envMode: "aio", redisTLS: nil, postgresTLS: nil
+        )
+        #expect(AppState.isEnvironmentLookupPending(pending))
+    }
+
+    @Test("Missing publicIP counts as pending even without the flag")
+    func missingPublicIPIsPending() {
+        let noIP = EnvironmentSettings(
+            publicIP: nil, localIP: "192.0.2.10", countryCode: nil,
+            countryName: nil, city: nil, ipLookupEnabled: true,
+            ipLookupPending: false, envMode: "aio", redisTLS: nil, postgresTLS: nil
+        )
+        #expect(AppState.isEnvironmentLookupPending(noIP))
+    }
+
+    @Test("Resolved payloads settle to the steady cadence")
+    func resolvedPayloadIsNotPending() {
+        let resolved = EnvironmentSettings(
+            publicIP: "203.0.113.42", localIP: "192.0.2.10", countryCode: "US",
+            countryName: "Exampleland", city: "Test City", ipLookupEnabled: true,
+            ipLookupPending: false, envMode: "aio", redisTLS: nil, postgresTLS: nil
+        )
+        #expect(!AppState.isEnvironmentLookupPending(resolved))
+    }
+
+    /// A server with lookup disabled never fills the IP in, so fast polling
+    /// would just be wasted requests against a permanent placeholder.
+    @Test("Lookup disabled never triggers fast polling")
+    func lookupDisabledIsNotPending() {
+        let disabled = EnvironmentSettings(
+            publicIP: nil, localIP: nil, countryCode: nil,
+            countryName: nil, city: nil, ipLookupEnabled: false,
+            ipLookupPending: false, envMode: "aio", redisTLS: nil, postgresTLS: nil
+        )
+        #expect(!AppState.isEnvironmentLookupPending(disabled))
+    }
+
+    @Test("Fast retries cover the first steady-state interval, then stop")
+    func retryScheduleCoversFirstInterval() {
+        let delays = AppState.environmentPendingRetryDelays
+        #expect(!delays.isEmpty)
+        // Each retry is no slower than the steady cadence, and the whole
+        // catch-up window is bounded by roughly one steady interval — enough
+        // to catch a lookup that takes a few seconds without hammering.
+        #expect(delays.allSatisfy { $0 < AppState.environmentRefreshInterval })
+        let total = delays.reduce(Duration.zero, +)
+        #expect(total <= AppState.environmentRefreshInterval)
+    }
+    #endif
+
     // MARK: - AppState integration (#129) — covered by the UI test
     // `testSettingsShowNetworkPanelOnDispatcharr` in NexusPVRUITests
     // (which renders the actual SettingsView with `appState.environmentSettings`).

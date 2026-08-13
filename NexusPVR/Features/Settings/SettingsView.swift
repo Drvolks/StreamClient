@@ -1319,7 +1319,7 @@ struct SettingsView: View {
     /// together instead of being split into a separate Network section.
     private var environmentServerRow: some View {
         HStack {
-            Text("Public IP")
+            Text("Server Public IP")
                 .foregroundStyle(Theme.textSecondary)
             Spacer()
             Text(verbatim: environmentServerValue)
