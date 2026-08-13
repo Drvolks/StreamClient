@@ -297,7 +297,7 @@ struct SearchResultRowTV: View {
                         .aspectRatio(contentMode: .fit)
                 } placeholder: {
                     Image(systemName: "tv")
-                        .font(.system(size: 32))
+                        .font(.tvScaled(size: 32))
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .frame(width: 80, height: 80)

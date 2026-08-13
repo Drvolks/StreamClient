@@ -1148,7 +1148,7 @@ private struct RecordingsListContentView: View {
         if seriesNames.isEmpty {
             VStack(spacing: Theme.spacingMD) {
                 Image(systemName: "tv")
-                    .font(.system(size: 48))
+                    .font(.tvScaled(size: 48))
                     .foregroundStyle(Theme.textTertiary)
                 Text("No series recordings.")
                     .font(.headline)
@@ -1389,7 +1389,7 @@ private struct RecordingsListContentView: View {
     private func emptySeriesView(seriesName: String) -> some View {
         VStack(spacing: Theme.spacingMD) {
             Image(systemName: "arrow.2.squarepath")
-                .font(.system(size: 44))
+                .font(.tvScaled(size: 44))
                 .foregroundStyle(Theme.textTertiary)
             Text("No recordings for \(seriesName).")
                 .font(.headline)

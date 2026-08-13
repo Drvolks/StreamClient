@@ -1059,12 +1059,12 @@ struct GuideView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(program.cleanName)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.tvScaled(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
 
                     Text("\(program.startDate, format: .dateTime.hour().minute()) - \(program.endDate, format: .dateTime.hour().minute())")
-                        .font(.system(size: 14))
+                        .font(.tvScaled(size: 14))
                         .foregroundStyle(Theme.textSecondary)
                 }
 
@@ -1364,7 +1364,7 @@ struct GuideView: View {
         isEnabled: Bool
     ) -> some View {
         Image(systemName: imageName)
-            .font(.system(size: 16, weight: .semibold))
+            .font(.tvScaled(size: 16, weight: .semibold))
             .foregroundStyle(
                 isEnabled
                 ? (isFocused ? Color(white: 0.1) : Theme.textSecondary)

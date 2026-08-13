@@ -552,27 +552,27 @@ struct RecordingRowTV: View {
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     if showSeriesMeta, let series = recording.seriesInfo {
                                         Text(series.shortDisplayString)
-                                            .font(.system(size: 20, weight: .semibold))
+                                            .font(.tvScaled(size: 20, weight: .semibold))
                                             .foregroundStyle(Theme.accent.opacity(isFocused ? 0.98 : 0.9))
                                             .lineLimit(1)
                                     }
 
                                     Text(primaryTitleText)
-                                        .font(.system(size: 20, weight: .semibold))
+                                        .font(.tvScaled(size: 20, weight: .semibold))
                                         .foregroundStyle(Theme.textPrimary.opacity(isFocused ? 1.0 : 0.95))
                                         .lineLimit(1)
                                 }
 
                                 // Line 2: Broadcast date and time
                                 Text(broadcastDateTimeRangeText)
-                                    .font(.system(size: 24, weight: .medium))
+                                    .font(.tvScaled(size: 24, weight: .medium))
                                     .foregroundStyle(Theme.textSecondary.opacity(isFocused ? 0.88 : 0.76))
                                     .lineLimit(1)
 
                                 // Line 3: Description one-liner
                                 if let desc = oneLineDescriptionText {
                                     Text(desc)
-                                        .font(.system(size: 17))
+                                        .font(.tvScaled(size: 17))
                                         .foregroundStyle(Theme.textSecondary.opacity(isFocused ? 0.84 : 0.72))
                                         .lineLimit(1)
                                 }
@@ -580,32 +580,32 @@ struct RecordingRowTV: View {
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     if showSeriesMeta, let series = recording.seriesInfo {
                                         Text(series.shortDisplayString)
-                                            .font(.system(size: 20, weight: .semibold))
+                                            .font(.tvScaled(size: 20, weight: .semibold))
                                             .foregroundStyle(Theme.accent.opacity(isFocused ? 0.98 : 0.9))
                                             .lineLimit(1)
                                     }
 
                                     Text(recording.cleanName)
-                                        .font(.system(size: 20, weight: .semibold))
+                                        .font(.tvScaled(size: 20, weight: .semibold))
                                         .foregroundStyle(Theme.textPrimary.opacity(isFocused ? 1.0 : 0.95))
                                         .lineLimit(1)
                                 }
 
                                 Text(showSeriesMeta ? seriesDateTimeRangeText : timeRangeText)
-                                    .font(.system(size: 24, weight: .medium))
+                                    .font(.tvScaled(size: 24, weight: .medium))
                                     .foregroundStyle(Theme.textSecondary.opacity(isFocused ? 0.88 : 0.76))
                                     .lineLimit(1)
 
                                 if let detail = scheduledDetailText {
                                     Text(detail)
-                                        .font(.system(size: 17))
+                                        .font(.tvScaled(size: 17))
                                         .foregroundStyle(Theme.textSecondary.opacity(isFocused ? 0.84 : 0.72))
                                         .lineLimit(1)
                                 }
 
                                 if let desc = seriesDescriptionText {
                                     Text(desc)
-                                        .font(.system(size: 16))
+                                        .font(.tvScaled(size: 16))
                                         .foregroundStyle(Theme.textTertiary.opacity(isFocused ? 0.9 : 0.78))
                                         .lineLimit(2)
                                 }

@@ -94,7 +94,7 @@ struct EventLogView: View {
                                     reload()
                                 } label: {
                                     Text("Clear")
-                                        .font(.system(size: 20, weight: .semibold))
+                                        .font(.tvScaled(size: 20, weight: .semibold))
                                         .padding(.horizontal, Theme.spacingLG)
                                         .padding(.vertical, Theme.spacingSM)
                                         .background(Theme.guideNowPlaying.opacity(0.85))

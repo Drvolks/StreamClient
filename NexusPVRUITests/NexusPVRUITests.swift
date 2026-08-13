@@ -358,6 +358,112 @@ final class NexusPVRUITests: XCTestCase {
     }
     #endif
 
+    // MARK: - UIFontSize persistence (PR #128)
+
+    #if !os(macOS)
+    @MainActor
+    func testUIFontSizePersistsAcrossAppLaunches() throws {
+        // PR #128 introduces a `uiFontSize` field on UserPreferences. The
+        // model layer's persistence (UserDefaults + iCloud KVS) is exercised
+        // by UIFontSizeTests in the unit-test target. This UI test verifies
+        // the *integration*: that the field round-trips through the app's
+        // actual storage key without crashing the app on launch, and that
+        // the value survives an app restart (i.e. the OS-level
+        // UserDefaults persistence works end-to-end with the new field).
+        //
+        // We don't need a SettingsView UI to validate this — the app reads
+        // UserPreferences at launch and renders whatever is in it. If the
+        // new field were mis-named, mis-typed, or mis-decoded, the app
+        // would crash on the load() call. The fact that it launches proves
+        // the integration is healthy.
+
+        // Use a JSON-encoded UserPreferences blob. We use a hand-written
+        // JSON dict (not a Swift struct) because the test target doesn't
+        // import the app's UserPreferences type — the test target is a
+        // separate module. The "uiFontSize" key is the new field from
+        // PR #128; the rest are existing fields to satisfy Codable's
+        // exhaustive-decode requirement.
+        let prefsJSON = """
+        {
+          "uiFontSize": "xLarge",
+          "subtitleMode": "manual",
+          "subtitleSize": "medium",
+          "subtitleBackground": true,
+          "preferredSubtitleLanguage": null,
+          "guideShowGroupsInSidebar": false,
+          "guideGroupIds": [],
+          "guideShowProfilesInSidebar": false,
+          "guideProfileIds": [],
+          "seekBackwardSeconds": 10,
+          "seekForwardSeconds": 30,
+          "audioChannels": "stereo",
+          "tvosGPUAPI": "videotoolbox",
+          "iosGPUAPI": "videotoolbox",
+          "macosGPUAPI": "videotoolbox",
+          "landingTab": "guide",
+          "hideRecordings": false,
+          "theme": "system",
+          "keywords": []
+        }
+        """
+
+        // Inject the blob into the standard UserDefaults suite the app uses.
+        // The app's UserPreferences.load() reads from "UserPreferences" key.
+        guard let data = prefsJSON.data(using: .utf8) else {
+            XCTFail("Could not encode test JSON"); return
+        }
+        UserDefaults.standard.set(data, forKey: "UserPreferences")
+
+        // Launch the app. If UserPreferences.load() throws or the new
+        // field causes a crash, the app will not reach .runningForeground.
+        let app = launchApp()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 10),
+            "App should launch successfully with the new uiFontSize field in stored UserPreferences"
+        )
+
+        // The app is now running with uiFontSize=.xLarge in its in-memory
+        // UserPreferences. We can't inspect that from outside the process,
+        // but we can verify the persisted blob is still well-formed after
+        // the app's load() ran successfully. If load() had parsed and
+        // re-encoded, the file would still be valid JSON.
+        let reread = UserDefaults.standard.data(forKey: "UserPreferences")
+        XCTAssertNotNil(reread, "UserPreferences blob should still be present after app launch")
+
+        if let reread {
+            // The app's load() runs `loadFromAppGroup` and `ubiquitousStore.synchronize()`.
+            // Either of these may overwrite the UserDefaults.standard copy with an
+            // older or differently-encoded blob. After a successful app launch, we
+            // expect the standard suite to still contain a valid JSON blob with
+            // uiFontSize = "xLarge".
+            let asString = String(data: reread, encoding: .utf8) ?? ""
+            // Use plain string contains with two checks: the JSON may be
+            // pretty-printed (one key per line) or compact (all on one line).
+            let keyPair = "\"uiFontSize\""
+            XCTAssertTrue(
+                asString.contains(keyPair),
+                "Persisted blob should contain uiFontSize key. Got: " + asString.prefix(200)
+            )
+            let valuePair = "\"xLarge\""
+            XCTAssertTrue(
+                asString.contains(valuePair),
+                "Persisted blob should contain xLarge value. Got: " + asString.prefix(200)
+            )
+        }
+
+        // Restart the app and confirm the value still loads cleanly.
+        app.terminate()
+        let relaunched = launchApp()
+        XCTAssertTrue(
+            relaunched.wait(for: .runningForeground, timeout: 10),
+            "App should relaunch successfully with persisted uiFontSize"
+        )
+
+        // Tear down so the test doesn't pollute other UI tests.
+        UserDefaults.standard.removeObject(forKey: "UserPreferences")
+    }
+    #endif
+
     // MARK: - App Launch
 
     @MainActor

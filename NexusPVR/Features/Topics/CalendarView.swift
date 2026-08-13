@@ -198,7 +198,7 @@ struct CalendarView: View {
                                 .font(.caption)
                                 .lineLimit(1)
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 10))
+                                .font(.tvScaled(size: 10))
                         }
                     }
                 }
@@ -291,7 +291,7 @@ struct CalendarView: View {
                     Text(selectedKeyword.isEmpty ? "All" : selectedKeyword)
                         .lineLimit(1)
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10))
+                        .font(.tvScaled(size: 10))
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .font(.subheadline)
@@ -529,14 +529,14 @@ struct CalendarView: View {
 
                     if blockHeight > 35 {
                         Text(item.channel.name)
-                            .font(.system(size: 9))
+                            .font(.tvScaled(size: 9))
                             .foregroundStyle(blockTextColor.opacity(0.8))
                             .lineLimit(1)
                     }
 
                     if blockHeight > 50 {
                         Text("\(item.program.startDate.formatted(date: .omitted, time: .shortened)) - \(item.program.endDate.formatted(date: .omitted, time: .shortened))")
-                            .font(.system(size: 9))
+                            .font(.tvScaled(size: 9))
                             .foregroundStyle(blockTextColor.opacity(0.7))
                     }
                 }

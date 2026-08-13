@@ -534,7 +534,7 @@ struct ChannelsView: View {
             Task { await refreshChannels() }
         } label: {
             Image(systemName: "arrow.clockwise")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.tvScaled(size: 16, weight: .semibold))
         }
         .buttonStyle(TVPillFieldButtonStyle(unfocusedForeground: Theme.textTertiary))
         .focusEffectDisabled()
@@ -925,11 +925,20 @@ struct ChannelGridCard: View {
 
             if let program = currentProgram {
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                    // Top-aligned so the NEW badge stays on the title's
+                    // first line when the name wraps.
+                    HStack(alignment: .top, spacing: 6) {
                         Text(program.cleanName)
                             .font(.subheadline)
                             .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
+                            // Long program names get a second line rather
+                            // than being truncated. `reservesSpace` keeps
+                            // every card in a grid row the same height, so
+                            // one wrapping title doesn't make its
+                            // neighbours grow with it.
+                            .lineLimit(2, reservesSpace: true)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         if program.isNew { NewBadge() }
                     }
@@ -951,7 +960,9 @@ struct ChannelGridCard: View {
                 Text("No program info")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
+                    // Matches the two-line reservation above so cards
+                    // without EPG data line up with the ones that have it.
+                    .lineLimit(2, reservesSpace: true)
             }
         }
         .padding(Theme.spacingMD)
