@@ -36,6 +36,7 @@ struct PlayerView: View {
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
     private let networkEventLogger: any NetworkEventLogging
+    private let liveKeepalive: LiveStreamKeepalive
 
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -75,7 +76,6 @@ struct PlayerView: View {
     #if os(tvOS)
     @State private var tvFocusedTrackIndex: Int = -1  // -1 = tabs focused, 0+ = track list index
     #endif
-    @State private var liveKeepaliveTask: Task<Void, Never>?
     @State private var reloadURLFunc: ((URL) -> Void)?
     /// Latest server-side buffer state, plus when it arrived so the live edge can be
     /// extrapolated between polls (the buffer grows in real time).
@@ -122,7 +122,8 @@ struct PlayerView: View {
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
-        networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
+        networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger,
+        liveKeepalive: LiveStreamKeepalive = Dependencies.liveStreamKeepalive
     ) {
         self.url = url
         self.title = title
@@ -132,6 +133,7 @@ struct PlayerView: View {
         self.recordingStartTime = recordingStartTime
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
+        self.liveKeepalive = liveKeepalive
     }
 
     var body: some View {
@@ -543,7 +545,10 @@ struct PlayerView: View {
             let nativePiPActive = isUsingPixelBufferRenderer && (session.isPiPActive || session.dismissingForPiP)
             if nativePiPActive {
                 // Don't stop player — mpv continues feeding PiP, so the server-side
-                // stream and its keepalive have to stay up too.
+                // stream and its keepalive have to stay up too. The keepalive is
+                // owned by LiveStreamKeepalive precisely so it survives this view;
+                // just stop routing buffer state into state that's about to die.
+                liveKeepalive.detach()
             } else {
                 cleanupAction?()
                 cleanupAction = nil
@@ -659,37 +664,44 @@ struct PlayerView: View {
         }
     }
 
-    /// Renews the server-side live stream handle on a timer.
+    /// Attaches this view to the server-side live stream renewal loop.
     ///
     /// NextPVR reclaims the tuner and deletes the timeshift buffer after 15
     /// seconds without a renewal. While playing, mpv's socket reads mask this;
     /// once paused, mpv fills its demuxer cache and stops reading, so without
-    /// this loop the stream is torn down mid-pause and resume plays only the
+    /// renewals the stream is torn down mid-pause and resume plays only the
     /// local cache before dying (issue #120).
     ///
-    /// Runs for the whole live session rather than only while paused — the
-    /// renewal contract doesn't care whether we're reading, and the request is
-    /// cheap. Ticks well under the 15s expiry so one slow or failed renewal
-    /// can't lose the stream; the client throttles the buffer-state call it
-    /// piggybacks on this loop.
+    /// The loop itself lives in `LiveStreamKeepalive`, not in this view's state:
+    /// entering native PiP destroys `PlayerView` while playback continues, so a
+    /// view-owned task would leak and the view rebuilt on restore would start a
+    /// second one (issue #133). Starting for a URL that's already being renewed
+    /// adopts the running loop instead.
     private func startLiveKeepalive() {
-        liveKeepaliveTask?.cancel()
+        guard isLiveStream else {
+            liveKeepalive.stop()
+            resetLiveTimeshiftState()
+            return
+        }
+        // Only a genuinely new stream resets the timeshift view state — adopting the
+        // loop after a PiP restore has to keep what it already knows about the buffer.
+        if !liveKeepalive.isRunning(for: url) {
+            resetLiveTimeshiftState()
+        }
+        liveKeepalive.start(
+            streamKey: url,
+            renew: { [client] in try? await client.renewLiveStream() },
+            onInfo: { info, at in
+                liveStreamInfo = info
+                liveStreamInfoAt = at
+            }
+        )
+    }
+
+    private func resetLiveTimeshiftState() {
         liveStreamInfo = nil
         liveStreamInfoAt = .distantPast
         liveBaseOffset = 0
-        guard isLiveStream else {
-            liveKeepaliveTask = nil
-            return
-        }
-        liveKeepaliveTask = Task {
-            while !Task.isCancelled {
-                if let info = try? await client.renewLiveStream() {
-                    liveStreamInfo = info
-                    liveStreamInfoAt = Date()
-                }
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
     }
 
     // MARK: - Live timeshift buffer
@@ -808,8 +820,7 @@ struct PlayerView: View {
     /// right away instead of after the renewal timeout. Not called while PiP is
     /// still playing.
     private func endLiveStream() {
-        liveKeepaliveTask?.cancel()
-        liveKeepaliveTask = nil
+        liveKeepalive.stop()
         liveSeekCommitTask?.cancel()
         liveSeekCommitTask = nil
         pendingLiveSeekTarget = nil
@@ -1225,6 +1236,14 @@ struct PlayerView: View {
             },
             isPausedQuery: {
                 session.player?.isPaused ?? true
+            },
+            onSessionEnded: { [client, liveKeepalive, appState] in
+                // The PiP window was closed outright, so no PlayerView will run
+                // onDisappear — release the server-side stream here instead of
+                // leaving the tuner held until the renewal loop's next failure.
+                liveKeepalive.stop()
+                Task { await client.stopLiveStream() }
+                appState.stopPlayback()
             }
         )
     }

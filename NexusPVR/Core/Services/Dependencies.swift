@@ -19,6 +19,9 @@ enum Dependencies {
     @MainActor
     private static let defaultActivePlayerSession = ActivePlayerSession()
 
+    @MainActor
+    private static let defaultLiveStreamKeepalive = LiveStreamKeepalive()
+
     /// App-wide default image cache (thread-safe NSCache-backed)
     static var imageCache: any ImageCaching {
         defaultImageCache
@@ -45,5 +48,12 @@ enum Dependencies {
     @MainActor
     static var playerSession: ActivePlayerSession {
         defaultActivePlayerSession
+    }
+
+    /// App-wide owner of the live stream renewal loop. Outlives `PlayerView` so a
+    /// PiP dismissal can't orphan or duplicate it (#133).
+    @MainActor
+    static var liveStreamKeepalive: LiveStreamKeepalive {
+        defaultLiveStreamKeepalive
     }
 }

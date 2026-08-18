@@ -39,6 +39,10 @@ protocol PVRClientProtocol: ObservableObject {
     func renewLiveStream() async throws -> LiveStreamInfo?
     /// Release any server-side live stream resources. Best-effort; must not throw.
     func stopLiveStream() async
+    /// True while a server-side live stream handle is open. Callers that
+    /// re-authenticate opportunistically must skip it while this holds: a new
+    /// session orphans the handle that `/live` was opened under.
+    var hasActiveLiveStream: Bool { get }
     /// URL replaying the live buffer from `byteOffset`, or nil when the backend
     /// has no seekable server-side buffer.
     func liveStreamSeekURL(byteOffset: Int64) -> URL?
@@ -61,6 +65,8 @@ extension PVRClientProtocol {
     func renewLiveStream() async throws -> LiveStreamInfo? { nil }
 
     func stopLiveStream() async {}
+
+    var hasActiveLiveStream: Bool { false }
 
     func liveStreamSeekURL(byteOffset: Int64) -> URL? { nil }
 }

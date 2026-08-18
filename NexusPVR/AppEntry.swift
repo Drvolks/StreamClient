@@ -125,7 +125,13 @@ struct PVRApp: App {
     #endif
 
     private func validateAuthenticationOnForeground() {
-        guard client.isConfigured else { return }
+        // Skip while a live stream is open — re-auth rotates the SID that owns the
+        // server-side handle, so the renewals stop reaching it and the stream is
+        // torn down ~15s later. See ForegroundAuthPolicy (#133).
+        guard ForegroundAuthPolicy.shouldReauthenticate(
+            isConfigured: client.isConfigured,
+            hasActiveLiveStream: client.hasActiveLiveStream
+        ) else { return }
 
         let expectedConfig = client.config
         foregroundAuthTask?.cancel()
@@ -143,7 +149,11 @@ struct PVRApp: App {
         let retryDelays: [Double] = [0.75, 1.5, 3.0]
 
         for attempt in 1...retryDelays.count {
-            guard !Task.isCancelled, client.isConfigured, client.config == expectedConfig else { return }
+            guard !Task.isCancelled, client.config == expectedConfig,
+                  ForegroundAuthPolicy.shouldReauthenticate(
+                    isConfigured: client.isConfigured,
+                    hasActiveLiveStream: client.hasActiveLiveStream
+                  ) else { return }
 
             do {
                 try await client.authenticate()
