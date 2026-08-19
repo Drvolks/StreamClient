@@ -45,6 +45,15 @@ nonisolated protocol BrandConfig {
     static var guideNowPlaying: Color { get }
 }
 
+// Exactly one brand flag must be defined by the target's
+// SWIFT_ACTIVE_COMPILATION_CONDITIONS. Without this guard a missing flag
+// silently compiles the *other* brand into the app (see build 366/367).
+#if DISPATCHERPVR && NEXTPVR
+#error("Both DISPATCHERPVR and NEXTPVR are defined. Exactly one brand flag must be set in SWIFT_ACTIVE_COMPILATION_CONDITIONS.")
+#elseif !DISPATCHERPVR && !NEXTPVR
+#error("No brand flag defined. Set DISPATCHERPVR or NEXTPVR in this target's SWIFT_ACTIVE_COMPILATION_CONDITIONS for every build configuration.")
+#endif
+
 #if DISPATCHERPVR
 typealias Brand = DispatcherPVRBrand
 #if !TOPSHELF_EXTENSION
