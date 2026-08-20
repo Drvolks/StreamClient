@@ -402,6 +402,9 @@ struct AppStateTests {
         #expect(AppState.tab(for: .guide) == .guide)
         #expect(AppState.tab(for: .channels) == .channels)
         #expect(AppState.tab(for: .completedRecordings) == .recordings)
+        #if DISPATCHERPVR
+        #expect(AppState.tab(for: .stats) == .stats)
+        #endif
     }
 
     @Test("isLandingOptionAvailable returns true for guide and channels at any level")
@@ -418,6 +421,27 @@ struct AppStateTests {
         #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 1) == true)
         #expect(AppState.isLandingOptionAvailable(.completedRecordings, forUserLevel: 10) == true)
     }
+
+    #if DISPATCHERPVR
+    @Test("isLandingOptionAvailable gates stats on userLevel >= 1")
+    func isLandingOptionAvailableGatesStats() {
+        #expect(AppState.isLandingOptionAvailable(.stats, forUserLevel: 0) == false)
+        #expect(AppState.isLandingOptionAvailable(.stats, forUserLevel: 1) == true)
+        #expect(AppState.isLandingOptionAvailable(.stats, forUserLevel: 10) == true)
+        // Hiding recording features must not hide the Status landing.
+        #expect(AppState.isLandingOptionAvailable(.stats, forUserLevel: 1, hideRecordings: true) == true)
+    }
+
+    @Test("Stats landing is redirected to Guide for streamer-level users")
+    func statsLandingRedirectsForStreamers() {
+        AppState.testLandingTabOverride = .stats
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        #expect(state.selectedTab == .stats)
+        state.userLevel = 0
+        #expect(state.selectedTab == .guide)
+    }
+    #endif
 
     @Test("initialLandingTab honors testLandingTabOverride")
     func initialLandingTabHonorsOverride() {
