@@ -15,12 +15,12 @@
 		6EA348082F48EFB600E0A324 /* TVServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6EA347F52F48EF9C00E0A324 /* TVServices.framework */; };
 		6EA3480F2F48EFB600E0A324 /* DispatcherPVR TopShelf.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6EA348072F48EFB600E0A324 /* DispatcherPVR TopShelf.appex */; platformFilters = (tvos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		713B403662894F9A050E684E /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
-		9F4ADD54EE55C33F214EED53 /* UIFontSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037CBFB23148FFF12B2C56AB /* UIFontSizeTests.swift */; };
-		A4225DD6A2AC799DEC768C91 /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
-		ADC4F0BD98170AAADBEBF94C /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
 		817A88F5C90065EB693401BF /* EnvironmentSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */; };
 		99C7F5E150A21246D8640FB2 /* EnvironmentSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */; };
+		9F4ADD54EE55C33F214EED53 /* UIFontSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037CBFB23148FFF12B2C56AB /* UIFontSizeTests.swift */; };
+		A4225DD6A2AC799DEC768C91 /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
 		A83093984C3C5D84D7103688 /* EnvironmentSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7401BD837C474E2CB5FA370 /* EnvironmentSettingsTests.swift */; };
+		ADC4F0BD98170AAADBEBF94C /* UIFontSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C89DFF0A539CE96600E15C1 /* UIFontSize.swift */; };
 		D1AAAA0A2F31559900D2B8DF /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = D1AAAA0B2F31559900D2B8DF /* MPVKit */; };
 		D1AAAA0D2F31559900D2B8E1 /* MPVPixelBufferBridge in Frameworks */ = {isa = PBXBuildFile; productRef = D1AAAA0C2F31559900D2B8E1 /* MPVPixelBufferBridge */; };
 		F7695B7ADD8DFB4824B99144 /* EnvironmentSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F738A7C1C9D9CBC1AC5811E6 /* EnvironmentSettings.swift */; };
@@ -140,6 +140,7 @@
 				Core/Models/SessionLoginResponse.swift,
 				Core/Models/SubtitleMode.swift,
 				Core/Models/SubtitleSize.swift,
+				Core/Models/UIFontSize.swift,
 				Core/Models/UserPreferences.swift,
 				Core/Models/WatchedChannel.swift,
 				Core/Models/WatchHistory.swift,
@@ -149,7 +150,6 @@
 				Core/Services/TopShelfProgram.swift,
 				Design/SportIcon.swift,
 				Design/Theme.swift,
-				Core/Models/UIFontSize.swift,
 			);
 			target = 6EA347F22F48EF9C00E0A324 /* NexusPVR TopShelf */;
 		};
@@ -180,6 +180,7 @@
 				Core/Models/SessionLoginResponse.swift,
 				Core/Models/SubtitleMode.swift,
 				Core/Models/SubtitleSize.swift,
+				Core/Models/UIFontSize.swift,
 				Core/Models/UserPreferences.swift,
 				Core/Models/WatchedChannel.swift,
 				Core/Models/WatchHistory.swift,
@@ -189,7 +190,6 @@
 				Core/Services/TopShelfProgram.swift,
 				Design/SportIcon.swift,
 				Design/Theme.swift,
-				Core/Models/UIFontSize.swift,
 			);
 			target = 6EA348062F48EFB600E0A324 /* DispatcherPVR TopShelf */;
 		};
@@ -197,8 +197,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
-				LaunchScreen.storyboard,
 				Core/Models/UIFontSize.swift,
+				LaunchScreen.storyboard,
 			);
 			target = D1AAAA062F31559900D2B8DF /* Dispatcharr */;
 		};
@@ -861,7 +861,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR";
 				PRODUCT_MODULE_NAME = NextPVR;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -940,7 +940,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR";
 				PRODUCT_MODULE_NAME = NextPVR;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1093,7 +1093,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -1129,7 +1129,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).NexusPVR.TopShelfExtension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
@@ -1276,7 +1276,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = StreamClient;
@@ -1354,7 +1354,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).DispatcherPVR";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				"PRODUCT_NAME[sdk=macosx*]" = StreamClient;
