@@ -96,6 +96,9 @@ nonisolated struct UserPreferences: Codable {
         case guide = "Guide"
         case channels = "Channels"
         case completedRecordings = "CompletedRecordings"
+        #if DISPATCHERPVR
+        case stats = "Stats"
+        #endif
 
         var id: String { rawValue }
 
@@ -104,6 +107,9 @@ nonisolated struct UserPreferences: Codable {
             case .guide: return "Guide"
             case .channels: return "Channels"
             case .completedRecordings: return "Completed Recordings"
+            #if DISPATCHERPVR
+            case .stats: return "Status"
+            #endif
             }
         }
 

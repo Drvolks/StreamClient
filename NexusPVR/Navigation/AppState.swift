@@ -379,12 +379,16 @@ final class AppState: ObservableObject {
         case .guide: return .guide
         case .channels: return .channels
         case .completedRecordings: return .recordings
+        #if DISPATCHERPVR
+        case .stats: return .stats
+        #endif
         }
     }
 
     /// Whether a landing option's target tab is available to the current
     /// user. The Completed Recordings landing requires `userLevel >= 1`
-    /// (recordings access); the other landings are always available.
+    /// (recordings access) and the Status landing (Dispatcharr only)
+    /// requires `userLevel >= 1`; the other landings are always available.
     /// Used by both the Settings picker (to filter out unavailable
     /// options) and `applyLandingTab` (to redirect to Guide if needed).
     static func isLandingOptionAvailable(
@@ -397,6 +401,10 @@ final class AppState: ObservableObject {
             return true
         case .completedRecordings:
             return userLevel >= 1 && !hideRecordings
+        #if DISPATCHERPVR
+        case .stats:
+            return userLevel >= 1
+        #endif
         }
     }
 
@@ -409,6 +417,11 @@ final class AppState: ObservableObject {
         if selectedTab == .recordings && !showsRecordings {
             selectedTab = .guide
         }
+        #if DISPATCHERPVR
+        if selectedTab == .stats && userLevel < 1 {
+            selectedTab = .guide
+        }
+        #endif
     }
 
     /// Convenience helper used by settings UI when applying a new landing
