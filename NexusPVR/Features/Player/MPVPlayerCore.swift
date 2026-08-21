@@ -35,16 +35,18 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var isDestroyed = false
     private var positionTimer: Timer?
     private let eventLoopGroup = DispatchGroup()
-    /// Dedicated serial queue for catch-up's position polling (#119) — see
-    /// `startPositionPolling()`. A slow/blocked mpv core during a catch-up
-    /// seek (confirmed on-device: an unrelated HTTP status-poll timer froze
-    /// in lockstep with mpv's position polling, meaning the whole main
-    /// thread was blocked, not just the position readout) would otherwise
-    /// freeze the entire app for as long as mpv's core stays busy. Routing
-    /// catch-up's polling through its own serial queue means overlapping
-    /// ticks queue up instead of racing or blocking the main thread — a
-    /// slow core just lags the position display. Live/recording polling is
-    /// untouched (still the synchronous main-thread path below).
+    /// Dedicated serial queue for every mpv call catch-up (#119) issues off
+    /// the main thread: position polling (`startPositionPolling()`) and the
+    /// seek command itself (`seek(seconds:)`/`seekTo(position:)`). A
+    /// slow/blocked mpv core during a catch-up seek — reopening the demuxer
+    /// against a slow/remote proxy — blocks whichever thread calls into mpv
+    /// while it's busy; both of these calls used to run on the main thread,
+    /// which is why an unrelated HTTP status-poll timer was observed
+    /// freezing in lockstep on-device (the whole main thread was blocked,
+    /// not just mpv). One shared serial queue keeps catch-up's own mpv
+    /// calls from racing each other while none of them can block the main
+    /// thread anymore. Live/recording paths are untouched — still the
+    /// synchronous main-thread calls as always.
     private let catchupPollQueue = DispatchQueue(label: "MPVPlayerCore.catchupPoll")
     /// Caps how many catch-up polls can be queued during a stall (~2s of
     /// backlog at the 0.5s tick rate) so a very long stall doesn't pile up
@@ -325,6 +327,29 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     var reportedDuration: Double = 0
 
     func seek(seconds: Int) {
+        // Catch-up (#119): mpv_command_string("seek ...") is called directly
+        // on the main thread from the UI's seek button/drag handler. If
+        // mpv's core blocks reopening the demuxer against a slow/remote
+        // proxy, that call blocks too — freezing the whole app, not just
+        // playback (confirmed on-device: this, not the position-polling
+        // timer already fixed, is what an unrelated HTTP status-poll timer
+        // going silent in lockstep was actually catching). Nothing here
+        // needs the result synchronously, so route it off-main. Re-checks
+        // self.mpv fresh inside the block rather than capturing today's
+        // value, in case teardown races a still-pending seek.
+        if preferKeyframeSeek {
+            catchupPollQueue.async { [weak self] in
+                guard let self, let mpv = self.mpv else { return }
+                let command = "seek \(seconds) relative+keyframes"
+                print("MPV: issuing '\(command)' (preferKeyframeSeek=true)")
+                let result = mpv_command_string(mpv, command)
+                if result < 0 {
+                    print("MPV: seek command failed: \(result)")
+                }
+            }
+            return
+        }
+
         guard let mpv = mpv else { return }
         var actualSeconds = seconds
         if isRecordingInProgress {
@@ -352,9 +377,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 }
             }
         }
-        let precision = preferKeyframeSeek ? "+keyframes" : ""
-        let command = "seek \(actualSeconds) relative\(precision)"
-        print("MPV: issuing '\(command)' (preferKeyframeSeek=\(preferKeyframeSeek))")
+        let command = "seek \(actualSeconds) relative"
+        print("MPV: issuing '\(command)' (preferKeyframeSeek=false)")
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seek command failed: \(result)")
@@ -362,6 +386,20 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     }
 
     func seekTo(position: Double) {
+        // See seek(seconds:) — same off-main rationale for catch-up (#119).
+        if preferKeyframeSeek {
+            catchupPollQueue.async { [weak self] in
+                guard let self, let mpv = self.mpv else { return }
+                let command = "seek \(position) absolute+keyframes"
+                print("MPV: issuing '\(command)' (preferKeyframeSeek=true)")
+                let result = mpv_command_string(mpv, command)
+                if result < 0 {
+                    print("MPV: seekTo command failed: \(result)")
+                }
+            }
+            return
+        }
+
         guard let mpv = mpv else { return }
         var target = position
         // Clamp to the smaller of mpv's available duration and the UI-reported
@@ -380,9 +418,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 target = min(target, safeDuration)
             }
         }
-        let precision = preferKeyframeSeek ? "+keyframes" : ""
-        let command = "seek \(target) absolute\(precision)"
-        print("MPV: issuing '\(command)' (preferKeyframeSeek=\(preferKeyframeSeek))")
+        let command = "seek \(target) absolute"
+        print("MPV: issuing '\(command)' (preferKeyframeSeek=false)")
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seekTo command failed: \(result)")
