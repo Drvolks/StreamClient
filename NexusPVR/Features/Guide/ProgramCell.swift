@@ -94,7 +94,7 @@ struct ProgramCell: View {
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
 
-                        if program.isNew && !isCatchupAvailable {
+                        if program.shouldShowNewBadge && !isCatchupAvailable {
                             NewBadge(compact: useCompactBadges)
                         }
 

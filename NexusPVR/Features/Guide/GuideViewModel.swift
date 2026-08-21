@@ -265,10 +265,22 @@ final class GuideViewModel: ObservableObject {
         Calendar.current.isDateInToday(selectedDate)
     }
 
-    /// Whether the "previous day" control should be interactive — always
-    /// true once past `today`, otherwise gated by `allowsPastDates`.
+    /// Earliest day the guide can display. Dispatcharr may browse history,
+    /// but never before the oldest program actually present in EPGCache.
+    /// A nil cache preserves the standalone ViewModel behavior used by tests.
+    private var minimumNavigableDate: Date? {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard allowsPastDates else { return today }
+        guard let epgCache else { return nil }
+        guard let earliestEPGDate = epgCache.earliestEPGDate else { return today }
+        return min(today, calendar.startOfDay(for: earliestEPGDate))
+    }
+
+    /// Whether the previous-day control would remain inside the cached EPG.
     var canGoToPreviousDay: Bool {
-        allowsPastDates || !isOnToday
+        guard let minimumNavigableDate else { return true }
+        return Calendar.current.startOfDay(for: selectedDate) > minimumNavigableDate
     }
 
     func scrollToNow() {
@@ -277,7 +289,18 @@ final class GuideViewModel: ObservableObject {
 
     func previousDay() {
         guard canGoToPreviousDay else { return }
-        selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+        let previousDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+        if let minimumNavigableDate {
+            selectedDate = max(previousDate, minimumNavigableDate)
+        } else {
+            selectedDate = previousDate
+        }
+    }
+
+    func clampSelectedDateToAvailableEPG() {
+        guard let minimumNavigableDate,
+              Calendar.current.startOfDay(for: selectedDate) < minimumNavigableDate else { return }
+        selectedDate = minimumNavigableDate
     }
 
     func nextDay() {

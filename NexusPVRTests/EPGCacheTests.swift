@@ -21,6 +21,19 @@ struct EPGCacheTests {
         ]
     }
 
+    private func makeProgram(id: Int, start: Date) -> Program {
+        Program(
+            id: id,
+            name: "Program \(id)",
+            subtitle: nil,
+            desc: nil,
+            start: Int(start.timeIntervalSince1970),
+            end: Int(start.addingTimeInterval(3600).timeIntervalSince1970),
+            genres: nil,
+            channelId: id
+        )
+    }
+
     // MARK: - Invalidation
 
     @Test("invalidate clears channel state")
@@ -165,6 +178,19 @@ struct EPGCacheTests {
     }
 
     // MARK: - Program Access
+
+    @Test("earliestProgramDate finds the oldest EPG entry across channels")
+    func earliestProgramDateAcrossChannels() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let oldest = now.addingTimeInterval(-3 * 86_400)
+        let listings = [
+            1: [makeProgram(id: 1, start: now)],
+            2: [makeProgram(id: 2, start: oldest), makeProgram(id: 3, start: now.addingTimeInterval(-86_400))]
+        ]
+
+        #expect(EPGCache.earliestProgramDate(in: listings) == oldest)
+        #expect(EPGCache.earliestProgramDate(in: [:]) == nil)
+    }
 
     @Test("programs returns empty for unknown channel")
     func programsForUnknownChannel() {

@@ -120,6 +120,13 @@ struct GuideView: View {
             }
             .onChange(of: epgCache.isFullyLoaded) {
                 Task { viewModel.updateKeywordMatches(keywords: keywords) }
+                if epgCache.isFullyLoaded {
+                    viewModel.clampSelectedDateToAvailableEPG()
+                }
+            }
+            .onChange(of: epgCache.earliestEPGDate) { _, earliestEPGDate in
+                guard earliestEPGDate != nil, epgCache.isFullyLoaded else { return }
+                viewModel.clampSelectedDateToAvailableEPG()
             }
             .onChange(of: appState.guideChannelFilter) {
                 Task { viewModel.channelSearchText = appState.guideChannelFilter }
@@ -1219,7 +1226,7 @@ struct GuideView: View {
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
 
-                        if program.isNew && !catchupAvailable {
+                        if program.shouldShowNewBadge && !catchupAvailable {
                             NewBadge(compact: useCompactBadges)
                         }
 

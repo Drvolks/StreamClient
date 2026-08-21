@@ -249,7 +249,7 @@ struct CalendarView: View {
             await loadScheduledRecordings()
         }
         #if DISPATCHERPVR
-        .task(id: maximumCatchupDays) {
+        .task(id: catchupLoadIdentifier) {
             await loadCatchupPrograms()
         }
         #endif
@@ -274,14 +274,16 @@ struct CalendarView: View {
             .max() ?? 0
     }
 
+    private var catchupLoadIdentifier: String {
+        let earliestTimestamp = epgCache.earliestEPGDate?.timeIntervalSince1970 ?? 0
+        return "\(maximumCatchupDays)-\(earliestTimestamp)"
+    }
+
     /// Reloads the topic matches with archived programs included. Waiting for
     /// the oldest relevant day also joins any full-EPG load already running,
     /// so past calendar pages do not briefly appear empty.
     private func loadCatchupPrograms() async {
         let now = Date()
-        if Calendar.current.startOfDay(for: selectedDate) < earliestNavigableDate {
-            selectedDate = earliestNavigableDate
-        }
         if maximumCatchupDays > 0,
            let oldestArchiveDate = Calendar.current.date(
                byAdding: .day,
@@ -292,6 +294,9 @@ struct CalendarView: View {
         }
 
         guard !Task.isCancelled else { return }
+        if Calendar.current.startOfDay(for: selectedDate) < earliestNavigableDate {
+            selectedDate = earliestNavigableDate
+        }
         catchupAwareTopicPrograms = await epgCache.matchingPrograms(
             keywords: UserPreferences.load().keywords,
             includesCatchup: true
@@ -655,7 +660,7 @@ struct CalendarView: View {
                         }
                         Spacer()
                     }
-                } else if item.program.isNew {
+                } else if item.program.shouldShowNewBadge {
                     VStack {
                         HStack {
                             Spacer()
@@ -732,7 +737,14 @@ struct CalendarView: View {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         #if DISPATCHERPVR
-        return cal.date(byAdding: .day, value: -maximumCatchupDays, to: today) ?? today
+        let archiveStart = cal.date(
+            byAdding: .day,
+            value: -maximumCatchupDays,
+            to: today
+        ) ?? today
+        guard let earliestEPGDate = epgCache.earliestEPGDate else { return today }
+        let epgStart = min(today, cal.startOfDay(for: earliestEPGDate))
+        return max(archiveStart, epgStart)
         #else
         return today
         #endif

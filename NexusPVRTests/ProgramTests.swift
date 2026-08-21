@@ -138,6 +138,29 @@ struct ProgramTests {
         #expect(p.isNew == false)
     }
 
+    @Test("NEW badge is hidden after a program has ended")
+    func newBadge_hiddenForPastProgram() {
+        let now = Int(Date().timeIntervalSince1970)
+        let p = program(
+            start: now - 3600,
+            end: now - 1800,
+            name: "Sample Show \u{1D3A}\u{1D49}\u{02B7}"
+        )
+        #expect(p.isNew)
+        #expect(!p.shouldShowNewBadge)
+    }
+
+    @Test("NEW badge remains visible before a program has ended")
+    func newBadge_visibleForUpcomingProgram() {
+        let now = Int(Date().timeIntervalSince1970)
+        let p = program(
+            start: now + 1800,
+            end: now + 3600,
+            name: "Sample Show \u{1D3A}\u{1D49}\u{02B7}"
+        )
+        #expect(p.shouldShowNewBadge)
+    }
+
     @Test("cleanName strips the New marker and surrounding whitespace")
     func cleanName_stripsMarker() {
         let p = program(start: 0, end: 100, name: "Sample Show \u{1D3A}\u{1D49}\u{02B7}")

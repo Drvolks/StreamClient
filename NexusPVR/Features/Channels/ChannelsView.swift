@@ -966,9 +966,9 @@ struct ChannelGridCard: View {
     /// the current program's title.
     @ViewBuilder
     private var badgeStack: some View {
-        if let currentProgram, currentProgram.isNew || isScheduledRecording {
+        if let currentProgram, currentProgram.shouldShowNewBadge || isScheduledRecording {
             VStack(alignment: .trailing, spacing: 4) {
-                if currentProgram.isNew {
+                if currentProgram.shouldShowNewBadge {
                     NewBadge()
                 }
                 if isScheduledRecording {

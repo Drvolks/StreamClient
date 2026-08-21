@@ -29,6 +29,9 @@ final class EPGCache: ObservableObject {
     /// Unlike `isLoading`, the existing data stays on screen while this is true.
     @Published private(set) var isRefreshing = false
     @Published private(set) var error: String?
+    /// Start time of the oldest program currently present in the cache. Date
+    /// navigation uses its day as a hard lower bound.
+    @Published private(set) var earliestEPGDate: Date?
 
     private(set) var channelMap: [Int: Channel] = [:]
     private(set) var epg: [Int: [Program]] = [:]
@@ -60,6 +63,7 @@ final class EPGCache: ObservableObject {
         isFullyLoaded = false
         error = nil
         epg = [:]
+        earliestEPGDate = nil
         loadedDays = []
         let totalStart = CFAbsoluteTimeGetCurrent()
 
@@ -114,6 +118,7 @@ final class EPGCache: ObservableObject {
                 let fastStart = CFAbsoluteTimeGetCurrent()
                 let fastListings = try await client.getFastListings(for: channelsForEPG)
                 self.epg = fastListings
+                self.updateEarliestEPGDate()
                 let fastCount = fastListings.values.reduce(0) { $0 + $1.count }
                 print("[EPGCache] Fast EPG: \(fastCount) programs across \(fastListings.count) channels in \(ms(since: fastStart))ms")
             } catch {
@@ -156,6 +161,7 @@ final class EPGCache: ObservableObject {
                     }
                 }
                 self.epg = merged
+                self.updateEarliestEPGDate()
                 // Compute loaded days off main actor
                 let snapshot = merged
                 let days = await Task.detached(priority: .utility) {
@@ -293,6 +299,7 @@ final class EPGCache: ObservableObject {
                 existing.sort { $0.startDate < $1.startDate }
                 epg[channelId] = existing
             }
+            updateEarliestEPGDate()
             markLoadedDays(from: listings)
             print("[EPGCache] Loaded day \(key): \(newCount) new programs in \(ms(since: start))ms")
         } catch {
@@ -530,11 +537,30 @@ final class EPGCache: ObservableObject {
         channelGroups = []
         channelMap = [:]
         epg = [:]
+        earliestEPGDate = nil
         loadedDays = []
         hasLoaded = false
         isFullyLoaded = false
         isLoadInProgress = false
         error = nil
+    }
+
+    // MARK: - Date Bounds
+
+    nonisolated static func earliestProgramDate(in listings: [Int: [Program]]) -> Date? {
+        var earliest: Date?
+        for programs in listings.values {
+            for program in programs {
+                if earliest.map({ program.startDate < $0 }) ?? true {
+                    earliest = program.startDate
+                }
+            }
+        }
+        return earliest
+    }
+
+    private func updateEarliestEPGDate() {
+        earliestEPGDate = Self.earliestProgramDate(in: epg)
     }
 
     // MARK: - Private

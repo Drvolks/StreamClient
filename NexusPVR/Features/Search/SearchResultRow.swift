@@ -80,7 +80,7 @@ struct SearchResultRow: View {
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                     Spacer()
-                    if program.isNew && !catchupAvailable { NewBadge() }
+                    if program.shouldShowNewBadge && !catchupAvailable { NewBadge() }
                     if catchupAvailable { CatchupBadge() }
                 }
 
@@ -354,7 +354,7 @@ struct SearchResultRowTV: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Spacer()
-                        if program.isNew && !catchupAvailable { NewBadge() }
+                        if program.shouldShowNewBadge && !catchupAvailable { NewBadge() }
                         if catchupAvailable { CatchupBadge() }
                     }
 

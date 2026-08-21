@@ -44,9 +44,9 @@ struct ProgramDetailView: View {
     /// the title.
     @ViewBuilder
     private var badgeStack: some View {
-        if program.isNew || isScheduled {
+        if program.shouldShowNewBadge || isScheduled {
             VStack(alignment: .trailing, spacing: 4) {
-                if program.isNew {
+                if program.shouldShowNewBadge {
                     NewBadge()
                 }
                 if isScheduled {
