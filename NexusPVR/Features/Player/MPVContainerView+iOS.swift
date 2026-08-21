@@ -34,6 +34,7 @@ struct MPVContainerView: UIViewRepresentable {
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     @Binding var cleanupAction: (() -> Void)?
     @Binding var pixelBufferViewRef: MPVPlayerPixelBufferView?
@@ -53,6 +54,7 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
     }
 
@@ -65,6 +67,7 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
     }
 
@@ -77,6 +80,7 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
     }
 

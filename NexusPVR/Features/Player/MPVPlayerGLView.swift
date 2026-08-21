@@ -25,6 +25,7 @@ class MPVPlayerGLView: GLKView {
     let renderQueue = DispatchQueue(label: "nexuspvr.opengl", qos: .userInteractive)
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
     #if os(tvOS)
@@ -157,6 +158,9 @@ class MPVPlayerGLView: GLKView {
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
         }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
+        }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
         }
@@ -215,6 +219,7 @@ class MPVPlayerGLView: GLKView {
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 

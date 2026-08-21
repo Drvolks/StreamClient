@@ -99,6 +99,16 @@ struct PlayerView: View {
     @State private var liveEdgeRetryCount = 0
     @State private var isBuffering = false
     @State private var lastBufferingCheckPosition: Double = -1
+    /// True from the moment a catch-up (#119) seek is triggered until mpv
+    /// reports playback restarted. Catch-up seeks land on an unindexed,
+    /// variable-bitrate remote stream — mpv has to do dozens of real
+    /// network round-trips to locate the byte position, so this can take
+    /// tens of seconds (confirmed via mpv's own verbose log, independent of
+    /// the app). This just makes that wait read as "seeking" instead of a
+    /// frozen player. Unrelated to `isBuffering`, which is
+    /// isRecordingInProgress-only and never applies to catch-up.
+    @State private var isCatchupSeeking = false
+    @State private var catchupSeekSafetyTask: Task<Void, Never>?
     @State private var bufferingStallCount = 0
     #if DISPATCHERPVR
     @State private var dispatchProfileBadge: String?
@@ -173,11 +183,17 @@ struct PlayerView: View {
                         appState.stopPlayback()
                     }
                 },
+                onPlaybackRestarted: {
+                    endCatchupSeekIndicator()
+                },
                 onLiveSeek: isLiveStream ? { delta in
                     guard canSeekLive else { return false }
                     seekLiveBy(delta)
                     return true
                 } : nil,
+                onCatchupSeekStarted: {
+                    startCatchupSeekIndicatorIfNeeded()
+                },
                 onTogglePlayPause: {
                     isPlaying.toggle()
                     showControls = true
@@ -269,6 +285,9 @@ struct PlayerView: View {
                         appState.stopPlayback()
                     }
                 },
+                onPlaybackRestarted: {
+                    endCatchupSeekIndicator()
+                },
                 onVideoInfoUpdate: { codec, height, hwdec, audioChannels, dropped, gamma, fps in
                     videoCodec = codec
                     videoHeight = height
@@ -324,6 +343,9 @@ struct PlayerView: View {
                     if !isRecordingInProgress {
                         appState.stopPlayback()
                     }
+                },
+                onPlaybackRestarted: {
+                    endCatchupSeekIndicator()
                 },
                 onVideoInfoUpdate: { codec, height, hwdec, audioChannels, dropped, gamma, fps in
                     videoCodec = codec
@@ -405,6 +427,25 @@ struct PlayerView: View {
                         .scaleEffect(1.2)
                         .tint(.white)
                     Text("Buffering...")
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                }
+                .padding(Theme.spacingLG)
+                .background(.black.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+            }
+
+            // Seeking overlay for catch-up (#119) — a catch-up seek lands on an
+            // unindexed, variable-bitrate remote stream, so mpv can take tens of
+            // seconds to locate the byte position (confirmed via mpv's own verbose
+            // log; not fixable client-side). This just keeps that wait from
+            // reading as a frozen player.
+            if isCatchupSeeking && isPlayerReady {
+                VStack(spacing: Theme.spacingSM) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                        .tint(.white)
+                    Text("Seeking…")
                         .font(.subheadline)
                         .foregroundStyle(.white)
                 }
@@ -499,12 +540,12 @@ struct PlayerView: View {
 
                 if !isLiveStream {
                     Button("") {
-                        seekBackward?()
+                        triggerSeekBackward()
                     }
                     .keyboardShortcut(.leftArrow, modifiers: [])
 
                     Button("") {
-                        seekForward?()
+                        triggerSeekForward()
                     }
                     .keyboardShortcut(.rightArrow, modifiers: [])
                 }
@@ -597,6 +638,8 @@ struct PlayerView: View {
             dispatchProfileRefreshTask?.cancel()
             dispatchProfileRefreshTask = nil
             #endif
+            catchupSeekSafetyTask?.cancel()
+            catchupSeekSafetyTask = nil
         }
         #if DISPATCHERPVR
         .onChange(of: appState.currentlyPlayingChannelName) { _ in
@@ -962,7 +1005,7 @@ struct PlayerView: View {
                     if isLiveStream {
                         seekLiveBy(-Double(seekBackwardTime))
                     } else {
-                        seekBackward?()
+                        triggerSeekBackward()
                     }
                 } label: {
                     playerControlIcon(systemName: "gobackward.\(seekBackwardTime)", size: 40)
@@ -985,7 +1028,7 @@ struct PlayerView: View {
                     if isLiveStream {
                         seekLiveBy(Double(seekForwardTime))
                     } else {
-                        seekForward?()
+                        triggerSeekForward()
                     }
                 } label: {
                     playerControlIcon(systemName: "goforward.\(seekForwardTime)", size: 40)
@@ -1297,8 +1340,40 @@ struct PlayerView: View {
     #endif
 
     private func seekToPosition(_ position: Double) {
+        startCatchupSeekIndicatorIfNeeded()
         seekToPositionFunc?(position)
         currentPosition = position
+    }
+
+    private func triggerSeekForward() {
+        startCatchupSeekIndicatorIfNeeded()
+        seekForward?()
+    }
+
+    private func triggerSeekBackward() {
+        startCatchupSeekIndicatorIfNeeded()
+        seekBackward?()
+    }
+
+    /// Shows the "Seeking…" overlay for catch-up (#119) and arms a generous
+    /// safety-net timeout that clears it even if mpv never reports
+    /// restarted (e.g. the seek genuinely fails) — the overlay should never
+    /// get permanently stuck up.
+    private func startCatchupSeekIndicatorIfNeeded() {
+        guard catchupSessionId != nil else { return }
+        isCatchupSeeking = true
+        catchupSeekSafetyTask?.cancel()
+        catchupSeekSafetyTask = Task {
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled else { return }
+            isCatchupSeeking = false
+        }
+    }
+
+    private func endCatchupSeekIndicator() {
+        catchupSeekSafetyTask?.cancel()
+        catchupSeekSafetyTask = nil
+        isCatchupSeeking = false
     }
 
     private func formatTime(_ seconds: Double) -> String {

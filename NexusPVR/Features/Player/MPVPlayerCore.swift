@@ -57,6 +57,12 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var pendingCatchupPolls = 0
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    /// Fired specifically on MPV_EVENT_PLAYBACK_RESTART — unlike
+    /// onVideoInfoUpdate (which also fires from routine position-poll
+    /// ticks), this only fires when mpv actually resumes after a seek/
+    /// buffering pause, so it's the reliable signal for e.g. clearing a
+    /// "Seeking…" indicator (#119).
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     let recordingMonitor = MPVRecordingMonitor()
     var isRecordingInProgress = false
@@ -115,6 +121,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         // Nil out callbacks to break reference cycles with SwiftUI @State
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
         recordingMonitor.stop()
 
@@ -1237,6 +1244,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             let info = getVideoInfo()
             DispatchQueue.main.async { [weak self] in
                 self?.onVideoInfoUpdate?(info.codec, info.height, info.hwdec, info.audioChannels, info.droppedFrames, info.gamma, info.fps)
+                self?.onPlaybackRestarted?()
                 if let self = self, info.codec != nil {
                     self.logVideoInfo(info)
                 }

@@ -39,6 +39,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     @Binding var getTrackListFunc: (() -> [MPVTrack])?
     @Binding var setAudioTrackFunc: ((Int) -> Void)?
@@ -67,6 +68,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
             }
         }
         controller.onPlaybackEnded = onPlaybackEnded
+        controller.onPlaybackRestarted = onPlaybackRestarted
         controller.onVideoInfoUpdate = onVideoInfoUpdate
         controller.setStreamHeaders(streamHeaders)
         controller.loadURL(url)
@@ -132,6 +134,7 @@ protocol MPVPlayerMacOSController: AnyObject {
     var networkEventLogger: any NetworkEventLogging { get set }
     var onPositionUpdate: ((Double, Double) -> Void)? { get set }
     var onPlaybackEnded: (() -> Void)? { get set }
+    var onPlaybackRestarted: (() -> Void)? { get set }
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)? { get set }
     var recordingMonitor: MPVRecordingMonitor? { get }
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool, recordingStartTime: Date?, preferKeyframeSeek: Bool)
@@ -160,6 +163,7 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
     var networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -190,6 +194,9 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -240,6 +247,7 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 
@@ -267,6 +275,7 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
     private var bridge: MPVPixelBufferBridge?
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -303,6 +312,9 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -342,6 +354,7 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 }
@@ -355,6 +368,7 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
     }
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { glView?.recordingMonitor }
 
@@ -379,6 +393,9 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
         }
         glView.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        glView.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         glView.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -428,6 +445,7 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
         glView.cleanup()
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 }
@@ -443,6 +461,7 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
     var needsDrawing = true
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -507,6 +526,9 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -591,6 +613,7 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 
