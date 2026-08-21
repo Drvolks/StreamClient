@@ -1200,7 +1200,11 @@ struct GuideView: View {
             }
         }()
 
-        let showSport = cellWidth > 200
+        let showSport = GuideSportIconVisibility.shouldShow(
+            for: program,
+            cellWidth: cellWidth,
+            minimumCellWidth: 200
+        )
         let sportIconSize = rowHeight - 10 - 16 // cell height minus padding
         // cellWidth already reflects the visible/clipped duration for a
         // currently-airing program (tvOSProgramPosition trims to
