@@ -452,6 +452,10 @@ struct PlayerView: View {
                 .padding(Theme.spacingLG)
                 .background(.black.opacity(0.6))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                // Declared above controlsOverlay in the ZStack, so without an
+                // explicit zIndex it rendered behind the center pause button
+                // (equal default zIndex falls back to declaration order).
+                .zIndex(1)
             }
 
             // Subtitle text overlay — positioned at the bottom of the video content
