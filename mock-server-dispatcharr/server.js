@@ -472,6 +472,7 @@ const M3U_ACCOUNTS = [
 // the stats page switcher can be exercised end to end.
 const CHANNEL_STREAMS = new Map();
 const ACTIVE_STREAM = new Map();
+const CATCHUP_SESSIONS = new Map();
 
 function streamsForChannel(ch) {
   if (!CHANNEL_STREAMS.has(ch.id)) {
@@ -745,6 +746,54 @@ function handleRequest(req, res) {
   if (path === "/proxy/ts/status") {
     const proxyChannels = generateMockProxyStatus();
     return json(res, { count: proxyChannels.length, channels: proxyChannels });
+  }
+
+  // ------------------------------------------------------------------------
+  // Catch-up / Timeshift (#119) — mock mint + revoke + playback URL
+  // Mirrors Dispatcharr's `/api/catchup/sessions/` contract from the
+  // pinned spec on issue #119. Each POST mints a server-side playback
+  // session with a fake `playback_url`; DELETE revokes it. The playback
+  // URL itself returns a 503 (mock server does not provide streams), which
+  // is the same as the real `/proxy/ts/stream/` shape — StreamClient
+  // should fall back to its "feature not available" UX on any 503.
+  // ------------------------------------------------------------------------
+
+  if (path === "/api/catchup/sessions/" && req.method === "POST") {
+    const body = req.body || {};
+    const channelUuid = body.channel_uuid;
+    const start = body.start;
+    if (!channelUuid || !start) {
+      return json(res, { error: "channel_uuid and start are required" }, 400);
+    }
+    const channel = CHANNELS.find((c) => c.uuid === channelUuid);
+    if (!channel) return notFound(res);
+    // Mock: any channel with at least one stream is "catch-up enabled".
+    if (!streamsForChannel(channel).length) {
+      return json(res, { error: "No catch-up streams available for this channel" }, 400);
+    }
+    const sessionId = crypto.randomBytes(16).toString("hex");
+    const expiresAt = Math.floor(Date.now() / 1000) + 60; // mirror HANDSHAKE_TTL_SECONDS
+    CATCHUP_SESSIONS.set(sessionId, { channel, start });
+    return json(res, {
+      session_id: sessionId,
+      playback_url: `/proxy/catchup/${channelUuid}?session_id=${sessionId}`,
+      expires_at: expiresAt,
+      channel_uuid: channelUuid,
+      start: start,
+    }, 201);
+  }
+
+  const catchupDeleteMatch = path.match(/^\/api\/catchup\/sessions\/([A-Za-z0-9_-]+)\/$/);
+  if (catchupDeleteMatch && req.method === "DELETE") {
+    const sessionId = catchupDeleteMatch[1];
+    if (!CATCHUP_SESSIONS.has(sessionId)) return notFound(res);
+    CATCHUP_SESSIONS.delete(sessionId);
+    return json(res, null, 204);
+  }
+
+  // Catch-up playback (mock 503 — same shape as /proxy/ts/stream/)
+  if (path.startsWith("/proxy/catchup/")) {
+    return json(res, { detail: "Mock server does not provide catch-up streams." }, 503);
   }
 
   notFound(res);

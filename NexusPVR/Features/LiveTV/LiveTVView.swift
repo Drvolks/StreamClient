@@ -213,7 +213,7 @@ struct ChannelCard: View {
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                         Spacer()
-                        if program.isNew { NewBadge() }
+                        if program.shouldShowNewBadge { NewBadge() }
                     }
 
                     // Progress bar

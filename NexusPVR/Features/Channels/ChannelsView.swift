@@ -127,7 +127,8 @@ struct ChannelsView: View {
 
     var body: some View {
         #if os(tvOS)
-        content
+        NavigationStack {
+            content
             .accessibilityIdentifier("channels-view")
             .alert("Error", isPresented: .constant(streamError != nil)) {
                 Button("OK") { streamError = nil }
@@ -198,6 +199,7 @@ struct ChannelsView: View {
                     focusedChannelId = firstVisibleChannelId
                 }
             }
+        }
         #elseif os(iOS)
         NavigationStack {
             content
@@ -229,10 +231,12 @@ struct ChannelsView: View {
         // overlaps the content). A custom nav bar (search + filter toggle) sits
         // at the top in normal flow, below the title bar. The router gives the
         // channels tab the same title-bar-respecting inset as the guide.
-        VStack(spacing: 0) {
-            macOSChannelsNavBar
-            content
-                .accessibilityIdentifier("channels-view")
+        NavigationStack {
+            VStack(spacing: 0) {
+                macOSChannelsNavBar
+                content
+                    .accessibilityIdentifier("channels-view")
+            }
         }
         .background(.ultraThinMaterial)
         .alert("Error", isPresented: .constant(streamError != nil)) {
@@ -264,6 +268,14 @@ struct ChannelsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .recordingsDidChange)) { _ in
             Task { await loadRecordings() }
         }
+        #if DISPATCHERPVR
+        .navigationDestination(item: $appState.selectedCatchupChannel) { channel in
+            ChannelCatchupView(channel: channel)
+                .environmentObject(client)
+                .environmentObject(appState)
+                .environmentObject(epgCache)
+        }
+        #endif
     }
 
     /// Re-fetch channels + EPG so channels added server-side appear without
@@ -483,6 +495,17 @@ struct ChannelsView: View {
                 .zIndex(focusedChannelId == channel.id ? 1 : 0)
                 #else
                 .buttonStyle(.plain)
+                #endif
+                #if DISPATCHERPVR
+                .contextMenu {
+                    if channel.isCatchup && channel.catchupDays > 0 {
+                        Button {
+                            appState.selectedCatchupChannel = channel
+                        } label: {
+                            Label("Show Catch-up Programs", systemImage: "clock.arrow.circlepath")
+                        }
+                    }
+                }
                 #endif
             }
         }
@@ -943,9 +966,9 @@ struct ChannelGridCard: View {
     /// the current program's title.
     @ViewBuilder
     private var badgeStack: some View {
-        if let currentProgram, currentProgram.isNew || isScheduledRecording {
+        if let currentProgram, currentProgram.shouldShowNewBadge || isScheduledRecording {
             VStack(alignment: .trailing, spacing: 4) {
-                if currentProgram.isNew {
+                if currentProgram.shouldShowNewBadge {
                     NewBadge()
                 }
                 if isScheduledRecording {

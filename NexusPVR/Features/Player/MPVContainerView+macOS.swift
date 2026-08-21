@@ -34,10 +34,12 @@ struct MPVContainerView: NSViewControllerRepresentable {
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
+    let preferKeyframeSeek: Bool
     let streamHeaders: [String: String]
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     @Binding var getTrackListFunc: (() -> [MPVTrack])?
     @Binding var setAudioTrackFunc: ((Int) -> Void)?
@@ -58,7 +60,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
         }
         controller.networkEventLogger = networkEventLogger
         _ = controller.view
-        controller.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        controller.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         controller.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -66,6 +68,7 @@ struct MPVContainerView: NSViewControllerRepresentable {
             }
         }
         controller.onPlaybackEnded = onPlaybackEnded
+        controller.onPlaybackRestarted = onPlaybackRestarted
         controller.onVideoInfoUpdate = onVideoInfoUpdate
         controller.setStreamHeaders(streamHeaders)
         controller.loadURL(url)
@@ -131,9 +134,10 @@ protocol MPVPlayerMacOSController: AnyObject {
     var networkEventLogger: any NetworkEventLogging { get set }
     var onPositionUpdate: ((Double, Double) -> Void)? { get set }
     var onPlaybackEnded: (() -> Void)? { get set }
+    var onPlaybackRestarted: (() -> Void)? { get set }
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)? { get set }
     var recordingMonitor: MPVRecordingMonitor? { get }
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool, recordingStartTime: Date?)
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool, recordingStartTime: Date?, preferKeyframeSeek: Bool)
     func setStreamHeaders(_ headers: [String: String])
     func loadURL(_ url: URL)
     func play()
@@ -159,6 +163,7 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
     var networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -178,9 +183,9 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
         updateRenderSurface()
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek), success else {
             return
         }
         player?.setWindowID(metalLayer)
@@ -189,6 +194,9 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -239,6 +247,7 @@ final class MPVPlayerNSViewController: NSViewController, MPVPlayerMacOSControlle
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 
@@ -266,6 +275,7 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
     private var bridge: MPVPixelBufferBridge?
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -291,17 +301,20 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         bridge?.displayLayer.frame = view.bounds
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         guard let bridge else { return }
         bridge.attach()
 
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime) == true else { return }
+        guard player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek) == true else { return }
         player?.onPositionUpdate = { [weak self] position, duration in
             self?.onPositionUpdate?(position, duration)
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -341,6 +354,7 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 }
@@ -354,6 +368,7 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
     }
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { glView?.recordingMonitor }
 
@@ -371,13 +386,16 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
         glView.handleContainerLayout()
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
-        glView.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
+        glView.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         glView.onPositionUpdate = { [weak self] position, duration in
             self?.onPositionUpdate?(position, duration)
         }
         glView.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        glView.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         glView.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -427,6 +445,7 @@ final class MPVPlayerNSOpenGLViewController: NSViewController, MPVPlayerMacOSCon
         glView.cleanup()
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 }
@@ -442,6 +461,7 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
     var needsDrawing = true
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -493,11 +513,11 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         handleContainerLayout()
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         openGLContext?.makeCurrentContext()
         refreshViewport()
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek), success else {
             return
         }
         player?.createRenderContext(view: self)
@@ -506,6 +526,9 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -590,6 +613,7 @@ final class MPVPlayerMacOGLView: NSOpenGLView {
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 

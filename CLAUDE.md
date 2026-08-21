@@ -170,8 +170,6 @@ The project has two schemes:
 - **NextPVR** — StreamClient - For NextPVR
 - **Dispatcharr** — StreamClient
 
-Never build after a change unless explicitly requested.
-
 ### Running the App
 
 1. Open `NexusPVR.xcodeproj` in Xcode

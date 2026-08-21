@@ -956,6 +956,26 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return items.map { $0.toChannel() }
     }
 
+    /// Lightweight fetch of just the catch-up capability per channel (#119),
+    /// for enriching a channel list already loaded via
+    /// `getChannelSummary(profileId:)` — confirmed against a live server
+    /// that its `summary/` serializer omits `is_catchup`/`catchup_days`
+    /// entirely (unlike the full `ChannelSerializer`). Skips the tvg_id/EPG
+    /// resolution `getChannels()` does, since callers only need these two
+    /// fields. Keyed by channel id.
+    func getChannelCatchupInfo() async throws -> [Int: (isCatchup: Bool, catchupDays: Int)] {
+        guard !config.isDemoMode, !useOutputEndpoints else { return [:] }
+        guard let url = URL(string: "\(baseURL)/api/channels/channels/?page_size=10000") else {
+            throw PVRClientError.invalidResponse
+        }
+        let items: [DispatcharrChannel] = try await fetchAllPages(url)
+        var result: [Int: (isCatchup: Bool, catchupDays: Int)] = [:]
+        for item in items {
+            result[item.id] = (isCatchup: item.isCatchup, catchupDays: item.catchupDays)
+        }
+        return result
+    }
+
     func getChannelSummary(profileId: Int? = nil) async throws -> [Channel] {
         guard !config.isDemoMode else { return DemoDataProvider.channels }
         if useOutputEndpoints {
@@ -1681,6 +1701,45 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return try await authenticatedRequest(url)
     }
 
+    // MARK: - Catch-up / Timeshift (#119)
+
+    /// Mint a catch-up (timeshift) playback session for the given
+    /// channel UUID and programme start. Returns the server's
+    /// response, which contains the relative `playback_url` that
+    /// the caller resolves via `CatchupService.playbackURL(for:)`.
+    /// Spec: issue #119's pinned comment + Dispatcharr commit
+    /// 223dff33.
+    ///
+    /// Error responses:
+    ///   400 — invalid `start` or no catch-up streams
+    ///   403 — network or channel ACL denied
+    ///   404 — channel not found
+    ///   503 — session service unavailable
+    func startCatchupSession(channelUuid: String, startISO8601: String) async throws -> CatchupSessionCreateResponse {
+        guard !config.isDemoMode else { throw PVRClientError.invalidResponse }
+        if useOutputEndpoints { throw PVRClientError.invalidResponse }
+        guard let url = URL(string: "\(baseURL)/api/catchup/sessions/") else {
+            throw PVRClientError.invalidResponse
+        }
+        let request = CatchupSessionRequest(channelUuid: channelUuid, startISO8601: startISO8601)
+        let body = try JSONEncoder().encode(request)
+        return try await authenticatedRequest(url, method: "POST", body: body)
+    }
+
+    /// Best-effort DELETE for a catch-up session. Server returns
+    /// 204 on success, 404 if the session is gone or owned by
+    /// another user (the existence-check hides other users'
+    /// sessions — see issue #119 comment §1). The caller is
+    /// expected to swallow errors; the server reaps on idle TTL.
+    func endCatchupSession(_ sessionId: String) async {
+        guard !config.isDemoMode else { return }
+        if useOutputEndpoints { return }
+        guard let url = URL(string: "\(baseURL)/api/catchup/sessions/\(sessionId)/") else {
+            return
+        }
+        try? await authenticatedRequestNoContent(url, method: "DELETE")
+    }
+
     // MARK: - Environment (#112)
 
     /// Fetches the server's environment diagnostics from
@@ -1731,6 +1790,15 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             }
         }
         return uuidToChannelId[uuid]
+    }
+
+    /// Reverse of `channelId(forUUID:)` — resolves a numeric `Channel.id` (what
+    /// the rest of the UI works with) to the Dispatcharr channel UUID the
+    /// catch-up session API requires (#119). Populated by `getChannels()` /
+    /// `getChannelSummary(profileId:)`, so callers should only rely on this
+    /// after the channel list has loaded.
+    func channelUUID(forChannelId id: Int) -> String? {
+        channelIdToUUID[id]
     }
 
     /// Switches the source an active channel is streaming from (admin only).

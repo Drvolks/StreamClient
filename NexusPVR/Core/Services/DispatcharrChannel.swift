@@ -16,6 +16,15 @@ nonisolated struct DispatcharrChannel: Decodable {
     let uuid: String?
     let epgDataId: Int?
     let channelGroupId: Int?
+    /// Whether any stream on this channel supports catch-up (#119). Rolled
+    /// up server-side from the underlying streams' `tv_archive` flag.
+    /// Missing on endpoints/server versions that don't expose it yet —
+    /// defaults to `false` so the guide simply shows no catch-up badge.
+    let isCatchup: Bool
+    /// Max catch-up archive window (days) across the channel's streams.
+    /// Pairs with `isCatchup` to bound how far back a program can still
+    /// be requested.
+    let catchupDays: Int
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -25,6 +34,8 @@ nonisolated struct DispatcharrChannel: Decodable {
         case uuid
         case epgDataId = "epg_data_id"
         case channelGroupId = "channel_group_id"
+        case isCatchup = "is_catchup"
+        case catchupDays = "catchup_days"
     }
 
     init(from decoder: Decoder) throws {
@@ -76,6 +87,8 @@ nonisolated struct DispatcharrChannel: Decodable {
             channelGroupId = nil
         }
 
+        isCatchup = try container.decodeIfPresent(Bool.self, forKey: .isCatchup) ?? false
+        catchupDays = try container.decodeIfPresent(Int.self, forKey: .catchupDays) ?? 0
     }
 
     func toChannel() -> Channel {
@@ -84,7 +97,9 @@ nonisolated struct DispatcharrChannel: Decodable {
             name: name,
             number: Int(channelNumber ?? 0),
             hasIcon: logoId != nil,
-            groupId: channelGroupId
+            groupId: channelGroupId,
+            isCatchup: isCatchup,
+            catchupDays: catchupDays
         )
     }
 }

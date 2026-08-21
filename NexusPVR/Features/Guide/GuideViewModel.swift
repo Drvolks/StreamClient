@@ -31,6 +31,16 @@ final class GuideViewModel: ObservableObject {
 
     @Published var selectedDate = Date()
 
+    /// Whether the date navigator can go earlier than today. Off by
+    /// default — NextPVR has no server-side program archive, so browsing
+    /// history there would only ever show dead air. Dispatcharr's catch-up
+    /// feature (#119) is the reason to allow it.
+    #if DISPATCHERPVR
+    var allowsPastDates = true
+    #else
+    var allowsPastDates = false
+    #endif
+
     @Published var showChannelSearch: Bool = false
     @Published var channelSearchText: String = ""
     @Published var selectedProfileId: Int? = nil
@@ -53,7 +63,7 @@ final class GuideViewModel: ObservableObject {
 
     var timelineStart: Date {
         let calendar = Calendar.current
-        if isOnToday {
+        if isOnToday && !allowsPastDates {
             // Start from current half-hour (round down to :00 or :30)
             let now = Date()
             let minute = calendar.component(.minute, from: now)
@@ -90,10 +100,17 @@ final class GuideViewModel: ObservableObject {
     }
 
     /// Returns the number of hour slots to display for a given selected date.
+    /// Catch-up builds keep all of today in the timeline so viewers can scroll
+    /// backward; other builds retain the smaller future-only window.
     /// Accepts an explicit `now` for testability.
-    static func hourCount(for selectedDate: Date, now: Date = Date()) -> Int {
+    static func hourCount(
+        for selectedDate: Date,
+        now: Date = Date(),
+        includesPastHours: Bool = false
+    ) -> Int {
         let calendar = Calendar.current
-        let isToday = calendar.isDateInToday(selectedDate)
+        let isToday = calendar.isDate(selectedDate, inSameDayAs: now)
+        if isToday && includesPastHours { return 24 }
         let remainingHours = isToday ? (24 - calendar.component(.hour, from: now)) : 24
         let startsAtHalfHour = isToday && calendar.component(.minute, from: now) >= 30
         return max(remainingHours + (startsAtHalfHour ? 1 : 0), 6)
@@ -103,7 +120,11 @@ final class GuideViewModel: ObservableObject {
         var hours: [Date] = []
         let calendar = Calendar.current
         var current = timelineStart
-        let count = Self.hourCount(for: selectedDate, now: Date())
+        let count = Self.hourCount(
+            for: selectedDate,
+            now: Date(),
+            includesPastHours: allowsPastDates
+        )
 
         for _ in 0..<count {
             hours.append(current)
@@ -211,8 +232,10 @@ final class GuideViewModel: ObservableObject {
         epgCache?.epg[channel.id] ?? []
     }
 
-    /// Lazily look up programs for a channel on the selected date from the cache
-    /// On today, filters out programs that have already ended (like tvOS)
+    /// Lazily look up programs for a channel on the selected date from the cache.
+    /// On today, only discard programs before the actual timeline start. That
+    /// preserves earlier programs when catch-up expands today's timeline to
+    /// midnight, while keeping the existing future-only behavior elsewhere.
     func visiblePrograms(for channel: Channel) -> [Program] {
         guard let cache = epgCache else { return [] }
         let programs = cache.programs(for: channel.id, on: selectedDate)
@@ -242,13 +265,42 @@ final class GuideViewModel: ObservableObject {
         Calendar.current.isDateInToday(selectedDate)
     }
 
+    /// Earliest day the guide can display. Dispatcharr may browse history,
+    /// but never before the oldest program actually present in EPGCache.
+    /// A nil cache preserves the standalone ViewModel behavior used by tests.
+    private var minimumNavigableDate: Date? {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard allowsPastDates else { return today }
+        guard let epgCache else { return nil }
+        guard let earliestEPGDate = epgCache.earliestEPGDate else { return today }
+        return min(today, calendar.startOfDay(for: earliestEPGDate))
+    }
+
+    /// Whether the previous-day control would remain inside the cached EPG.
+    var canGoToPreviousDay: Bool {
+        guard let minimumNavigableDate else { return true }
+        return Calendar.current.startOfDay(for: selectedDate) > minimumNavigableDate
+    }
+
     func scrollToNow() {
         selectedDate = Date()
     }
 
     func previousDay() {
-        guard !isOnToday else { return }
-        selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+        guard canGoToPreviousDay else { return }
+        let previousDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+        if let minimumNavigableDate {
+            selectedDate = max(previousDate, minimumNavigableDate)
+        } else {
+            selectedDate = previousDate
+        }
+    }
+
+    func clampSelectedDateToAvailableEPG() {
+        guard let minimumNavigableDate,
+              Calendar.current.startOfDay(for: selectedDate) < minimumNavigableDate else { return }
+        selectedDate = minimumNavigableDate
     }
 
     func nextDay() {

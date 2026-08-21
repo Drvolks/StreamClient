@@ -18,6 +18,7 @@ class MPVPlayerPixelBufferView: UIView {
     var isPaused: Bool { session.player?.isPaused ?? true }
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { session.player?.recordingMonitor }
     private(set) var isReconnected = false
@@ -79,7 +80,7 @@ class MPVPlayerPixelBufferView: UIView {
         session.displayLayer.frame = bounds
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         if session.hasActiveSession {
             isReconnected = true
             wireCallbacks()
@@ -98,7 +99,7 @@ class MPVPlayerPixelBufferView: UIView {
         bridge.attach()
 
         let player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard player.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime) else {
+        guard player.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek) else {
             return
         }
 
@@ -112,6 +113,9 @@ class MPVPlayerPixelBufferView: UIView {
         }
         session.player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        session.player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         session.player?.onVideoInfoUpdate = { [weak self] codec, width, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, width, hwdec, audioChannels, dropped, gamma, fps)
@@ -161,12 +165,14 @@ class MPVPlayerPixelBufferView: UIView {
             session.detachFromView()
             onPositionUpdate = nil
             onPlaybackEnded = nil
+            onPlaybackRestarted = nil
             onVideoInfoUpdate = nil
             return
         }
         session.teardown()
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 

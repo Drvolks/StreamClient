@@ -28,11 +28,13 @@ struct MPVContainerView: UIViewRepresentable {
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
+    let preferKeyframeSeek: Bool
     let streamHeaders: [String: String]
     let activePlayerSession: any ActivePlayerSessionManaging
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     @Binding var cleanupAction: (() -> Void)?
     @Binding var pixelBufferViewRef: MPVPlayerPixelBufferView?
@@ -44,7 +46,7 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var isMuted: Bool
 
     private func configureCommonCallbacks(for view: MPVPlayerGLView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -52,11 +54,12 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -64,11 +67,12 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerPixelBufferView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -76,6 +80,7 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
     }
 

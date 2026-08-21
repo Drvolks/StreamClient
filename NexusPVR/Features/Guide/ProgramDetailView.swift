@@ -14,7 +14,13 @@ struct ProgramDetailView: View {
 
     let program: Program
     let channel: Channel
+    /// Set only when this detail was opened from the guide. Other callers can
+    /// start catch-up without leaving a stale guide restoration target behind.
+    let catchupGuideReturnTime: Date?
 
+    #if DISPATCHERPVR
+    @State private var isStartingCatchup = false
+    #endif
     @State private var isScheduling = false
     @State private var isSchedulingSeries = false
     @State private var isSchedulingSeriesAll = false
@@ -38,9 +44,9 @@ struct ProgramDetailView: View {
     /// the title.
     @ViewBuilder
     private var badgeStack: some View {
-        if program.isNew || isScheduled {
+        if program.shouldShowNewBadge || isScheduled {
             VStack(alignment: .trailing, spacing: 4) {
-                if program.isNew {
+                if program.shouldShowNewBadge {
                     NewBadge()
                 }
                 if isScheduled {
@@ -50,9 +56,10 @@ struct ProgramDetailView: View {
         }
     }
 
-    init(program: Program, channel: Channel, initialRecordingId: Int? = nil, initialCompletedRecording: Recording? = nil, onRecordingChanged: (() -> Void)? = nil) {
+    init(program: Program, channel: Channel, catchupGuideReturnTime: Date? = nil, initialRecordingId: Int? = nil, initialCompletedRecording: Recording? = nil, onRecordingChanged: (() -> Void)? = nil) {
         self.program = program
         self.channel = channel
+        self.catchupGuideReturnTime = catchupGuideReturnTime
         self.onRecordingChanged = onRecordingChanged
         _isScheduled = State(initialValue: initialRecordingId != nil)
         _existingRecordingId = State(initialValue: initialRecordingId)
@@ -469,6 +476,18 @@ struct ProgramDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
     }
 
+    #if DISPATCHERPVR
+    /// Whether this program can be requested via Dispatcharr catch-up (#119)
+    /// — see `CatchupAvailability.isAvailable`.
+    private var catchupAvailable: Bool {
+        CatchupAvailability.isAvailable(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+    }
+    #endif
+
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
             if let recording = completedRecording, !isScheduled {
@@ -487,6 +506,32 @@ struct ProgramDetailView: View {
                 .buttonStyle(AccentButtonStyle())
                 #endif
             }
+
+            #if DISPATCHERPVR
+            if catchupAvailable, completedRecording == nil {
+                Button {
+                    watchCatchup()
+                } label: {
+                    HStack {
+                        if isStartingCatchup {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "play.circle.fill")
+                            Text("Watch Catch-up")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                #if os(tvOS)
+                .buttonStyle(TVProgramPopupButtonStyle(variant: .accent))
+                #else
+                .buttonStyle(AccentButtonStyle())
+                #endif
+                .disabled(isStartingCatchup)
+                .accessibilityIdentifier("watch-catchup-button")
+            }
+            #endif
 
             if program.isCurrentlyAiring {
                 if let recording = inProgressRecording {
@@ -765,6 +810,41 @@ struct ProgramDetailView: View {
             }
         }
     }
+
+    #if DISPATCHERPVR
+    /// Mints a catch-up session for `program` and starts playback (#119).
+    /// Errors (400/403/404/503 from the mint call) surface through the same
+    /// `scheduleError` alert the recording actions use.
+    private func watchCatchup() {
+        guard let channelUuid = client.channelUUID(forChannelId: channel.id) else {
+            scheduleError = "Catch-up isn't available for this channel."
+            return
+        }
+        isStartingCatchup = true
+        Task {
+            defer { isStartingCatchup = false }
+            do {
+                let service = CatchupService(client: client, baseURL: client.baseURL)
+                let startISO8601 = ISO8601DateFormatter().string(from: program.startDate)
+                let session = try await appState.preparingStream {
+                    try await service.startSession(channelUuid: channelUuid, startISO8601: startISO8601)
+                }
+                let url = try service.playbackURL(for: session)
+                appState.playStream(
+                    url: url,
+                    title: "\(channel.name) - \(program.name)",
+                    channelId: channel.id,
+                    channelName: channel.name,
+                    catchupSessionId: session.sessionId,
+                    catchupGuideReturnTime: catchupGuideReturnTime
+                )
+                dismiss()
+            } catch {
+                scheduleError = error.localizedDescription
+            }
+        }
+    }
+    #endif
 
     private func watchLive() {
         Task {

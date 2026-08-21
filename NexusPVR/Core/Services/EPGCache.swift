@@ -29,6 +29,9 @@ final class EPGCache: ObservableObject {
     /// Unlike `isLoading`, the existing data stays on screen while this is true.
     @Published private(set) var isRefreshing = false
     @Published private(set) var error: String?
+    /// Start time of the oldest program currently present in the cache. Date
+    /// navigation uses its day as a hard lower bound.
+    @Published private(set) var earliestEPGDate: Date?
 
     private(set) var channelMap: [Int: Channel] = [:]
     private(set) var epg: [Int: [Program]] = [:]
@@ -60,6 +63,7 @@ final class EPGCache: ObservableObject {
         isFullyLoaded = false
         error = nil
         epg = [:]
+        earliestEPGDate = nil
         loadedDays = []
         let totalStart = CFAbsoluteTimeGetCurrent()
 
@@ -99,6 +103,10 @@ final class EPGCache: ObservableObject {
             isLoading = false
             print("[EPGCache] Grid ready (\(visibleChannels.count) channels): \(ms(since: totalStart))ms")
 
+            #if DISPATCHERPVR
+            enrichWithCatchupInfo(using: client)
+            #endif
+
             // Two-phase EPG load:
             //   1. Foreground (awaited): fetch the small "fast window" so the
             //      guide is interactive ASAP (Dispatcharr /api/epg/grid/, or
@@ -110,6 +118,7 @@ final class EPGCache: ObservableObject {
                 let fastStart = CFAbsoluteTimeGetCurrent()
                 let fastListings = try await client.getFastListings(for: channelsForEPG)
                 self.epg = fastListings
+                self.updateEarliestEPGDate()
                 let fastCount = fastListings.values.reduce(0) { $0 + $1.count }
                 print("[EPGCache] Fast EPG: \(fastCount) programs across \(fastListings.count) channels in \(ms(since: fastStart))ms")
             } catch {
@@ -152,6 +161,7 @@ final class EPGCache: ObservableObject {
                     }
                 }
                 self.epg = merged
+                self.updateEarliestEPGDate()
                 // Compute loaded days off main actor
                 let snapshot = merged
                 let days = await Task.detached(priority: .utility) {
@@ -243,6 +253,10 @@ final class EPGCache: ObservableObject {
             hasLoaded = true
             print("[EPGCache] Refresh: \(sorted.count) channels in \(ms(since: totalStart))ms")
 
+            #if DISPATCHERPVR
+            enrichWithCatchupInfo(using: client)
+            #endif
+
             startBackgroundFullLoad(using: client, channels: sorted, totalStart: totalStart)
         } catch {
             self.error = error.localizedDescription
@@ -285,12 +299,42 @@ final class EPGCache: ObservableObject {
                 existing.sort { $0.startDate < $1.startDate }
                 epg[channelId] = existing
             }
+            updateEarliestEPGDate()
             markLoadedDays(from: listings)
             print("[EPGCache] Loaded day \(key): \(newCount) new programs in \(ms(since: start))ms")
         } catch {
             // Silently fail — user can retry via date navigation
         }
     }
+
+    #if DISPATCHERPVR
+    /// Backfills `isCatchup`/`catchupDays` (#119) onto channels loaded via
+    /// `getChannelSummary(profileId:)`, whose `summary/` serializer omits
+    /// both fields (confirmed against a live server — the full
+    /// `/api/channels/channels/` endpoint has them, `/summary/` doesn't).
+    /// Runs in the background after the initial paint so it never delays
+    /// the guide showing up; the badge/button just appear a beat later.
+    private func enrichWithCatchupInfo(using client: PVRClient) {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let info = try? await client.getChannelCatchupInfo(), !info.isEmpty else { return }
+            self.applyCatchupInfo(info)
+        }
+    }
+
+    private func applyCatchupInfo(_ info: [Int: (isCatchup: Bool, catchupDays: Int)]) {
+        func apply(_ list: [Channel]) -> [Channel] {
+            list.map { ch in
+                guard let entry = info[ch.id] else { return ch }
+                return ch.withCatchup(isCatchup: entry.isCatchup, catchupDays: entry.catchupDays)
+            }
+        }
+        channels = apply(channels)
+        visibleChannels = apply(visibleChannels)
+        guideSidebarChannels = apply(guideSidebarChannels)
+        channelMap = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+    #endif
 
     /// Prefetch yesterday + tomorrow EPG in background
     func prefetchAdjacentDays(around date: Date, using client: PVRClient) async {
@@ -331,6 +375,13 @@ final class EPGCache: ObservableObject {
     }
 
     // MARK: - Programs Access
+
+    /// Complete cached EPG for one channel. Callers that need an archive-wide
+    /// view (rather than a single guide day) can filter this snapshot without
+    /// repeatedly scanning the same channel data for every date.
+    func allPrograms(for channelId: Int) -> [Program] {
+        epg[channelId] ?? []
+    }
 
     func programs(for channelId: Int, on date: Date) -> [Program] {
         let calendar = Calendar.current
@@ -422,7 +473,10 @@ final class EPGCache: ObservableObject {
 
     // MARK: - Topic Matching
 
-    func matchingPrograms(keywords: [String]) async -> [MatchingProgram] {
+    func matchingPrograms(
+        keywords: [String],
+        includesCatchup: Bool = false
+    ) async -> [MatchingProgram] {
         let start = CFAbsoluteTimeGetCurrent()
         let epg = self.epg
         let channelMap = self.channelMap
@@ -437,7 +491,14 @@ final class EPGCache: ObservableObject {
                 guard let channel = channelMap[channelId] else { continue }
 
                 for program in programs {
-                    guard program.endDate > now else { continue }
+                    let isUpcoming = program.endDate > now
+                    let isCatchupAvailable = includesCatchup && CatchupAvailability.isAvailable(
+                        program: program,
+                        channelIsCatchup: channel.isCatchup,
+                        catchupDays: channel.catchupDays,
+                        now: now
+                    )
+                    guard isUpcoming || isCatchupAvailable else { continue }
 
                     let searchText = [
                         program.name,
@@ -476,11 +537,30 @@ final class EPGCache: ObservableObject {
         channelGroups = []
         channelMap = [:]
         epg = [:]
+        earliestEPGDate = nil
         loadedDays = []
         hasLoaded = false
         isFullyLoaded = false
         isLoadInProgress = false
         error = nil
+    }
+
+    // MARK: - Date Bounds
+
+    nonisolated static func earliestProgramDate(in listings: [Int: [Program]]) -> Date? {
+        var earliest: Date?
+        for programs in listings.values {
+            for program in programs {
+                if earliest.map({ program.startDate < $0 }) ?? true {
+                    earliest = program.startDate
+                }
+            }
+        }
+        return earliest
+    }
+
+    private func updateEarliestEPGDate() {
+        earliestEPGDate = Self.earliestProgramDate(in: epg)
     }
 
     // MARK: - Private

@@ -25,7 +25,7 @@ struct GuideView: View {
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     #endif
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     @EnvironmentObject var viewModel: GuideViewModel
     #else
     @StateObject private var viewModel = GuideViewModel()
@@ -38,6 +38,10 @@ struct GuideView: View {
 
     @State private var selectedProgramDetail: (program: Program, channel: Channel)?
     @State private var streamError: String?
+    /// Captured when the player is presented, before `stopPlayback()` clears
+    /// its catch-up session id. While true, automatic "back to now" hooks must
+    /// leave the guide's selected day and horizontal position untouched.
+    @State private var preservesGuidePositionAfterCatchup = false
 
     // Keywords for pre-computing matches
     @State private var keywords: [String] = []
@@ -116,6 +120,13 @@ struct GuideView: View {
             }
             .onChange(of: epgCache.isFullyLoaded) {
                 Task { viewModel.updateKeywordMatches(keywords: keywords) }
+                if epgCache.isFullyLoaded {
+                    viewModel.clampSelectedDateToAvailableEPG()
+                }
+            }
+            .onChange(of: epgCache.earliestEPGDate) { _, earliestEPGDate in
+                guard earliestEPGDate != nil, epgCache.isFullyLoaded else { return }
+                viewModel.clampSelectedDateToAvailableEPG()
             }
             .onChange(of: appState.guideChannelFilter) {
                 Task { viewModel.channelSearchText = appState.guideChannelFilter }
@@ -158,24 +169,34 @@ struct GuideView: View {
                     Task { await refreshRecordings() }
                     #if os(tvOS)
                     // Resync the guide start time so the visible window matches
-                    // the ViewModel's timelineStart (which uses current time)
-                    resyncGuideStartToNow()
+                    // the ViewModel's timelineStart (which uses current time),
+                    // unless returning to the catch-up program the user chose.
+                    if !preservesGuidePositionAfterCatchup {
+                        resyncGuideStartToNow()
+                    }
                     #endif
                 }
             }
-            #if os(tvOS)
             .onChange(of: appState.isShowingPlayer) { _, isShowing in
+                if isShowing {
+                    // Capture this before PlayerView teardown calls
+                    // stopPlayback(), which clears the session id.
+                    preservesGuidePositionAfterCatchup = appState.currentlyPlayingCatchupSessionId != nil
+                    return
+                }
+
+                #if os(tvOS)
                 // The player is presented as a .fullScreenCover, which keeps
                 // scenePhase == .active, so the scenePhase resync never fires on
-                // dismissal. Re-anchor the guide on "now" here so the visible
-                // window doesn't drift into the past during long sessions.
-                if !isShowing {
+                // dismissal. Re-anchor normal playback on "now", but keep the
+                // exact day/time/focus window that launched catch-up playback.
+                if !preservesGuidePositionAfterCatchup {
                     resyncGuideStartToNow()
                     viewModel.scrollToNow()
-                    Task { await refreshRecordings() }
                 }
+                Task { await refreshRecordings() }
+                #endif
             }
-            #endif
     }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -209,9 +230,15 @@ struct GuideView: View {
         #endif
         #if os(iOS) && DISPATCHERPVR
         .overlay(alignment: .top) {
-            if viewModel.showFilters && hasFilterData {
-                filterPanel
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 8) {
+                // Only Dispatcharr has catch-up (#119) to browse into the past
+                // for, so this is the one place iOS gets a date navigator at
+                // all — NextPVR's guide stays locked to "today".
+                iOSGuideDateNavBar
+                if viewModel.showFilters && hasFilterData {
+                    filterPanel
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         #endif
@@ -273,6 +300,7 @@ struct GuideView: View {
         ProgramDetailView(
             program: detail.program,
             channel: detail.channel,
+            catchupGuideReturnTime: detail.program.startDate,
             initialRecordingId: viewModel.recordingId(for: detail.program)
         )
         .environmentObject(client)
@@ -345,12 +373,12 @@ struct GuideView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(viewModel.isOnToday ? Theme.textTertiary : Theme.accent)
+                            .foregroundStyle(viewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
                             .frame(width: 32, height: 32)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(viewModel.isOnToday)
+                    .disabled(!viewModel.canGoToPreviousDay)
 
                     Text(viewModel.selectedDate, format: .dateTime.month(.abbreviated).day())
                         .font(.subheadline.weight(.medium))
@@ -429,6 +457,64 @@ struct GuideView: View {
     }
     #endif
 
+    #if os(iOS) && DISPATCHERPVR
+    /// Approximate rendered height of `iOSGuideDateNavBar`, so
+    /// `guideTopPadding` can reserve space for it above the grid.
+    private let iOSDateNavBarHeight: CGFloat = 40
+
+    /// iOS has no macOS-style floating nav bar and no tvOS header row, so
+    /// catch-up (#119) needs its own way to reach past days here. Mirrors
+    /// `macOSGuideNavBar`'s chevron/date/chevron shape, plus a "Today"
+    /// shortcut back once the user has navigated away.
+    private var iOSGuideDateNavBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                viewModel.previousDay()
+                Task { await viewModel.navigateToDate(using: client) }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(viewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewModel.canGoToPreviousDay)
+
+            Text(viewModel.selectedDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Theme.textPrimary)
+
+            Button {
+                viewModel.nextDay()
+                Task { await viewModel.navigateToDate(using: client) }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !viewModel.isOnToday {
+                Button("Today") {
+                    viewModel.scrollToNow()
+                    Task { await viewModel.navigateToDate(using: client) }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.spacingMD)
+        .frame(height: iOSDateNavBarHeight)
+        .background(.ultraThinMaterial)
+    }
+    #endif
+
     #if !os(tvOS)
 
     private var guideTopPadding: CGFloat {
@@ -439,15 +525,22 @@ struct GuideView: View {
         let base: CGFloat = 0
         #endif
         #if DISPATCHERPVR
+        var extra: CGFloat = 0
+        #if os(iOS)
+        // Space for the floating date navigator (#119) — always shown on
+        // Dispatcharr's iOS guide since catch-up needs a way to reach past days.
+        extra += iOSDateNavBarHeight
+        #endif
         if viewModel.showFilters && hasFilterData {
             // Add space for each filter row shown
-            var extra: CGFloat = 8 // top/bottom padding
+            extra += 8 // top/bottom padding
             if !epgCache.channelProfiles.isEmpty { extra += 36 }
             if hasPopulatedGroups { extra += 36 }
-            return base + extra
         }
-        #endif
+        return base + extra
+        #else
         return base
+        #endif
     }
     #endif
 
@@ -638,6 +731,18 @@ struct GuideView: View {
         visibleStart.addingTimeInterval(visibleMinutes * 60)
     }
 
+    /// Earliest 30-minute window tvOS may navigate to. Dispatcharr catch-up
+    /// can move backward from the current-time anchor as far as midnight;
+    /// NextPVR retains its existing no-past-navigation behavior.
+    private var minimumTimeOffset: Int {
+        let calendar = Calendar.current
+        guard viewModel.allowsPastDates,
+              calendar.isDateInToday(viewModel.selectedDate) else { return 0 }
+        let startOfDay = calendar.startOfDay(for: guideStartTime)
+        let halfHoursSinceMidnight = Int(guideStartTime.timeIntervalSince(startOfDay) / (30 * 60))
+        return -max(0, halfHoursSinceMidnight)
+    }
+
     // Re-anchor the visible timeline on the current half-hour bucket.
     private func resyncGuideStartToNow() {
         let now = Date()
@@ -768,13 +873,48 @@ struct GuideView: View {
             }
             #endif
             .onAppear {
-                updateScrollTarget()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    if let targetId = scrollTargetId {
-                        programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                #if os(macOS)
+                let hasCatchupReturnTarget = appState.catchupGuideReturnTime != nil
+                #else
+                let hasCatchupReturnTarget = false
+                #endif
+
+                if !hasCatchupReturnTarget && !preservesGuidePositionAfterCatchup {
+                    updateScrollTarget()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        if let targetId = scrollTargetId {
+                            programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                        }
                     }
                 }
             }
+            #if os(macOS)
+            .task {
+                guard let catchupReturnTime = appState.catchupGuideReturnTime else { return }
+
+                // MacOSNavigation keeps the ViewModel alive, but reconstructs
+                // the ScrollView after PlayerView disappears. Keep the target
+                // pending and retry after layout: the first scroll request can
+                // arrive before SwiftUI has installed the horizontal anchors.
+                if !Calendar.current.isDate(viewModel.selectedDate, inSameDayAs: catchupReturnTime) {
+                    viewModel.selectedDate = catchupReturnTime
+                }
+
+                await Task.yield()
+                guard !Task.isCancelled,
+                      let targetId = updateScrollTarget(preferredTime: catchupReturnTime) else { return }
+
+                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+
+                appState.clearCatchupGuideReturnTime(ifMatching: catchupReturnTime)
+            }
+            #endif
             .onChange(of: viewModel.selectedDate) {
                 updateScrollTarget()
             }
@@ -785,7 +925,9 @@ struct GuideView: View {
             }
         }
         .onChange(of: scenePhase) {
-            if scenePhase == .active {
+            if scenePhase == .active
+                && !preservesGuidePositionAfterCatchup
+                && appState.catchupGuideReturnTime == nil {
                 viewModel.scrollToNow()
                 updateScrollTarget()
             }
@@ -995,6 +1137,7 @@ struct GuideView: View {
                         let isFocused = isRowFocused && colIndex == focusedColumn
                         tvOSProgramCell(
                             program: program,
+                            channel: channel,
                             isFocused: isFocused,
                             gridWidth: gridWidth,
                             pxPerMinute: pxPerMinute
@@ -1032,11 +1175,20 @@ struct GuideView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func tvOSProgramCell(program: Program, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
+    private func tvOSProgramCell(program: Program, channel: Channel, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
         let (xPos, cellWidth) = tvOSProgramPosition(program: program, pxPerMinute: pxPerMinute)
         let isAiring = program.isCurrentlyAiring
         let isScheduled = viewModel.isScheduledRecording(program)
         let isRecording = isScheduled && isAiring && viewModel.recordingStatus(program) == .recording
+        #if DISPATCHERPVR
+        let catchupAvailable = CatchupAvailability.isAvailable(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+        #else
+        let catchupAvailable = false
+        #endif
 
         let bgColor: Color = {
             if isRecording {
@@ -1074,12 +1226,16 @@ struct GuideView: View {
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
 
-                        if program.isNew {
+                        if program.shouldShowNewBadge && !catchupAvailable {
                             NewBadge(compact: useCompactBadges)
                         }
 
                         if isScheduled {
                             RecBadge(isActive: isRecording, compact: useCompactBadges)
+                        }
+
+                        if catchupAvailable {
+                            CatchupBadge(compact: useCompactBadges)
                         }
                     }
                 }
@@ -1132,7 +1288,7 @@ struct GuideView: View {
             tvOSHeaderField(
                 imageName: "chevron.left",
                 isFocused: isFocused && focusedItem == .previousDay,
-                isEnabled: !viewModel.isOnToday
+                isEnabled: viewModel.canGoToPreviousDay
             )
 
             Text(viewModel.selectedDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
@@ -1460,7 +1616,7 @@ struct GuideView: View {
             guard focusedRow >= 0, !channels.isEmpty else { return }
             if focusedColumn > 0 {
                 focusedColumn -= 1
-            } else if timeOffset > 0 {
+            } else if timeOffset > minimumTimeOffset {
                 // Scroll back in time — focus on last program in new window
                 timeOffset -= 1
                 let newPrograms = tvOSVisiblePrograms(for: channels[focusedRow])
@@ -1533,7 +1689,7 @@ struct GuideView: View {
     private func selectFocusedHeaderItem() {
         switch focusedHeaderItem {
         case .previousDay:
-            guard !viewModel.isOnToday else { return }
+            guard viewModel.canGoToPreviousDay else { return }
             viewModel.previousDay()
             Task { await viewModel.navigateToDate(using: client) }
         case .nextDay:
@@ -1658,6 +1814,15 @@ struct GuideView: View {
                 let isRecording = isScheduled && program.isCurrentlyAiring && status == .recording
                 let matchesKeywords = viewModel.keywordMatchedProgramIds.contains(program.id)
                 let sport = viewModel.detectedSport(for: program)
+                #if DISPATCHERPVR
+                let catchupAvailable = CatchupAvailability.isAvailable(
+                    program: program,
+                    channelIsCatchup: channel.isCatchup,
+                    catchupDays: channel.catchupDays
+                )
+                #else
+                let catchupAvailable = false
+                #endif
                 // Calculate leading padding for live programs - push text to visible left edge (scroll target)
                 let leadingPad = GuideScrollHelper.calculateLeadingPadding(
                     programStart: max(program.startDate, timelineStart),
@@ -1678,6 +1843,7 @@ struct GuideView: View {
                         width: viewModel.programWidth(for: program, hourWidth: hourWidth, startTime: timelineStart),
                         isScheduledRecording: isScheduled,
                         isCurrentlyRecording: isRecording,
+                        isCatchupAvailable: catchupAvailable,
                         matchesKeyword: matchesKeywords,
                         detectedSport: sport,
                         leadingPadding: leadingPad
@@ -1776,27 +1942,40 @@ struct GuideView: View {
         }
     }
 
-    private func updateScrollTarget() {
+    @discardableResult
+    private func updateScrollTarget(preferredTime: Date? = nil) -> String? {
         let calendar = Calendar.current
         let now = Date()
         let isToday = calendar.isDate(viewModel.selectedDate, inSameDayAs: now)
+        let preferredTime = preferredTime.flatMap {
+            calendar.isDate($0, inSameDayAs: viewModel.selectedDate) ? $0 : nil
+        }
 
         // Store scroll target for text padding calculation
-        let scrollTargetDate = GuideScrollHelper.calculateScrollTarget(currentTime: isToday ? now : viewModel.timelineStart)
+        let scrollTargetDate = GuideScrollHelper.calculateScrollTarget(
+            currentTime: preferredTime ?? (isToday ? now : viewModel.timelineStart)
+        )
         currentTimelineHour = scrollTargetDate
 
-        // On today, the timeline already starts at the current hour — no scroll needed.
-        // For other days, scroll to start of day.
-        guard !isToday else {
+        // The regular guide starts today's timeline at the current hour, so it
+        // needs no initial scroll. Catch-up keeps the whole day and opens at
+        // the current half-hour, leaving the earlier schedule to its left.
+        if preferredTime == nil && isToday && !viewModel.allowsPastDates {
             scrollTargetId = nil
-            return
+            return nil
         }
 
-        let targetTime = viewModel.timelineStart
+        let targetTime = preferredTime != nil
+            ? scrollTargetDate
+            : (isToday ? scrollTargetDate : viewModel.timelineStart)
         let targetHourComponent = calendar.component(.hour, from: targetTime)
         if let targetHour = viewModel.hoursToShow.first(where: { calendar.component(.hour, from: $0) == targetHourComponent }) {
-            scrollTargetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
+            let targetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
+            scrollTargetId = targetId
+            return targetId
         }
+        scrollTargetId = nil
+        return nil
     }
 
     /// Pull-to-refresh (iOS/macOS) and the tvOS refresh button both land here:
@@ -1991,7 +2170,7 @@ private struct ScrollViewDirectionalLock: UIViewRepresentable {
         .environmentObject(PVRClient())
         .environmentObject(AppState())
         .environmentObject(EPGCache())
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         .environmentObject(GuideViewModel())
         #endif
         .preferredColorScheme(.dark)

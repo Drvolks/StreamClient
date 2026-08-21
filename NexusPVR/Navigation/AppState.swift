@@ -38,6 +38,9 @@ final class AppState: ObservableObject {
     @Published var selectedTopicKeyword: String = ""
     @Published var showingKeywordsEditor = false
     @Published var showingCalendar = false
+    /// Persists the calendar's visible day while macOS temporarily replaces
+    /// navigation with PlayerView during catch-up playback.
+    @Published var calendarSelectedDate = Date()
 
     // Recordings filter state (shared between RecordingsListView and iOS nav bar)
     @Published var recordingsFilter: RecordingsFilter = .completed
@@ -57,11 +60,25 @@ final class AppState: ObservableObject {
     @Published var currentlyPlayingChannelName: String?
     @Published var currentlyPlayingIsRecordingInProgress = false
     @Published var currentlyPlayingRecordingStartTime: Date?
+    /// Dispatcharr catch-up (timeshift) session id (#119), when the current
+    /// stream is archived playback rather than live/recording. Revoked by
+    /// `PlayerView` on teardown — see `endCatchupSessionIfNeeded()`.
+    @Published var currentlyPlayingCatchupSessionId: String?
+    /// Guide time that launched the current catch-up playback. Unlike the
+    /// session id, this intentionally survives `stopPlayback()` long enough
+    /// for a reconstructed macOS guide to consume and restore it.
+    private(set) var catchupGuideReturnTime: Date?
 
     // Navigation state
     @Published var selectedChannel: Channel?
     @Published var selectedProgram: Program?
     @Published var selectedRecording: Recording?
+    #if DISPATCHERPVR
+    /// Channel whose archive browser is opened from the Channels page.
+    /// Global navigation state lets macOS restore the destination after PlayerView
+    /// temporarily replaces the entire navigation hierarchy.
+    @Published var selectedCatchupChannel: Channel?
+    #endif
     #if os(tvOS)
     /// When true, the global tvOS escape handler must not move focus to the sidebar.
     @Published var tvosBlocksSidebarExitCommand = false
@@ -481,7 +498,9 @@ final class AppState: ObservableObject {
         channelId: Int? = nil,
         channelName: String? = nil,
         isRecordingInProgress: Bool = false,
-        recordingStartTime: Date? = nil
+        recordingStartTime: Date? = nil,
+        catchupSessionId: String? = nil,
+        catchupGuideReturnTime: Date? = nil
     ) {
         #if DEBUG
         let effectiveURL: URL
@@ -504,6 +523,8 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelName = channelName
         currentlyPlayingIsRecordingInProgress = isRecordingInProgress
         currentlyPlayingRecordingStartTime = recordingStartTime
+        currentlyPlayingCatchupSessionId = catchupSessionId
+        self.catchupGuideReturnTime = catchupGuideReturnTime
         isPreparingStream = false
         isShowingPlayer = true
     }
@@ -532,6 +553,16 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelName = nil
         currentlyPlayingIsRecordingInProgress = false
         currentlyPlayingRecordingStartTime = nil
+        currentlyPlayingCatchupSessionId = nil
+    }
+
+    /// Clears the pending target only after the reconstructed macOS guide has
+    /// had time to install its scroll anchors and restore the horizontal
+    /// position. The match prevents an old restoration task from clearing a
+    /// newer playback target.
+    func clearCatchupGuideReturnTime(ifMatching returnTime: Date) {
+        guard catchupGuideReturnTime == returnTime else { return }
+        catchupGuideReturnTime = nil
     }
 
     /// Dismiss the player UI without clearing playback state (used for PiP).

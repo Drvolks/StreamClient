@@ -39,13 +39,49 @@ struct GuideViewModelTests {
 
     // MARK: - Day navigation
 
-    @Test("previousDay does nothing when already viewing today")
+    @Test("previousDay does nothing when already viewing today and past dates are disallowed")
     func previousDayClampsToToday() {
         let vm = GuideViewModel()
-        let today = vm.selectedDate
+        vm.allowsPastDates = false
         vm.previousDay()
         #expect(Calendar.current.isDateInToday(vm.selectedDate))
-        _ = today
+    }
+
+    @Test("previousDay moves backward from today when past dates are allowed (#119)")
+    func previousDayAllowsPastWhenEnabled() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        let today = vm.selectedDate
+        vm.previousDay()
+        #expect(vm.selectedDate < today)
+        #expect(!Calendar.current.isDateInToday(vm.selectedDate))
+    }
+
+    @Test("canGoToPreviousDay mirrors allowsPastDates while on today")
+    func canGoToPreviousDayReflectsFlag() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = false
+        #expect(vm.canGoToPreviousDay == false)
+        vm.allowsPastDates = true
+        #expect(vm.canGoToPreviousDay)
+    }
+
+    @Test("canGoToPreviousDay is always true once past today, regardless of the flag")
+    func canGoToPreviousDayTrueWhenNotToday() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = false
+        vm.selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        #expect(vm.canGoToPreviousDay)
+    }
+
+    @Test("allowsPastDates default matches the build variant (#119)")
+    func allowsPastDatesDefault() {
+        let vm = GuideViewModel()
+        #if DISPATCHERPVR
+        #expect(vm.allowsPastDates)
+        #else
+        #expect(!vm.allowsPastDates)
+        #endif
     }
 
     @Test("previousDay moves backward from a future date")
@@ -90,12 +126,23 @@ struct GuideViewModelTests {
 
     // MARK: - timelineStart / hoursToShow
 
-    @Test("timelineStart snaps to today's current half-hour when on today")
-    func timelineStartTodayHalfHour() {
+    @Test("timelineStart snaps to today's current half-hour when past hours are unavailable")
+    func timelineStartTodayHalfHourWithoutPastHours() {
         let vm = GuideViewModel()
+        vm.allowsPastDates = false
         let start = vm.timelineStart
         let minute = Calendar.current.component(.minute, from: start)
         #expect(minute == 0 || minute == 30)
+    }
+
+    @Test("timelineStart is midnight today when catch-up permits past hours (#119)")
+    func timelineStartTodayAtMidnightWithPastHours() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        let components = Calendar.current.dateComponents([.hour, .minute, .second], from: vm.timelineStart)
+        #expect(components.hour == 0)
+        #expect(components.minute == 0)
+        #expect(components.second == 0)
     }
 
     @Test("timelineStart is midnight for a non-today date")
@@ -117,6 +164,14 @@ struct GuideViewModelTests {
         #expect(hours.count == 24)
     }
 
+    @Test("hoursToShow includes all of today when catch-up permits past hours (#119)")
+    func hoursToShowIncludesAllOfTodayForCatchup() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        #expect(vm.hoursToShow.count == 24)
+        #expect(Calendar.current.component(.hour, from: vm.hoursToShow[0]) == 0)
+    }
+
     // MARK: - hourCount
 
     @Test("hourCount enforces minimum 6 hours even late at night")
@@ -131,6 +186,13 @@ struct GuideViewModelTests {
     func hourCountNonToday() {
         let tomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Date())!
         let count = GuideViewModel.hourCount(for: tomorrow, now: Date())
+        #expect(count == 24)
+    }
+
+    @Test("hourCount returns 24 for today when past hours are included (#119)")
+    func hourCountTodayWithPastHours() {
+        let now = Date()
+        let count = GuideViewModel.hourCount(for: now, now: now, includesPastHours: true)
         #expect(count == 24)
     }
 

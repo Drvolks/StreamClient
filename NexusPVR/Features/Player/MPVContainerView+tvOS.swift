@@ -28,11 +28,13 @@ struct MPVContainerView: UIViewRepresentable {
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
+    let preferKeyframeSeek: Bool
     let streamHeaders: [String: String]
     let activePlayerSession: any ActivePlayerSessionManaging
     let networkEventLogger: any NetworkEventLogging
 
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     /// Set for live streams. NextPVR can't seek an open `/live` response, so the
     /// remote's skip buttons have to reopen the stream at a byte offset instead of
     /// issuing an mpv seek — an mpv seek only moves inside the demuxer cache, which
@@ -40,6 +42,12 @@ struct MPVContainerView: UIViewRepresentable {
     /// Takes a signed delta in seconds and returns whether it handled the seek;
     /// when it returns false the plain mpv seek is used instead.
     var onLiveSeek: ((Double) -> Bool)?
+    /// Fired right before a catch-up (#119) seek is issued via the remote's
+    /// skip buttons/hold-to-scrub, so PlayerView can show its "Seeking…"
+    /// overlay — these calls go straight to `view.seek(seconds:)` below,
+    /// bypassing PlayerView's own seekForward/seekBackward bindings
+    /// entirely, so nothing else observes them.
+    var onCatchupSeekStarted: (() -> Void)?
     var onTogglePlayPause: (() -> Void)?
     var onToggleControls: (() -> Void)?
     var onShowControls: (() -> Void)?
@@ -66,11 +74,13 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
         view.onSeekForward = { multiplier in
             let delta = self.seekForwardTime * multiplier
             if self.onLiveSeek?(Double(delta)) != true {
+                self.onCatchupSeekStarted?()
                 view.seek(seconds: delta)
             }
             self.onShowControls?()
@@ -78,6 +88,7 @@ struct MPVContainerView: UIViewRepresentable {
         view.onSeekBackward = { multiplier in
             let delta = -self.seekBackwardTime * multiplier
             if self.onLiveSeek?(Double(delta)) != true {
+                self.onCatchupSeekStarted?()
                 view.seek(seconds: delta)
             }
             self.onShowControls?()
@@ -94,11 +105,13 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
         view.onSeekForward = { multiplier in
             let delta = self.seekForwardTime * multiplier
             if self.onLiveSeek?(Double(delta)) != true {
+                self.onCatchupSeekStarted?()
                 view.seek(seconds: delta)
             }
             self.onShowControls?()
@@ -106,6 +119,7 @@ struct MPVContainerView: UIViewRepresentable {
         view.onSeekBackward = { multiplier in
             let delta = -self.seekBackwardTime * multiplier
             if self.onLiveSeek?(Double(delta)) != true {
+                self.onCatchupSeekStarted?()
                 view.seek(seconds: delta)
             }
             self.onShowControls?()
@@ -122,11 +136,13 @@ struct MPVContainerView: UIViewRepresentable {
             }
         }
         view.onPlaybackEnded = onPlaybackEnded
+        view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
         view.onPlayPause = onTogglePlayPause
         view.onSeekForward = { multiplier in
             let delta = self.seekForwardTime * multiplier
             if self.onLiveSeek?(Double(delta)) != true {
+                self.onCatchupSeekStarted?()
                 view.seek(seconds: delta)
             }
             self.onShowControls?()
@@ -134,6 +150,7 @@ struct MPVContainerView: UIViewRepresentable {
         view.onSeekBackward = { multiplier in
             let delta = -self.seekBackwardTime * multiplier
             if self.onLiveSeek?(Double(delta)) != true {
+                self.onCatchupSeekStarted?()
                 view.seek(seconds: delta)
             }
             self.onShowControls?()
@@ -216,7 +233,7 @@ struct MPVContainerView: UIViewRepresentable {
 
         if gpuAPI == .pixelbuffer {
             let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
             configureCommonCallbacks(for: view)
             view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
@@ -237,7 +254,7 @@ struct MPVContainerView: UIViewRepresentable {
 
         if gpuAPI == .opengl {
             let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
             configureCommonCallbacks(for: view)
             view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
@@ -257,7 +274,7 @@ struct MPVContainerView: UIViewRepresentable {
         }
 
         let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, preferKeyframeSeek: preferKeyframeSeek)
         configureCommonCallbacks(for: view)
         view.setStreamHeaders(streamHeaders)
         view.loadURL(url)

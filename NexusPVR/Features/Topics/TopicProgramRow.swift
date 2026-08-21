@@ -140,7 +140,7 @@ struct TopicProgramRow: View {
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                     Spacer()
-                    if program.isNew { NewBadge() }
+                    if program.shouldShowNewBadge { NewBadge() }
                 }
 
                 HStack {
@@ -391,7 +391,7 @@ struct TopicProgramRowTV: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
 
-                    if program.isNew {
+                    if program.shouldShowNewBadge {
                         VStack {
                             HStack {
                                 Spacer()

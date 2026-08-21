@@ -35,12 +35,47 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var isDestroyed = false
     private var positionTimer: Timer?
     private let eventLoopGroup = DispatchGroup()
+    /// Dedicated serial queue for every mpv call catch-up (#119) issues off
+    /// the main thread: position polling (`startPositionPolling()`) and the
+    /// seek command itself (`seek(seconds:)`/`seekTo(position:)`). A
+    /// slow/blocked mpv core during a catch-up seek — reopening the demuxer
+    /// against a slow/remote proxy — blocks whichever thread calls into mpv
+    /// while it's busy; both of these calls used to run on the main thread,
+    /// which is why an unrelated HTTP status-poll timer was observed
+    /// freezing in lockstep on-device (the whole main thread was blocked,
+    /// not just mpv). One shared serial queue keeps catch-up's own mpv
+    /// calls from racing each other while none of them can block the main
+    /// thread anymore. Live/recording paths are untouched — still the
+    /// synchronous main-thread calls as always.
+    private let catchupPollQueue = DispatchQueue(label: "MPVPlayerCore.catchupPoll")
+    /// Caps how many catch-up polls can be queued during a stall (~2s of
+    /// backlog at the 0.5s tick rate) so a very long stall doesn't pile up
+    /// unboundedly. Read/written from both the main thread (Timer tick) and
+    /// `catchupPollQueue` (completion) — an informal race like the rest of
+    /// this `@unchecked Sendable` class's polling state; worst case is an
+    /// off-by-one on the cap, never a crash.
+    private var pendingCatchupPolls = 0
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    /// Fired specifically on MPV_EVENT_PLAYBACK_RESTART — unlike
+    /// onVideoInfoUpdate (which also fires from routine position-poll
+    /// ticks), this only fires when mpv actually resumes after a seek/
+    /// buffering pause, so it's the reliable signal for e.g. clearing a
+    /// "Seeking…" indicator (#119).
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     let recordingMonitor = MPVRecordingMonitor()
     var isRecordingInProgress = false
     var recordingStartTime: Date?
+    /// Raw, unindexed MPEG-TS proxied streams (Dispatcharr catch-up, #119)
+    /// don't have a reliable keyframe index the way a properly-muxed
+    /// recording does, so the app's default precise (`hr-seek`) seeking
+    /// lands mid-GOP and forces the decoder to grind through corrupted
+    /// frames until the next real keyframe — several seconds of
+    /// "hardware accelerator failed to decode picture" spam. Forcing
+    /// keyframe-only seeking for these streams trades a little seek
+    /// precision for landing cleanly and immediately.
+    var preferKeyframeSeek = false
     private var lastCodec: String?
     private var lastHeight: Int?
     private var lastHwdec: String?
@@ -86,6 +121,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         // Nil out callbacks to break reference cycles with SwiftUI @State
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
         recordingMonitor.stop()
 
@@ -115,6 +151,49 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         var statsCounter = 0
         positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
+
+            if self.preferKeyframeSeek {
+                guard self.pendingCatchupPolls < 4 else { return }
+                self.pendingCatchupPolls += 1
+                statsCounter += 1
+                let tick = statsCounter
+                self.catchupPollQueue.async {
+                    defer { self.pendingCatchupPolls -= 1 }
+                    let position = self.getTimePosition()
+                    let duration = self.getDuration()
+
+                    // Catch-up is never isRecordingInProgress, so the
+                    // growing-duration/stall-recovery branch the main-thread
+                    // path below has doesn't apply here — nothing skipped.
+                    let shouldQueryInfo = tick % 4 == 0 || self.lastCodec == nil
+                    var info: (codec: String?, width: Int?, height: Int?, hwdec: String?, audioChannels: String?, droppedFrames: Int64, gamma: String?, fps: Double)?
+                    if shouldQueryInfo {
+                        let i = self.getVideoInfo()
+                        info = i
+                        let changed = i.codec != self.lastCodec || i.height != self.lastHeight || i.hwdec != self.lastHwdec || i.audioChannels != self.lastAudioChannels
+                        if changed {
+                            self.lastCodec = i.codec
+                            self.lastHeight = i.height
+                            self.lastHwdec = i.hwdec
+                            self.lastAudioChannels = i.audioChannels
+                            if i.codec != nil {
+                                self.logVideoInfo(i)
+                            }
+                        }
+                    }
+
+                    // Safe to call off-main: every onPositionUpdate/
+                    // onVideoInfoUpdate consumer (MPVContainerView on all
+                    // three platforms) already wraps its own state mutation
+                    // in DispatchQueue.main.async.
+                    self.onPositionUpdate?(position, duration)
+                    if let info {
+                        self.onVideoInfoUpdate?(info.codec, info.height, info.hwdec, info.audioChannels, info.droppedFrames, info.gamma, info.fps)
+                    }
+                }
+                return
+            }
+
             // Timers scheduled on the main RunLoop fire on the main thread —
             // safe to assume MainActor isolation here. Swift 6's Timer closure
             // is @Sendable, which is why we need this hop to access self's
@@ -255,6 +334,29 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     var reportedDuration: Double = 0
 
     func seek(seconds: Int) {
+        // Catch-up (#119): mpv_command_string("seek ...") is called directly
+        // on the main thread from the UI's seek button/drag handler. If
+        // mpv's core blocks reopening the demuxer against a slow/remote
+        // proxy, that call blocks too — freezing the whole app, not just
+        // playback (confirmed on-device: this, not the position-polling
+        // timer already fixed, is what an unrelated HTTP status-poll timer
+        // going silent in lockstep was actually catching). Nothing here
+        // needs the result synchronously, so route it off-main. Re-checks
+        // self.mpv fresh inside the block rather than capturing today's
+        // value, in case teardown races a still-pending seek.
+        if preferKeyframeSeek {
+            catchupPollQueue.async { [weak self] in
+                guard let self, let mpv = self.mpv else { return }
+                let command = "seek \(seconds) relative+keyframes"
+                print("MPV: issuing '\(command)' (preferKeyframeSeek=true)")
+                let result = mpv_command_string(mpv, command)
+                if result < 0 {
+                    print("MPV: seek command failed: \(result)")
+                }
+            }
+            return
+        }
+
         guard let mpv = mpv else { return }
         var actualSeconds = seconds
         if isRecordingInProgress {
@@ -283,6 +385,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             }
         }
         let command = "seek \(actualSeconds) relative"
+        print("MPV: issuing '\(command)' (preferKeyframeSeek=false)")
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seek command failed: \(result)")
@@ -290,6 +393,20 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     }
 
     func seekTo(position: Double) {
+        // See seek(seconds:) — same off-main rationale for catch-up (#119).
+        if preferKeyframeSeek {
+            catchupPollQueue.async { [weak self] in
+                guard let self, let mpv = self.mpv else { return }
+                let command = "seek \(position) absolute+keyframes"
+                print("MPV: issuing '\(command)' (preferKeyframeSeek=true)")
+                let result = mpv_command_string(mpv, command)
+                if result < 0 {
+                    print("MPV: seekTo command failed: \(result)")
+                }
+            }
+            return
+        }
+
         guard let mpv = mpv else { return }
         var target = position
         // Clamp to the smaller of mpv's available duration and the UI-reported
@@ -309,6 +426,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             }
         }
         let command = "seek \(target) absolute"
+        print("MPV: issuing '\(command)' (preferKeyframeSeek=false)")
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seekTo command failed: \(result)")
@@ -588,10 +706,11 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         ))
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) -> Bool {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) -> Bool {
         self.errorBinding = errorBinding
         self.isRecordingInProgress = isRecordingInProgress
         self.recordingStartTime = recordingStartTime
+        self.preferKeyframeSeek = preferKeyframeSeek
 
         // Create MPV
         mpv = mpv_create()
@@ -784,8 +903,15 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         print("MPV: Initialized successfully")
 
         // Request error/fatal logs only to avoid MPV log buffer overflows
-        // on noisy live HLS streams.
-        mpv_request_log_messages(mpv, "error")
+        // on noisy live HLS streams. Catch-up (#119) gets verbose logging
+        // instead — temporary, for diagnosing the still-unexplained ~25s
+        // seek stall (ruled out: decode-error recovery, the seek command
+        // and position-poll blocking the main thread, the PixelBuffer
+        // render bridge, and an Authorization header on the Range request —
+        // none of those reproduce it). This should surface exactly which
+        // internal step (cache fill, demuxer probe, stream reopen, ...) is
+        // slow.
+        mpv_request_log_messages(mpv, preferKeyframeSeek ? "v" : "error")
 
         // Observe eof-reached so we know when playback finishes
         // (keep-open=yes prevents MPV_EVENT_END_FILE from firing on EOF)
@@ -1025,6 +1151,16 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                    !logText.hasPrefix("Set property:"),
                    shouldEmitMPVLog(level: level, text: logText) {
                     print("MPV [\(level)]: \(logText)")
+                } else if preferKeyframeSeek,
+                          !logText.isEmpty,
+                          !logText.hasPrefix("Set property:"),
+                          shouldEmitMPVLog(level: level, text: logText) {
+                    // Temporary (#119): mpv_request_log_messages is bumped to
+                    // "v" for catch-up above — print everything else here too
+                    // (cache/demuxer/stream-open progress) so the next device
+                    // capture shows which internal step the ~25s stall is
+                    // actually stuck in.
+                    print("MPV [\(level)]: \(logText)")
                 }
 
                 // Log mpv errors and HTTP warnings to the event log
@@ -1108,6 +1244,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             let info = getVideoInfo()
             DispatchQueue.main.async { [weak self] in
                 self?.onVideoInfoUpdate?(info.codec, info.height, info.hwdec, info.audioChannels, info.droppedFrames, info.gamma, info.fps)
+                self?.onPlaybackRestarted?()
                 if let self = self, info.codec != nil {
                     self.logVideoInfo(info)
                 }

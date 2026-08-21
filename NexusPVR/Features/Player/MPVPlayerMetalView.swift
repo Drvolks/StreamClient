@@ -17,6 +17,7 @@ class MPVPlayerMetalView: UIView {
     private let networkEventLogger: any NetworkEventLogging
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackRestarted: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
     var recordingMonitor: MPVRecordingMonitor? { player?.recordingMonitor }
 
@@ -106,9 +107,9 @@ class MPVPlayerMetalView: UIView {
         }
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek), success else {
             return
         }
         if let metalLayer = metalLayer {
@@ -119,6 +120,9 @@ class MPVPlayerMetalView: UIView {
         }
         player?.onPlaybackEnded = { [weak self] in
             self?.onPlaybackEnded?()
+        }
+        player?.onPlaybackRestarted = { [weak self] in
+            self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
@@ -170,6 +174,7 @@ class MPVPlayerMetalView: UIView {
         player = nil
         onPositionUpdate = nil
         onPlaybackEnded = nil
+        onPlaybackRestarted = nil
         onVideoInfoUpdate = nil
     }
 

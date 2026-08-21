@@ -59,6 +59,12 @@ nonisolated struct Program: Identifiable, Decodable, Hashable, Sendable {
         name.contains("\u{1D3A}\u{1D49}\u{02B7}")
     }
 
+    /// The EPG may retain the NEW marker after a program has ended. Keep the
+    /// underlying metadata intact, but do not present a stale badge in the UI.
+    var shouldShowNewBadge: Bool {
+        isNew && !hasEnded
+    }
+
     /// Program name with the "ᴺᵉʷ" marker and any surrounding line break stripped
     var cleanName: String {
         name.replacingOccurrences(of: "\\s*ᴺᵉʷ\\s*", with: " ", options: .regularExpression)
