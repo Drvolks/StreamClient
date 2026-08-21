@@ -36,6 +36,20 @@ struct SearchResultRow: View {
     @State private var existingRecording: Recording?
     @State private var earlierScheduled: Recording?
 
+    #if DISPATCHERPVR
+    /// Whether this program can be requested via Dispatcharr catch-up (#119)
+    /// — see `CatchupAvailability.isAvailable`.
+    private var catchupAvailable: Bool {
+        CatchupAvailability.isAvailable(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+    }
+    #else
+    private var catchupAvailable: Bool { false }
+    #endif
+
     var body: some View {
         HStack(alignment: .center, spacing: Theme.spacingMD) {
             // Channel icon
@@ -67,6 +81,7 @@ struct SearchResultRow: View {
                         .lineLimit(2)
                     Spacer()
                     if program.isNew { NewBadge() }
+                    if catchupAvailable { CatchupBadge() }
                 }
 
                 // Description snippet
@@ -241,6 +256,20 @@ struct SearchResultRowTV: View {
 
     private var canRecord: Bool { appState.showsRecordings }
 
+    #if DISPATCHERPVR
+    /// Whether this program can be requested via Dispatcharr catch-up (#119)
+    /// — see `CatchupAvailability.isAvailable`.
+    private var catchupAvailable: Bool {
+        CatchupAvailability.isAvailable(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+    }
+    #else
+    private var catchupAvailable: Bool { false }
+    #endif
+
     private var actionLabel: String {
         if !canRecord && !program.hasEnded {
             return "Details"
@@ -249,7 +278,9 @@ struct SearchResultRowTV: View {
         } else if isScheduled {
             return "Scheduled"
         } else if program.hasEnded {
-            return existingRecording != nil ? "Watch Recording" : "Ended"
+            if existingRecording != nil { return "Watch Recording" }
+            if catchupAvailable { return "Watch Catch-up" }
+            return "Ended"
         } else {
             return "Record"
         }
@@ -263,7 +294,8 @@ struct SearchResultRowTV: View {
         } else if isScheduled {
             return "checkmark.circle.fill"
         } else if program.hasEnded {
-            return existingRecording != nil ? "play.circle.fill" : "clock"
+            if existingRecording != nil || catchupAvailable { return "play.circle.fill" }
+            return "clock"
         } else {
             return "record.circle"
         }
@@ -275,14 +307,19 @@ struct SearchResultRowTV: View {
         } else if isScheduled {
             return Theme.success
         } else if program.hasEnded {
-            return existingRecording != nil ? Theme.accent : Theme.textTertiary
+            if existingRecording != nil { return Theme.accent }
+            if catchupAvailable { return Theme.catchup }
+            return Theme.textTertiary
         } else {
             return Theme.accent
         }
     }
 
+    /// Selecting a catch-up-eligible program opens Details rather than
+    /// minting a session directly here — ProgramDetailView already owns
+    /// that flow (#119) and there's no reason for a second entry point.
     private var isActionable: Bool {
-        existingRecording != nil || !program.hasEnded
+        existingRecording != nil || catchupAvailable || !program.hasEnded
     }
 
     var body: some View {
@@ -318,6 +355,7 @@ struct SearchResultRowTV: View {
                             .multilineTextAlignment(.leading)
                         Spacer()
                         if program.isNew { NewBadge() }
+                        if catchupAvailable { CatchupBadge() }
                     }
 
                     if let desc = program.desc, !desc.isEmpty {
@@ -401,6 +439,8 @@ struct SearchResultRowTV: View {
             }
         } else if let existing = existingRecording {
             playExistingRecording(existing)
+        } else if catchupAvailable {
+            onShowDetails?()
         }
     }
 
