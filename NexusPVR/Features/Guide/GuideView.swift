@@ -67,7 +67,13 @@ struct GuideView: View {
     #endif
 
     var body: some View {
-        contentView
+        // The modifier chain is split across small generic helpers so the Swift
+        // type checker doesn't have to solve one enormous expression.
+        lifecycleHandlers(filterHandlers(presentationLayer(contentView)))
+    }
+
+    private func presentationLayer<Content: View>(_ content: Content) -> some View {
+        content
             .accessibilityIdentifier("guide-view")
             .background(.ultraThinMaterial)
             .sheet(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
@@ -101,6 +107,10 @@ struct GuideView: View {
                     .frame(minWidth: 500, minHeight: 400)
             }
             #endif
+    }
+
+    private func filterHandlers<Content: View>(_ content: Content) -> some View {
+        content
             .task {
                 keywords = UserPreferences.load().keywords
                 await viewModel.loadData(using: client, epgCache: epgCache)
@@ -164,39 +174,50 @@ struct GuideView: View {
                 }
             }
             #endif
+    }
+
+    private func lifecycleHandlers<Content: View>(_ content: Content) -> some View {
+        content
             .onChange(of: scenePhase) {
-                if scenePhase == .active {
-                    Task { await refreshRecordings() }
-                    #if os(tvOS)
-                    // Resync the guide start time so the visible window matches
-                    // the ViewModel's timelineStart (which uses current time),
-                    // unless returning to the catch-up program the user chose.
-                    if !preservesGuidePositionAfterCatchup {
-                        resyncGuideStartToNow()
-                    }
-                    #endif
-                }
+                handleScenePhaseChange()
             }
             .onChange(of: appState.isShowingPlayer) { _, isShowing in
-                if isShowing {
-                    // Capture this before PlayerView teardown calls
-                    // stopPlayback(), which clears the session id.
-                    preservesGuidePositionAfterCatchup = appState.currentlyPlayingCatchupSessionId != nil
-                    return
-                }
-
-                #if os(tvOS)
-                // The player is presented as a .fullScreenCover, which keeps
-                // scenePhase == .active, so the scenePhase resync never fires on
-                // dismissal. Re-anchor normal playback on "now", but keep the
-                // exact day/time/focus window that launched catch-up playback.
-                if !preservesGuidePositionAfterCatchup {
-                    resyncGuideStartToNow()
-                    viewModel.scrollToNow()
-                }
-                Task { await refreshRecordings() }
-                #endif
+                handlePlayerPresentationChange(isShowing: isShowing)
             }
+    }
+
+    private func handleScenePhaseChange() {
+        guard scenePhase == .active else { return }
+        Task { await refreshRecordings() }
+        #if os(tvOS)
+        // Resync the guide start time so the visible window matches
+        // the ViewModel's timelineStart (which uses current time),
+        // unless returning to the catch-up program the user chose.
+        if !preservesGuidePositionAfterCatchup {
+            resyncGuideStartToNow()
+        }
+        #endif
+    }
+
+    private func handlePlayerPresentationChange(isShowing: Bool) {
+        if isShowing {
+            // Capture this before PlayerView teardown calls
+            // stopPlayback(), which clears the session id.
+            preservesGuidePositionAfterCatchup = appState.currentlyPlayingCatchupSessionId != nil
+            return
+        }
+
+        #if os(tvOS)
+        // The player is presented as a .fullScreenCover, which keeps
+        // scenePhase == .active, so the scenePhase resync never fires on
+        // dismissal. Re-anchor normal playback on "now", but keep the
+        // exact day/time/focus window that launched catch-up playback.
+        if !preservesGuidePositionAfterCatchup {
+            resyncGuideStartToNow()
+            viewModel.scrollToNow()
+        }
+        Task { await refreshRecordings() }
+        #endif
     }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
