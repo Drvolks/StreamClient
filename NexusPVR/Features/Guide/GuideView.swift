@@ -230,15 +230,9 @@ struct GuideView: View {
         #endif
         #if os(iOS) && DISPATCHERPVR
         .overlay(alignment: .top) {
-            VStack(spacing: 8) {
-                // Only Dispatcharr has catch-up (#119) to browse into the past
-                // for, so this is the one place iOS gets a date navigator at
-                // all — NextPVR's guide stays locked to "today".
-                iOSGuideDateNavBar
-                if viewModel.showFilters && hasFilterData {
-                    filterPanel
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+            if viewModel.showFilters && hasFilterData {
+                filterPanel
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         #endif
@@ -457,64 +451,6 @@ struct GuideView: View {
     }
     #endif
 
-    #if os(iOS) && DISPATCHERPVR
-    /// Approximate rendered height of `iOSGuideDateNavBar`, so
-    /// `guideTopPadding` can reserve space for it above the grid.
-    private let iOSDateNavBarHeight: CGFloat = 40
-
-    /// iOS has no macOS-style floating nav bar and no tvOS header row, so
-    /// catch-up (#119) needs its own way to reach past days here. Mirrors
-    /// `macOSGuideNavBar`'s chevron/date/chevron shape, plus a "Today"
-    /// shortcut back once the user has navigated away.
-    private var iOSGuideDateNavBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                viewModel.previousDay()
-                Task { await viewModel.navigateToDate(using: client) }
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(viewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!viewModel.canGoToPreviousDay)
-
-            Text(viewModel.selectedDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Theme.textPrimary)
-
-            Button {
-                viewModel.nextDay()
-                Task { await viewModel.navigateToDate(using: client) }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if !viewModel.isOnToday {
-                Button("Today") {
-                    viewModel.scrollToNow()
-                    Task { await viewModel.navigateToDate(using: client) }
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Theme.accent)
-                .buttonStyle(.plain)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Theme.spacingMD)
-        .frame(height: iOSDateNavBarHeight)
-        .background(.ultraThinMaterial)
-    }
-    #endif
-
     #if !os(tvOS)
 
     private var guideTopPadding: CGFloat {
@@ -526,11 +462,6 @@ struct GuideView: View {
         #endif
         #if DISPATCHERPVR
         var extra: CGFloat = 0
-        #if os(iOS)
-        // Space for the floating date navigator (#119) — always shown on
-        // Dispatcharr's iOS guide since catch-up needs a way to reach past days.
-        extra += iOSDateNavBarHeight
-        #endif
         if viewModel.showFilters && hasFilterData {
             // Add space for each filter row shown
             extra += 8 // top/bottom padding
