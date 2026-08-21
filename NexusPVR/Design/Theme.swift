@@ -126,6 +126,14 @@ enum Theme {
     static let guidePast = Brand.surface.opacity(0.5)
     static let guideScheduled = Brand.accent.opacity(0.3)
 
+    // MARK: - Catch-up Color (#119)
+
+    /// Fixed purple, not brand-tinted — catch-up is a Dispatcharr-only
+    /// server capability, not a per-app-variant color choice, so it stays
+    /// constant across both `Brand` configs the way `matchesKeyword`'s gold
+    /// outline in `ProgramCell` does.
+    static let catchup = Color.purple
+
     // MARK: - Spacing
 
     static let spacingXS: CGFloat = 4
@@ -201,6 +209,24 @@ struct RecBadge: View {
             .background(Theme.recording)
             .clipShape(RoundedRectangle(cornerRadius: 3))
             .opacity(isActive ? 1.0 : 0.6)
+    }
+}
+
+// MARK: - Catch-up Badge (#119)
+
+struct CatchupBadge: View {
+    /// Shrinks the label to a single "C" for tight spots (e.g. a guide cell
+    /// where the full word would wrap next to the program's start/end time).
+    var compact: Bool = false
+
+    var body: some View {
+        Text(compact ? "C" : "CATCH-UP")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, compact ? 4 : 5)
+            .padding(.vertical, 2)
+            .background(Theme.catchup)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
     }
 }
 

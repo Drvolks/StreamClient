@@ -209,9 +209,15 @@ struct GuideView: View {
         #endif
         #if os(iOS) && DISPATCHERPVR
         .overlay(alignment: .top) {
-            if viewModel.showFilters && hasFilterData {
-                filterPanel
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 8) {
+                // Only Dispatcharr has catch-up (#119) to browse into the past
+                // for, so this is the one place iOS gets a date navigator at
+                // all — NextPVR's guide stays locked to "today".
+                iOSGuideDateNavBar
+                if viewModel.showFilters && hasFilterData {
+                    filterPanel
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         #endif
@@ -345,12 +351,12 @@ struct GuideView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(viewModel.isOnToday ? Theme.textTertiary : Theme.accent)
+                            .foregroundStyle(viewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
                             .frame(width: 32, height: 32)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(viewModel.isOnToday)
+                    .disabled(!viewModel.canGoToPreviousDay)
 
                     Text(viewModel.selectedDate, format: .dateTime.month(.abbreviated).day())
                         .font(.subheadline.weight(.medium))
@@ -429,6 +435,64 @@ struct GuideView: View {
     }
     #endif
 
+    #if os(iOS) && DISPATCHERPVR
+    /// Approximate rendered height of `iOSGuideDateNavBar`, so
+    /// `guideTopPadding` can reserve space for it above the grid.
+    private let iOSDateNavBarHeight: CGFloat = 40
+
+    /// iOS has no macOS-style floating nav bar and no tvOS header row, so
+    /// catch-up (#119) needs its own way to reach past days here. Mirrors
+    /// `macOSGuideNavBar`'s chevron/date/chevron shape, plus a "Today"
+    /// shortcut back once the user has navigated away.
+    private var iOSGuideDateNavBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                viewModel.previousDay()
+                Task { await viewModel.navigateToDate(using: client) }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(viewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewModel.canGoToPreviousDay)
+
+            Text(viewModel.selectedDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Theme.textPrimary)
+
+            Button {
+                viewModel.nextDay()
+                Task { await viewModel.navigateToDate(using: client) }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !viewModel.isOnToday {
+                Button("Today") {
+                    viewModel.scrollToNow()
+                    Task { await viewModel.navigateToDate(using: client) }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.spacingMD)
+        .frame(height: iOSDateNavBarHeight)
+        .background(.ultraThinMaterial)
+    }
+    #endif
+
     #if !os(tvOS)
 
     private var guideTopPadding: CGFloat {
@@ -439,15 +503,22 @@ struct GuideView: View {
         let base: CGFloat = 0
         #endif
         #if DISPATCHERPVR
+        var extra: CGFloat = 0
+        #if os(iOS)
+        // Space for the floating date navigator (#119) — always shown on
+        // Dispatcharr's iOS guide since catch-up needs a way to reach past days.
+        extra += iOSDateNavBarHeight
+        #endif
         if viewModel.showFilters && hasFilterData {
             // Add space for each filter row shown
-            var extra: CGFloat = 8 // top/bottom padding
+            extra += 8 // top/bottom padding
             if !epgCache.channelProfiles.isEmpty { extra += 36 }
             if hasPopulatedGroups { extra += 36 }
-            return base + extra
         }
-        #endif
+        return base + extra
+        #else
         return base
+        #endif
     }
     #endif
 
@@ -995,6 +1066,7 @@ struct GuideView: View {
                         let isFocused = isRowFocused && colIndex == focusedColumn
                         tvOSProgramCell(
                             program: program,
+                            channel: channel,
                             isFocused: isFocused,
                             gridWidth: gridWidth,
                             pxPerMinute: pxPerMinute
@@ -1032,11 +1104,20 @@ struct GuideView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func tvOSProgramCell(program: Program, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
+    private func tvOSProgramCell(program: Program, channel: Channel, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
         let (xPos, cellWidth) = tvOSProgramPosition(program: program, pxPerMinute: pxPerMinute)
         let isAiring = program.isCurrentlyAiring
         let isScheduled = viewModel.isScheduledRecording(program)
         let isRecording = isScheduled && isAiring && viewModel.recordingStatus(program) == .recording
+        #if DISPATCHERPVR
+        let catchupAvailable = CatchupAvailability.isAvailable(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+        #else
+        let catchupAvailable = false
+        #endif
 
         let bgColor: Color = {
             if isRecording {
@@ -1080,6 +1161,10 @@ struct GuideView: View {
 
                         if isScheduled {
                             RecBadge(isActive: isRecording, compact: useCompactBadges)
+                        }
+
+                        if catchupAvailable {
+                            CatchupBadge(compact: useCompactBadges)
                         }
                     }
                 }
@@ -1132,7 +1217,7 @@ struct GuideView: View {
             tvOSHeaderField(
                 imageName: "chevron.left",
                 isFocused: isFocused && focusedItem == .previousDay,
-                isEnabled: !viewModel.isOnToday
+                isEnabled: viewModel.canGoToPreviousDay
             )
 
             Text(viewModel.selectedDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
@@ -1533,7 +1618,7 @@ struct GuideView: View {
     private func selectFocusedHeaderItem() {
         switch focusedHeaderItem {
         case .previousDay:
-            guard !viewModel.isOnToday else { return }
+            guard viewModel.canGoToPreviousDay else { return }
             viewModel.previousDay()
             Task { await viewModel.navigateToDate(using: client) }
         case .nextDay:
@@ -1658,6 +1743,15 @@ struct GuideView: View {
                 let isRecording = isScheduled && program.isCurrentlyAiring && status == .recording
                 let matchesKeywords = viewModel.keywordMatchedProgramIds.contains(program.id)
                 let sport = viewModel.detectedSport(for: program)
+                #if DISPATCHERPVR
+                let catchupAvailable = CatchupAvailability.isAvailable(
+                    program: program,
+                    channelIsCatchup: channel.isCatchup,
+                    catchupDays: channel.catchupDays
+                )
+                #else
+                let catchupAvailable = false
+                #endif
                 // Calculate leading padding for live programs - push text to visible left edge (scroll target)
                 let leadingPad = GuideScrollHelper.calculateLeadingPadding(
                     programStart: max(program.startDate, timelineStart),
@@ -1678,6 +1772,7 @@ struct GuideView: View {
                         width: viewModel.programWidth(for: program, hourWidth: hourWidth, startTime: timelineStart),
                         isScheduledRecording: isScheduled,
                         isCurrentlyRecording: isRecording,
+                        isCatchupAvailable: catchupAvailable,
                         matchesKeyword: matchesKeywords,
                         detectedSport: sport,
                         leadingPadding: leadingPad

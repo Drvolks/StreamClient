@@ -57,6 +57,10 @@ final class AppState: ObservableObject {
     @Published var currentlyPlayingChannelName: String?
     @Published var currentlyPlayingIsRecordingInProgress = false
     @Published var currentlyPlayingRecordingStartTime: Date?
+    /// Dispatcharr catch-up (timeshift) session id (#119), when the current
+    /// stream is archived playback rather than live/recording. Revoked by
+    /// `PlayerView` on teardown — see `endCatchupSessionIfNeeded()`.
+    @Published var currentlyPlayingCatchupSessionId: String?
 
     // Navigation state
     @Published var selectedChannel: Channel?
@@ -481,7 +485,8 @@ final class AppState: ObservableObject {
         channelId: Int? = nil,
         channelName: String? = nil,
         isRecordingInProgress: Bool = false,
-        recordingStartTime: Date? = nil
+        recordingStartTime: Date? = nil,
+        catchupSessionId: String? = nil
     ) {
         #if DEBUG
         let effectiveURL: URL
@@ -504,6 +509,7 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelName = channelName
         currentlyPlayingIsRecordingInProgress = isRecordingInProgress
         currentlyPlayingRecordingStartTime = recordingStartTime
+        currentlyPlayingCatchupSessionId = catchupSessionId
         isPreparingStream = false
         isShowingPlayer = true
     }
@@ -532,6 +538,7 @@ final class AppState: ObservableObject {
         currentlyPlayingChannelName = nil
         currentlyPlayingIsRecordingInProgress = false
         currentlyPlayingRecordingStartTime = nil
+        currentlyPlayingCatchupSessionId = nil
     }
 
     /// Dismiss the player UI without clearing playback state (used for PiP).

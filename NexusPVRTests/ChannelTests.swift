@@ -73,7 +73,9 @@ struct ChannelTests {
             hasIcon: true,
             streamURL: "http://x",
             groupId: 3,
-            logoURL: "http://logo"
+            logoURL: "http://logo",
+            isCatchup: true,
+            catchupDays: 5
         )
         #expect(ch.id == 1)
         #expect(ch.name == "Name")
@@ -82,5 +84,27 @@ struct ChannelTests {
         #expect(ch.streamURL == "http://x")
         #expect(ch.groupId == 3)
         #expect(ch.logoURL == "http://logo")
+        #expect(ch.isCatchup)
+        #expect(ch.catchupDays == 5)
+    }
+
+    @Test("Memberwise init defaults catch-up fields to off (#119)")
+    func memberwiseInitDefaultsCatchupOff() {
+        let ch = Channel(id: 1, name: "Name", number: 2)
+        #expect(!ch.isCatchup)
+        #expect(ch.catchupDays == 0)
+    }
+
+    @Test("Decoding NextPVR-shaped JSON always defaults catch-up fields off (#119)")
+    func decodedChannelHasNoCatchup() throws {
+        let json = """
+        {
+            "channelId": 1,
+            "channelName": "Test"
+        }
+        """
+        let ch = try JSONDecoder().decode(Channel.self, from: Data(json.utf8))
+        #expect(!ch.isCatchup)
+        #expect(ch.catchupDays == 0)
     }
 }

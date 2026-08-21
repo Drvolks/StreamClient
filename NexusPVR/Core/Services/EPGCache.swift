@@ -99,6 +99,10 @@ final class EPGCache: ObservableObject {
             isLoading = false
             print("[EPGCache] Grid ready (\(visibleChannels.count) channels): \(ms(since: totalStart))ms")
 
+            #if DISPATCHERPVR
+            enrichWithCatchupInfo(using: client)
+            #endif
+
             // Two-phase EPG load:
             //   1. Foreground (awaited): fetch the small "fast window" so the
             //      guide is interactive ASAP (Dispatcharr /api/epg/grid/, or
@@ -243,6 +247,10 @@ final class EPGCache: ObservableObject {
             hasLoaded = true
             print("[EPGCache] Refresh: \(sorted.count) channels in \(ms(since: totalStart))ms")
 
+            #if DISPATCHERPVR
+            enrichWithCatchupInfo(using: client)
+            #endif
+
             startBackgroundFullLoad(using: client, channels: sorted, totalStart: totalStart)
         } catch {
             self.error = error.localizedDescription
@@ -291,6 +299,35 @@ final class EPGCache: ObservableObject {
             // Silently fail — user can retry via date navigation
         }
     }
+
+    #if DISPATCHERPVR
+    /// Backfills `isCatchup`/`catchupDays` (#119) onto channels loaded via
+    /// `getChannelSummary(profileId:)`, whose `summary/` serializer omits
+    /// both fields (confirmed against a live server — the full
+    /// `/api/channels/channels/` endpoint has them, `/summary/` doesn't).
+    /// Runs in the background after the initial paint so it never delays
+    /// the guide showing up; the badge/button just appear a beat later.
+    private func enrichWithCatchupInfo(using client: PVRClient) {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let info = try? await client.getChannelCatchupInfo(), !info.isEmpty else { return }
+            self.applyCatchupInfo(info)
+        }
+    }
+
+    private func applyCatchupInfo(_ info: [Int: (isCatchup: Bool, catchupDays: Int)]) {
+        func apply(_ list: [Channel]) -> [Channel] {
+            list.map { ch in
+                guard let entry = info[ch.id] else { return ch }
+                return ch.withCatchup(isCatchup: entry.isCatchup, catchupDays: entry.catchupDays)
+            }
+        }
+        channels = apply(channels)
+        visibleChannels = apply(visibleChannels)
+        guideSidebarChannels = apply(guideSidebarChannels)
+        channelMap = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+    #endif
 
     /// Prefetch yesterday + tomorrow EPG in background
     func prefetchAdjacentDays(around date: Date, using client: PVRClient) async {

@@ -39,8 +39,11 @@ actor CatchupService {
 
     /// The fully-qualified base URL of the Dispatcharr server,
     /// including scheme (e.g. "https://dispatcharr.example.com:8000").
-    /// Captured at init from `DispatcherClient.baseURL` so callers
-    /// don't have to thread it through.
+    /// Passed in at init rather than read from `client.baseURL` directly —
+    /// `DispatcherClient` is `@MainActor`-isolated, and an actor's own init
+    /// runs nonisolated, so it can't synchronously read a main-actor
+    /// property. The caller (always a `@MainActor` SwiftUI view) reads it
+    /// instead.
     private let baseURL: String
 
     /// The client that owns the JWT / API-key auth headers and
@@ -49,9 +52,9 @@ actor CatchupService {
     /// of `/api/`.
     private let client: DispatcherClient
 
-    init(client: DispatcherClient) {
+    init(client: DispatcherClient, baseURL: String) {
         self.client = client
-        self.baseURL = client.baseURL
+        self.baseURL = baseURL
     }
 
     /// Server's 60-second HANDSHAKE_TTL (issue #119 comment §2).

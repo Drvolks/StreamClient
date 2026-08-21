@@ -39,13 +39,49 @@ struct GuideViewModelTests {
 
     // MARK: - Day navigation
 
-    @Test("previousDay does nothing when already viewing today")
+    @Test("previousDay does nothing when already viewing today and past dates are disallowed")
     func previousDayClampsToToday() {
         let vm = GuideViewModel()
-        let today = vm.selectedDate
+        vm.allowsPastDates = false
         vm.previousDay()
         #expect(Calendar.current.isDateInToday(vm.selectedDate))
-        _ = today
+    }
+
+    @Test("previousDay moves backward from today when past dates are allowed (#119)")
+    func previousDayAllowsPastWhenEnabled() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        let today = vm.selectedDate
+        vm.previousDay()
+        #expect(vm.selectedDate < today)
+        #expect(!Calendar.current.isDateInToday(vm.selectedDate))
+    }
+
+    @Test("canGoToPreviousDay mirrors allowsPastDates while on today")
+    func canGoToPreviousDayReflectsFlag() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = false
+        #expect(vm.canGoToPreviousDay == false)
+        vm.allowsPastDates = true
+        #expect(vm.canGoToPreviousDay)
+    }
+
+    @Test("canGoToPreviousDay is always true once past today, regardless of the flag")
+    func canGoToPreviousDayTrueWhenNotToday() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = false
+        vm.selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        #expect(vm.canGoToPreviousDay)
+    }
+
+    @Test("allowsPastDates default matches the build variant (#119)")
+    func allowsPastDatesDefault() {
+        let vm = GuideViewModel()
+        #if DISPATCHERPVR
+        #expect(vm.allowsPastDates)
+        #else
+        #expect(!vm.allowsPastDates)
+        #endif
     }
 
     @Test("previousDay moves backward from a future date")

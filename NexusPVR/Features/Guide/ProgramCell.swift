@@ -18,6 +18,9 @@ struct ProgramCell: View {
     let width: CGFloat
     var isScheduledRecording: Bool = false
     var isCurrentlyRecording: Bool = false
+    /// Whether this program can be played back via Dispatcharr catch-up
+    /// (#119) — see `CatchupAvailability.isAvailable`.
+    var isCatchupAvailable: Bool = false
     var matchesKeyword: Bool = false
     var detectedSport: Sport? = nil
     var leadingPadding: CGFloat = 0 // Padding for portion that's off-screen to the left
@@ -97,6 +100,10 @@ struct ProgramCell: View {
 
                         if isCurrentlyRecording || isScheduledRecording {
                             RecBadge(isActive: isCurrentlyRecording, compact: useCompactBadges)
+                        }
+
+                        if isCatchupAvailable {
+                            CatchupBadge(compact: useCompactBadges)
                         }
                     }
                 }

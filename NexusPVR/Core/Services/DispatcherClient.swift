@@ -956,6 +956,26 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return items.map { $0.toChannel() }
     }
 
+    /// Lightweight fetch of just the catch-up capability per channel (#119),
+    /// for enriching a channel list already loaded via
+    /// `getChannelSummary(profileId:)` — confirmed against a live server
+    /// that its `summary/` serializer omits `is_catchup`/`catchup_days`
+    /// entirely (unlike the full `ChannelSerializer`). Skips the tvg_id/EPG
+    /// resolution `getChannels()` does, since callers only need these two
+    /// fields. Keyed by channel id.
+    func getChannelCatchupInfo() async throws -> [Int: (isCatchup: Bool, catchupDays: Int)] {
+        guard !config.isDemoMode, !useOutputEndpoints else { return [:] }
+        guard let url = URL(string: "\(baseURL)/api/channels/channels/?page_size=10000") else {
+            throw PVRClientError.invalidResponse
+        }
+        let items: [DispatcharrChannel] = try await fetchAllPages(url)
+        var result: [Int: (isCatchup: Bool, catchupDays: Int)] = [:]
+        for item in items {
+            result[item.id] = (isCatchup: item.isCatchup, catchupDays: item.catchupDays)
+        }
+        return result
+    }
+
     func getChannelSummary(profileId: Int? = nil) async throws -> [Channel] {
         guard !config.isDemoMode else { return DemoDataProvider.channels }
         if useOutputEndpoints {
@@ -1770,6 +1790,15 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             }
         }
         return uuidToChannelId[uuid]
+    }
+
+    /// Reverse of `channelId(forUUID:)` — resolves a numeric `Channel.id` (what
+    /// the rest of the UI works with) to the Dispatcharr channel UUID the
+    /// catch-up session API requires (#119). Populated by `getChannels()` /
+    /// `getChannelSummary(profileId:)`, so callers should only rely on this
+    /// after the channel list has loaded.
+    func channelUUID(forChannelId id: Int) -> String? {
+        channelIdToUUID[id]
     }
 
     /// Switches the source an active channel is streaming from (admin only).

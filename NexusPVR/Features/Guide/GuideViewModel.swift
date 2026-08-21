@@ -31,6 +31,16 @@ final class GuideViewModel: ObservableObject {
 
     @Published var selectedDate = Date()
 
+    /// Whether the date navigator can go earlier than today. Off by
+    /// default — NextPVR has no server-side program archive, so browsing
+    /// history there would only ever show dead air. Dispatcharr's catch-up
+    /// feature (#119) is the reason to allow it.
+    #if DISPATCHERPVR
+    var allowsPastDates = true
+    #else
+    var allowsPastDates = false
+    #endif
+
     @Published var showChannelSearch: Bool = false
     @Published var channelSearchText: String = ""
     @Published var selectedProfileId: Int? = nil
@@ -242,12 +252,18 @@ final class GuideViewModel: ObservableObject {
         Calendar.current.isDateInToday(selectedDate)
     }
 
+    /// Whether the "previous day" control should be interactive — always
+    /// true once past `today`, otherwise gated by `allowsPastDates`.
+    var canGoToPreviousDay: Bool {
+        allowsPastDates || !isOnToday
+    }
+
     func scrollToNow() {
         selectedDate = Date()
     }
 
     func previousDay() {
-        guard !isOnToday else { return }
+        guard canGoToPreviousDay else { return }
         selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
     }
 

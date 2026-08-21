@@ -170,6 +170,26 @@ struct AppStateTests {
         #expect(state.isShowingPlayer == true)
     }
 
+    @Test("playStream stores the catch-up session id (#119)")
+    func playStreamSetsCatchupSessionId() {
+        let state = AppState()
+        let url = URL(string: "http://example.com/proxy/catchup/abc")!
+
+        state.playStream(url: url, title: "Archived Show", channelId: 5, channelName: "ABC", catchupSessionId: "session-123")
+
+        #expect(state.currentlyPlayingCatchupSessionId == "session-123")
+    }
+
+    @Test("playStream without a catch-up session leaves it nil")
+    func playStreamMinimalHasNoCatchupSessionId() {
+        let state = AppState()
+        let url = URL(string: "http://example.com/live.ts")!
+
+        state.playStream(url: url, title: "Live TV")
+
+        #expect(state.currentlyPlayingCatchupSessionId == nil)
+    }
+
     @Test("playStream with minimal args sets appropriate state")
     func playStreamMinimal() {
         let state = AppState()
@@ -213,6 +233,19 @@ struct AppStateTests {
         #expect(state.currentlyPlayingChannelName == nil)
         #expect(state.currentlyPlayingIsRecordingInProgress == false)
         #expect(state.currentlyPlayingRecordingStartTime == nil)
+        #expect(state.currentlyPlayingCatchupSessionId == nil)
+    }
+
+    @Test("stopPlayback clears the catch-up session id (#119)")
+    func stopPlaybackClearsCatchupSessionId() {
+        let state = AppState()
+        let url = URL(string: "http://example.com/proxy/catchup/abc")!
+        state.playStream(url: url, title: "Archived Show", channelId: 5, channelName: "ABC", catchupSessionId: "session-123")
+        #expect(state.currentlyPlayingCatchupSessionId == "session-123")
+
+        state.stopPlayback()
+
+        #expect(state.currentlyPlayingCatchupSessionId == nil)
     }
 
     @Test("dismissPlayer hides player but preserves state")

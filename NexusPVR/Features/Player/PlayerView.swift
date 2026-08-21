@@ -32,6 +32,11 @@ struct PlayerView: View {
     let resumePosition: Int?
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
+    /// Dispatcharr catch-up session id (#119), when this stream is archived
+    /// playback rather than live TV. Drives `isLiveStream` (catch-up gets
+    /// the recording-style seek bar, not the live-edge one) and is revoked
+    /// server-side on teardown — see `endCatchupSessionIfNeeded()`.
+    let catchupSessionId: String?
 
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
@@ -121,6 +126,7 @@ struct PlayerView: View {
         resumePosition: Int? = nil,
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
+        catchupSessionId: String? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
         networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger,
         liveKeepalive: LiveStreamKeepalive = Dependencies.liveStreamKeepalive
@@ -131,6 +137,7 @@ struct PlayerView: View {
         self.resumePosition = resumePosition
         self.isRecordingInProgress = isRecordingInProgress
         self.recordingStartTime = recordingStartTime
+        self.catchupSessionId = catchupSessionId
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
         self.liveKeepalive = liveKeepalive
@@ -556,6 +563,7 @@ struct PlayerView: View {
                     appState.stopPlayback()
                 }
                 endLiveStream()
+                endCatchupSessionIfNeeded()
             }
             #else
             cleanupAction?()
@@ -564,6 +572,7 @@ struct PlayerView: View {
                 appState.stopPlayback()
             }
             endLiveStream()
+            endCatchupSessionIfNeeded()
             #endif
             // Notify recordings list to refresh with updated progress.
             // Delay slightly so the async position save completes first.
@@ -828,6 +837,19 @@ struct PlayerView: View {
         Task { await client.stopLiveStream() }
     }
 
+    /// Best-effort revoke of the catch-up session (#119) minted for this
+    /// playback, freeing the server-side slot immediately instead of
+    /// waiting out the 10-minute idle TTL. Reads the view's own
+    /// `catchupSessionId` rather than `appState`'s, since `appState.stopPlayback()`
+    /// (called just before this in `.onDisappear`) already clears the
+    /// published copy.
+    private func endCatchupSessionIfNeeded() {
+        guard let catchupSessionId else { return }
+        #if DISPATCHERPVR
+        Task { [client] in await client.endCatchupSession(catchupSessionId) }
+        #endif
+    }
+
     /// Detects when playback has stalled (position not advancing while
     /// playing) and triggers a stream reload to recover.
     private func detectBuffering() {
@@ -922,7 +944,12 @@ struct PlayerView: View {
         )
     }
 
-    private var isLiveStream: Bool { recordingId == nil }
+    /// Catch-up playback (#119) is a discrete, fully-buffered show, not a
+    /// live tuner feed — excluding it here routes it to the same
+    /// duration/scrubber controls as a recording (`!isLiveStream && duration
+    /// > 0`) instead of the live-edge timeshift bar, and skips the live
+    /// keepalive/EOF-recovery machinery that's meaningless for it.
+    private var isLiveStream: Bool { recordingId == nil && catchupSessionId == nil }
 
     private var centerControls: some View {
         HStack(spacing: 48) {
