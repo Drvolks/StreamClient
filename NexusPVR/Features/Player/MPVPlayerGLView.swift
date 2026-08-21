@@ -145,9 +145,9 @@ class MPVPlayerGLView: GLKView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime), success else {
+        guard let success = player?.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek), success else {
             return
         }
         player?.createRenderContext(view: self)

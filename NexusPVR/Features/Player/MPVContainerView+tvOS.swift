@@ -28,6 +28,7 @@ struct MPVContainerView: UIViewRepresentable {
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
+    let preferKeyframeSeek: Bool
     let streamHeaders: [String: String]
     let activePlayerSession: any ActivePlayerSessionManaging
     let networkEventLogger: any NetworkEventLogging
@@ -216,7 +217,7 @@ struct MPVContainerView: UIViewRepresentable {
 
         if gpuAPI == .pixelbuffer {
             let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
             configureCommonCallbacks(for: view)
             view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
@@ -237,7 +238,7 @@ struct MPVContainerView: UIViewRepresentable {
 
         if gpuAPI == .opengl {
             let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
             configureCommonCallbacks(for: view)
             view.setStreamHeaders(streamHeaders)
             view.loadURL(url)
@@ -257,7 +258,7 @@ struct MPVContainerView: UIViewRepresentable {
         }
 
         let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, preferKeyframeSeek: preferKeyframeSeek)
         configureCommonCallbacks(for: view)
         view.setStreamHeaders(streamHeaders)
         view.loadURL(url)

@@ -161,6 +161,7 @@ struct PlayerView: View {
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
                 recordingStartTime: recordingStartTime,
+                preferKeyframeSeek: catchupSessionId != nil,
                 streamHeaders: client.streamAuthHeaders(),
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
@@ -256,6 +257,7 @@ struct PlayerView: View {
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
                 recordingStartTime: recordingStartTime,
+                preferKeyframeSeek: catchupSessionId != nil,
                 streamHeaders: client.streamAuthHeaders(),
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
@@ -312,6 +314,7 @@ struct PlayerView: View {
                 seekForwardTime: seekForwardTime,
                 isRecordingInProgress: isRecordingInProgress,
                 recordingStartTime: recordingStartTime,
+                preferKeyframeSeek: catchupSessionId != nil,
                 streamHeaders: client.streamAuthHeaders(),
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {

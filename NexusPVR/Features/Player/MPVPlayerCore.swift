@@ -41,6 +41,15 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     let recordingMonitor = MPVRecordingMonitor()
     var isRecordingInProgress = false
     var recordingStartTime: Date?
+    /// Raw, unindexed MPEG-TS proxied streams (Dispatcharr catch-up, #119)
+    /// don't have a reliable keyframe index the way a properly-muxed
+    /// recording does, so the app's default precise (`hr-seek`) seeking
+    /// lands mid-GOP and forces the decoder to grind through corrupted
+    /// frames until the next real keyframe — several seconds of
+    /// "hardware accelerator failed to decode picture" spam. Forcing
+    /// keyframe-only seeking for these streams trades a little seek
+    /// precision for landing cleanly and immediately.
+    var preferKeyframeSeek = false
     private var lastCodec: String?
     private var lastHeight: Int?
     private var lastHwdec: String?
@@ -282,7 +291,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 }
             }
         }
-        let command = "seek \(actualSeconds) relative"
+        let precision = preferKeyframeSeek ? "+keyframes" : ""
+        let command = "seek \(actualSeconds) relative\(precision)"
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seek command failed: \(result)")
@@ -308,7 +318,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 target = min(target, safeDuration)
             }
         }
-        let command = "seek \(target) absolute"
+        let precision = preferKeyframeSeek ? "+keyframes" : ""
+        let command = "seek \(target) absolute\(precision)"
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seekTo command failed: \(result)")
@@ -588,10 +599,11 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         ))
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) -> Bool {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) -> Bool {
         self.errorBinding = errorBinding
         self.isRecordingInProgress = isRecordingInProgress
         self.recordingStartTime = recordingStartTime
+        self.preferKeyframeSeek = preferKeyframeSeek
 
         // Create MPV
         mpv = mpv_create()

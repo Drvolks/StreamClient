@@ -79,7 +79,7 @@ class MPVPlayerPixelBufferView: UIView {
         session.displayLayer.frame = bounds
     }
 
-    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil) {
+    func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
         if session.hasActiveSession {
             isReconnected = true
             wireCallbacks()
@@ -98,7 +98,7 @@ class MPVPlayerPixelBufferView: UIView {
         bridge.attach()
 
         let player = MPVPlayerCore(networkEventLogger: networkEventLogger)
-        guard player.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime) else {
+        guard player.setup(errorBinding: errorBinding, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek) else {
             return
         }
 

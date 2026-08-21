@@ -28,6 +28,7 @@ struct MPVContainerView: UIViewRepresentable {
     let seekForwardTime: Int
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
+    let preferKeyframeSeek: Bool
     let streamHeaders: [String: String]
     let activePlayerSession: any ActivePlayerSessionManaging
     let networkEventLogger: any NetworkEventLogging
@@ -44,7 +45,7 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var isMuted: Bool
 
     private func configureCommonCallbacks(for view: MPVPlayerGLView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -56,7 +57,7 @@ struct MPVContainerView: UIViewRepresentable {
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
@@ -68,7 +69,7 @@ struct MPVContainerView: UIViewRepresentable {
     }
 
     private func configureCommonCallbacks(for view: MPVPlayerPixelBufferView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
                 self.currentPosition = position
