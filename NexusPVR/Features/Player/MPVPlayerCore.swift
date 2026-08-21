@@ -35,6 +35,24 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var isDestroyed = false
     private var positionTimer: Timer?
     private let eventLoopGroup = DispatchGroup()
+    /// Dedicated serial queue for catch-up's position polling (#119) — see
+    /// `startPositionPolling()`. A slow/blocked mpv core during a catch-up
+    /// seek (confirmed on-device: an unrelated HTTP status-poll timer froze
+    /// in lockstep with mpv's position polling, meaning the whole main
+    /// thread was blocked, not just the position readout) would otherwise
+    /// freeze the entire app for as long as mpv's core stays busy. Routing
+    /// catch-up's polling through its own serial queue means overlapping
+    /// ticks queue up instead of racing or blocking the main thread — a
+    /// slow core just lags the position display. Live/recording polling is
+    /// untouched (still the synchronous main-thread path below).
+    private let catchupPollQueue = DispatchQueue(label: "MPVPlayerCore.catchupPoll")
+    /// Caps how many catch-up polls can be queued during a stall (~2s of
+    /// backlog at the 0.5s tick rate) so a very long stall doesn't pile up
+    /// unboundedly. Read/written from both the main thread (Timer tick) and
+    /// `catchupPollQueue` (completion) — an informal race like the rest of
+    /// this `@unchecked Sendable` class's polling state; worst case is an
+    /// off-by-one on the cap, never a crash.
+    private var pendingCatchupPolls = 0
     var onPositionUpdate: ((Double, Double) -> Void)?
     var onPlaybackEnded: (() -> Void)?
     var onVideoInfoUpdate: ((String?, Int?, String?, String?, Int64, String?, Double) -> Void)?
@@ -124,6 +142,49 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         var statsCounter = 0
         positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
+
+            if self.preferKeyframeSeek {
+                guard self.pendingCatchupPolls < 4 else { return }
+                self.pendingCatchupPolls += 1
+                statsCounter += 1
+                let tick = statsCounter
+                self.catchupPollQueue.async {
+                    defer { self.pendingCatchupPolls -= 1 }
+                    let position = self.getTimePosition()
+                    let duration = self.getDuration()
+
+                    // Catch-up is never isRecordingInProgress, so the
+                    // growing-duration/stall-recovery branch the main-thread
+                    // path below has doesn't apply here — nothing skipped.
+                    let shouldQueryInfo = tick % 4 == 0 || self.lastCodec == nil
+                    var info: (codec: String?, width: Int?, height: Int?, hwdec: String?, audioChannels: String?, droppedFrames: Int64, gamma: String?, fps: Double)?
+                    if shouldQueryInfo {
+                        let i = self.getVideoInfo()
+                        info = i
+                        let changed = i.codec != self.lastCodec || i.height != self.lastHeight || i.hwdec != self.lastHwdec || i.audioChannels != self.lastAudioChannels
+                        if changed {
+                            self.lastCodec = i.codec
+                            self.lastHeight = i.height
+                            self.lastHwdec = i.hwdec
+                            self.lastAudioChannels = i.audioChannels
+                            if i.codec != nil {
+                                self.logVideoInfo(i)
+                            }
+                        }
+                    }
+
+                    // Safe to call off-main: every onPositionUpdate/
+                    // onVideoInfoUpdate consumer (MPVContainerView on all
+                    // three platforms) already wraps its own state mutation
+                    // in DispatchQueue.main.async.
+                    self.onPositionUpdate?(position, duration)
+                    if let info {
+                        self.onVideoInfoUpdate?(info.codec, info.height, info.hwdec, info.audioChannels, info.droppedFrames, info.gamma, info.fps)
+                    }
+                }
+                return
+            }
+
             // Timers scheduled on the main RunLoop fire on the main thread —
             // safe to assume MainActor isolation here. Swift 6's Timer closure
             // is @Sendable, which is why we need this hop to access self's
