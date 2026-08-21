@@ -473,9 +473,9 @@ struct IOSNavigation: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(guideViewModel.isOnToday ? Theme.textTertiary : Theme.accent)
+                    .foregroundStyle(guideViewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
             }
-            .disabled(guideViewModel.isOnToday)
+            .disabled(!guideViewModel.canGoToPreviousDay)
 
             Text(guideViewModel.selectedDate, format: .dateTime.month(.abbreviated).day())
                 .font(.subheadline.weight(.medium))
@@ -490,6 +490,17 @@ struct IOSNavigation: View {
             }
 
             #if DISPATCHERPVR
+            // Catch-up (#119) lets the guide browse into the past on iOS, so
+            // offer a quick way back once the user has navigated away.
+            if !guideViewModel.isOnToday {
+                Button("Today") {
+                    guideViewModel.scrollToNow()
+                    Task { await guideViewModel.navigateToDate(using: client) }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+            }
+
             if !epgCache.channelProfiles.isEmpty || epgCache.channelGroups.contains(where: { group in
                 epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
             }) {
