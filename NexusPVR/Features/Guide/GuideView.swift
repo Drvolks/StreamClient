@@ -1219,7 +1219,7 @@ struct GuideView: View {
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
 
-                        if program.isNew {
+                        if program.isNew && !catchupAvailable {
                             NewBadge(compact: useCompactBadges)
                         }
 
