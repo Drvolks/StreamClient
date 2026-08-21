@@ -7,6 +7,19 @@
 
 import SwiftUI
 
+nonisolated enum GuideSportIconVisibility {
+    /// Short Guide cells intentionally stay text-only through this inclusive boundary.
+    static let maximumShortProgramDuration: TimeInterval = 30 * 60
+
+    static func shouldShow(
+        for program: Program,
+        cellWidth: CGFloat,
+        minimumCellWidth: CGFloat
+    ) -> Bool {
+        program.duration > maximumShortProgramDuration && cellWidth > minimumCellWidth
+    }
+}
+
 struct ProgramCell: View {
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -28,9 +41,17 @@ struct ProgramCell: View {
     private var showSportIcon: Bool {
         guard detectedSport != nil else { return false }
         #if os(tvOS)
-        return width > 200
+        return GuideSportIconVisibility.shouldShow(
+            for: program,
+            cellWidth: width,
+            minimumCellWidth: 200
+        )
         #else
-        return width > 100
+        return GuideSportIconVisibility.shouldShow(
+            for: program,
+            cellWidth: width,
+            minimumCellWidth: 100
+        )
         #endif
     }
 
