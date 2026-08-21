@@ -896,8 +896,15 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         print("MPV: Initialized successfully")
 
         // Request error/fatal logs only to avoid MPV log buffer overflows
-        // on noisy live HLS streams.
-        mpv_request_log_messages(mpv, "error")
+        // on noisy live HLS streams. Catch-up (#119) gets verbose logging
+        // instead — temporary, for diagnosing the still-unexplained ~25s
+        // seek stall (ruled out: decode-error recovery, the seek command
+        // and position-poll blocking the main thread, the PixelBuffer
+        // render bridge, and an Authorization header on the Range request —
+        // none of those reproduce it). This should surface exactly which
+        // internal step (cache fill, demuxer probe, stream reopen, ...) is
+        // slow.
+        mpv_request_log_messages(mpv, preferKeyframeSeek ? "v" : "error")
 
         // Observe eof-reached so we know when playback finishes
         // (keep-open=yes prevents MPV_EVENT_END_FILE from firing on EOF)
@@ -1136,6 +1143,16 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                    !logText.isEmpty,
                    !logText.hasPrefix("Set property:"),
                    shouldEmitMPVLog(level: level, text: logText) {
+                    print("MPV [\(level)]: \(logText)")
+                } else if preferKeyframeSeek,
+                          !logText.isEmpty,
+                          !logText.hasPrefix("Set property:"),
+                          shouldEmitMPVLog(level: level, text: logText) {
+                    // Temporary (#119): mpv_request_log_messages is bumped to
+                    // "v" for catch-up above — print everything else here too
+                    // (cache/demuxer/stream-open progress) so the next device
+                    // capture shows which internal step the ~25s stall is
+                    // actually stuck in.
                     print("MPV [\(level)]: \(logText)")
                 }
 
