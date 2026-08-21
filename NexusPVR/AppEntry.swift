@@ -38,6 +38,13 @@ struct PVRApp: App {
         UserPreferences.load().save()
         ServerConfig.load().save()
 
+        #if os(tvOS)
+        // Seed the global the scaled fonts/metrics read (#107). AppState's
+        // `didSet` mirror only fires on later changes, so the launch value
+        // has to be written here, before the first view body runs.
+        Theme.uiFontSize = UserPreferences.load().uiFontSize
+        #endif
+
         // Start observing iCloud preference sync
         UserPreferences.startObservingSync {
             // Post notification when preferences change from another device
@@ -57,16 +64,31 @@ struct PVRApp: App {
                 #endif
                 // Appearance override (#108). `nil` follows the device setting.
                 .preferredColorScheme(appState.theme.colorScheme)
+                #if os(tvOS)
+                // UI font size (#107). Covers every semantic font in the
+                // app; explicit point sizes are scaled by Theme's tv*
+                // fonts. Reading `appState` here also re-renders the tree
+                // when the setting changes, so it applies live.
+                .dynamicTypeSize(appState.uiFontSize.dynamicTypeSize)
+                #endif
                 #if os(macOS)
                 .onAppear { applyAppearance(appState.theme) }
                 .onChange(of: appState.theme) { _, newTheme in applyAppearance(newTheme) }
                 #endif
                 .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
                     // Picks up a theme changed on another device via iCloud.
-                    let theme = UserPreferences.load().theme
-                    if theme != appState.theme {
-                        appState.theme = theme
+                    let prefs = UserPreferences.load()
+                    if prefs.theme != appState.theme {
+                        appState.theme = prefs.theme
                     }
+                    #if os(tvOS)
+                    // Same for the UI font size (#107) — both when it's
+                    // changed here in Settings and when another Apple TV on
+                    // the same Apple ID syncs a new value.
+                    if prefs.uiFontSize != appState.uiFontSize {
+                        appState.uiFontSize = prefs.uiFontSize
+                    }
+                    #endif
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSUbiquitousKeyValueStore.didChangeExternallyNotification)) { _ in
                     // Reload server config if it changed from iCloud.
@@ -103,7 +125,13 @@ struct PVRApp: App {
     #endif
 
     private func validateAuthenticationOnForeground() {
-        guard client.isConfigured else { return }
+        // Skip while a live stream is open — re-auth rotates the SID that owns the
+        // server-side handle, so the renewals stop reaching it and the stream is
+        // torn down ~15s later. See ForegroundAuthPolicy (#133).
+        guard ForegroundAuthPolicy.shouldReauthenticate(
+            isConfigured: client.isConfigured,
+            hasActiveLiveStream: client.hasActiveLiveStream
+        ) else { return }
 
         let expectedConfig = client.config
         foregroundAuthTask?.cancel()
@@ -121,7 +149,11 @@ struct PVRApp: App {
         let retryDelays: [Double] = [0.75, 1.5, 3.0]
 
         for attempt in 1...retryDelays.count {
-            guard !Task.isCancelled, client.isConfigured, client.config == expectedConfig else { return }
+            guard !Task.isCancelled, client.config == expectedConfig,
+                  ForegroundAuthPolicy.shouldReauthenticate(
+                    isConfigured: client.isConfigured,
+                    hasActiveLiveStream: client.hasActiveLiveStream
+                  ) else { return }
 
             do {
                 try await client.authenticate()

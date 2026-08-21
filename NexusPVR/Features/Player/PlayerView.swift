@@ -36,6 +36,7 @@ struct PlayerView: View {
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
     private let networkEventLogger: any NetworkEventLogging
+    private let liveKeepalive: LiveStreamKeepalive
 
     @State private var showControls = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -75,7 +76,6 @@ struct PlayerView: View {
     #if os(tvOS)
     @State private var tvFocusedTrackIndex: Int = -1  // -1 = tabs focused, 0+ = track list index
     #endif
-    @State private var liveKeepaliveTask: Task<Void, Never>?
     @State private var reloadURLFunc: ((URL) -> Void)?
     /// Latest server-side buffer state, plus when it arrived so the live edge can be
     /// extrapolated between polls (the buffer grows in real time).
@@ -85,6 +85,13 @@ struct PlayerView: View {
     /// Non-zero after a live seek, since reopening at a byte offset resets mpv to 0.
     @State private var liveBaseOffset: Double = 0
     @State private var isLiveSeeking = false
+    /// Target of skip presses not yet committed to a reload — see `seekLiveBy`.
+    @State private var pendingLiveSeekTarget: Double?
+    @State private var liveSeekCommitTask: Task<Void, Never>?
+    /// When the last live reload was issued, and how many times we've retried it
+    /// after an immediate EOF — see `recoverFromLiveEdgeEOF()`.
+    @State private var lastLiveSeekAt: Date = .distantPast
+    @State private var liveEdgeRetryCount = 0
     @State private var isBuffering = false
     @State private var lastBufferingCheckPosition: Double = -1
     @State private var bufferingStallCount = 0
@@ -104,6 +111,7 @@ struct PlayerView: View {
     #endif
     #if os(macOS)
     @State private var sleepAssertionID: IOPMAssertionID = 0
+    @State private var heldAssertion: PlayerPowerAssertion = .none
     #endif
 
     init(
@@ -114,7 +122,8 @@ struct PlayerView: View {
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
-        networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger
+        networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger,
+        liveKeepalive: LiveStreamKeepalive = Dependencies.liveStreamKeepalive
     ) {
         self.url = url
         self.title = title
@@ -124,6 +133,7 @@ struct PlayerView: View {
         self.recordingStartTime = recordingStartTime
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
+        self.liveKeepalive = liveKeepalive
     }
 
     var body: some View {
@@ -148,12 +158,18 @@ struct PlayerView: View {
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
+                    if recoverFromLiveEdgeEOF() { return }
                     savePlaybackPosition()
                     markAsWatched()
                     if !isRecordingInProgress {
                         appState.stopPlayback()
                     }
                 },
+                onLiveSeek: isLiveStream ? { delta in
+                    guard canSeekLive else { return false }
+                    seekLiveBy(delta)
+                    return true
+                } : nil,
                 onTogglePlayPause: {
                     isPlaying.toggle()
                     showControls = true
@@ -237,6 +253,7 @@ struct PlayerView: View {
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
+                    if recoverFromLiveEdgeEOF() { return }
                     savePlaybackPosition()
                     markAsWatched()
                     if !isRecordingInProgress {
@@ -291,6 +308,7 @@ struct PlayerView: View {
                 streamHeaders: client.streamAuthHeaders(),
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
+                    if recoverFromLiveEdgeEOF() { return }
                     savePlaybackPosition()
                     markAsWatched()
                     if !isRecordingInProgress {
@@ -502,8 +520,7 @@ struct PlayerView: View {
         .onAppear {
             scheduleHideControls()
             #if os(macOS)
-            // Prevent display sleep during video playback
-            disableScreenSaver()
+            updatePowerAssertion()
             #else
             // Prevent screen from sleeping during video playback
             UIApplication.shared.isIdleTimerDisabled = true
@@ -528,7 +545,10 @@ struct PlayerView: View {
             let nativePiPActive = isUsingPixelBufferRenderer && (session.isPiPActive || session.dismissingForPiP)
             if nativePiPActive {
                 // Don't stop player — mpv continues feeding PiP, so the server-side
-                // stream and its keepalive have to stay up too.
+                // stream and its keepalive have to stay up too. The keepalive is
+                // owned by LiveStreamKeepalive precisely so it survives this view;
+                // just stop routing buffer state into state that's about to die.
+                liveKeepalive.detach()
             } else {
                 cleanupAction?()
                 cleanupAction = nil
@@ -556,8 +576,7 @@ struct PlayerView: View {
             #if os(macOS)
             // Ensure cursor is visible when leaving the player
             NSCursor.setHiddenUntilMouseMoves(false)
-            // Re-enable display sleep
-            enableScreenSaver()
+            releasePowerAssertion()
             #else
             // Re-enable screen sleeping
             UIApplication.shared.isIdleTimerDisabled = false
@@ -599,14 +618,12 @@ struct PlayerView: View {
         .onChange(of: isPlaying) { newValue in
             if !isPlaying {
                 savePlaybackPosition()
-                #if os(macOS)
-                enableScreenSaver()
-                #endif
-            } else {
-                #if os(macOS)
-                disableScreenSaver()
-                #endif
             }
+            #if os(macOS)
+            // Pausing live TV still has to hold the system awake — see
+            // PlayerPowerAssertion.
+            updatePowerAssertion()
+            #endif
         }
         .task(id: isPlayerReady) {
             guard isPlayerReady else { return }
@@ -623,7 +640,12 @@ struct PlayerView: View {
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
-        .onChange(of: currentPosition) { _ in
+        .onChange(of: currentPosition) { position in
+            // Playback got going again, so the previous live reload landed on
+            // readable data — start the retry budget over for the next seek.
+            if liveEdgeRetryCount > 0 && position > 2 {
+                liveEdgeRetryCount = 0
+            }
             detectBuffering()
         }
         #if os(tvOS)
@@ -642,37 +664,44 @@ struct PlayerView: View {
         }
     }
 
-    /// Renews the server-side live stream handle on a timer.
+    /// Attaches this view to the server-side live stream renewal loop.
     ///
     /// NextPVR reclaims the tuner and deletes the timeshift buffer after 15
     /// seconds without a renewal. While playing, mpv's socket reads mask this;
     /// once paused, mpv fills its demuxer cache and stops reading, so without
-    /// this loop the stream is torn down mid-pause and resume plays only the
+    /// renewals the stream is torn down mid-pause and resume plays only the
     /// local cache before dying (issue #120).
     ///
-    /// Runs for the whole live session rather than only while paused — the
-    /// renewal contract doesn't care whether we're reading, and the request is
-    /// cheap. Ticks well under the 15s expiry so one slow or failed renewal
-    /// can't lose the stream; the client throttles the buffer-state call it
-    /// piggybacks on this loop.
+    /// The loop itself lives in `LiveStreamKeepalive`, not in this view's state:
+    /// entering native PiP destroys `PlayerView` while playback continues, so a
+    /// view-owned task would leak and the view rebuilt on restore would start a
+    /// second one (issue #133). Starting for a URL that's already being renewed
+    /// adopts the running loop instead.
     private func startLiveKeepalive() {
-        liveKeepaliveTask?.cancel()
+        guard isLiveStream else {
+            liveKeepalive.stop()
+            resetLiveTimeshiftState()
+            return
+        }
+        // Only a genuinely new stream resets the timeshift view state — adopting the
+        // loop after a PiP restore has to keep what it already knows about the buffer.
+        if !liveKeepalive.isRunning(for: url) {
+            resetLiveTimeshiftState()
+        }
+        liveKeepalive.start(
+            streamKey: url,
+            renew: { [client] in try? await client.renewLiveStream() },
+            onInfo: { info, at in
+                liveStreamInfo = info
+                liveStreamInfoAt = at
+            }
+        )
+    }
+
+    private func resetLiveTimeshiftState() {
         liveStreamInfo = nil
         liveStreamInfoAt = .distantPast
         liveBaseOffset = 0
-        guard isLiveStream else {
-            liveKeepaliveTask = nil
-            return
-        }
-        liveKeepaliveTask = Task {
-            while !Task.isCancelled {
-                if let info = try? await client.renewLiveStream() {
-                    liveStreamInfo = info
-                    liveStreamInfoAt = Date()
-                }
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
     }
 
     // MARK: - Live timeshift buffer
@@ -692,7 +721,7 @@ struct PlayerView: View {
     }
 
     private var secondsBehindLive: Double {
-        max(0, liveBufferDuration - livePlayPosition)
+        max(0, liveBufferDuration - displayLivePosition)
     }
 
     /// Live seeking needs a buffer with a usable byte-rate ratio, a way to reload,
@@ -704,17 +733,19 @@ struct PlayerView: View {
             && liveBufferDuration > Self.minimumLiveBuffer
     }
 
-    /// Never seek right up to the write head — the last moments of the buffer may
-    /// not be fully flushed, which yields a truncated frame and an immediate EOF.
-    private static let liveEdgeMargin: Double = 8
-    private static let minimumLiveBuffer: Double = 30
+    private static let liveEdgeMargin = LiveTimeshift.edgeMargin
+    private static let minimumLiveBuffer = LiveTimeshift.minimumBuffer
 
     /// Reopens the stream at `position` (seconds from buffer start). NextPVR can't
     /// seek an open `/live` response, so this is a reload rather than an mpv seek.
     private func seekLive(to position: Double) {
         guard canSeekLive, let info = liveStreamInfo, let reload = reloadURLFunc else { return }
 
-        let target = min(max(0, position), max(0, liveBufferDuration - Self.liveEdgeMargin))
+        liveSeekCommitTask?.cancel()
+        liveSeekCommitTask = nil
+        pendingLiveSeekTarget = nil
+
+        let target = LiveTimeshift.clampedTarget(position, bufferDuration: liveBufferDuration)
         guard let offset = info.byteOffset(forPosition: target),
               let url = client.liveStreamSeekURL(byteOffset: offset) else { return }
 
@@ -723,6 +754,7 @@ struct PlayerView: View {
         liveBaseOffset = target
         currentPosition = 0
         isLiveSeeking = true
+        lastLiveSeekAt = Date()
         reload(url)
         isPlaying = true
         scheduleHideControls()
@@ -733,16 +765,65 @@ struct PlayerView: View {
         }
     }
 
+    /// Coalesces rapid skip presses into a single reload. Every live seek reopens
+    /// the stream server-side, and tvOS hold-to-scrub fires every 250ms, so applying
+    /// them one for one would thrash the tuner. The pending target drives the
+    /// timeshift bar in the meantime, so each press still shows up immediately.
     private func seekLiveBy(_ delta: Double) {
-        seekLive(to: livePlayPosition + delta)
+        guard canSeekLive else { return }
+        let base = pendingLiveSeekTarget ?? livePlayPosition
+        let target = LiveTimeshift.clampedTarget(base + delta, bufferDuration: liveBufferDuration)
+        // Already there — skip-forward at the live edge shouldn't churn the tuner.
+        // (tvOS drives this from remote presses, which have no disabled state.)
+        guard abs(target - base) >= 1 else { return }
+        pendingLiveSeekTarget = target
+        liveSeekCommitTask?.cancel()
+        liveSeekCommitTask = Task {
+            try? await Task.sleep(for: LiveTimeshift.seekCommitDelay)
+            guard !Task.isCancelled, let target = pendingLiveSeekTarget else { return }
+            seekLive(to: target)
+        }
+    }
+
+    /// Play position as the controls should show it: the pending skip target while
+    /// presses are still being coalesced, otherwise where playback actually is.
+    private var displayLivePosition: Double {
+        pendingLiveSeekTarget ?? livePlayPosition
+    }
+
+    /// Handles the EOF that a live reload can hit when it reopens at a byte offset
+    /// the server hasn't flushed yet: mpv reads zero bytes and reports end-of-file,
+    /// which would otherwise tear the player down and drop the user back to the
+    /// guide. NextPVR's `/live` is raw MPEG-TS, so the HLS recovery path in
+    /// `MPVPlayerCore` doesn't cover it.
+    ///
+    /// Retries a little further back each time — the previous offset already proved
+    /// it wasn't readable — and gives up after a few attempts so a genuinely dead
+    /// stream still ends.
+    ///
+    /// Returns true when the EOF was absorbed and the caller should not tear down.
+    private func recoverFromLiveEdgeEOF() -> Bool {
+        guard isLiveStream, canSeekLive else { return false }
+        guard LiveTimeshift.shouldRetryAfterEOF(
+            secondsSinceLastSeek: Date().timeIntervalSince(lastLiveSeekAt),
+            retryCount: liveEdgeRetryCount
+        ) else { return false }
+
+        liveEdgeRetryCount += 1
+        let target = LiveTimeshift.retryTarget(from: livePlayPosition, attempt: liveEdgeRetryCount)
+        print("[Player] Live-edge EOF, retrying at \(Int(target))s (attempt \(liveEdgeRetryCount))")
+        seekLive(to: target)
+        return true
     }
 
     /// Stops renewing and releases the server-side stream so the tuner is freed
     /// right away instead of after the renewal timeout. Not called while PiP is
     /// still playing.
     private func endLiveStream() {
-        liveKeepaliveTask?.cancel()
-        liveKeepaliveTask = nil
+        liveKeepalive.stop()
+        liveSeekCommitTask?.cancel()
+        liveSeekCommitTask = nil
+        pendingLiveSeekTarget = nil
         guard isLiveStream else { return }
         Task { await client.stopLiveStream() }
     }
@@ -857,7 +938,7 @@ struct PlayerView: View {
                     playerControlIcon(systemName: "gobackward.\(seekBackwardTime)", size: 40)
                 }
                 .buttonStyle(.plain)
-                .disabled(isLiveStream && livePlayPosition <= 0)
+                .disabled(isLiveStream && displayLivePosition <= 0)
             }
 
             // Play/pause button
@@ -884,8 +965,13 @@ struct PlayerView: View {
                 .disabled(isLiveStream && secondsBehindLive <= Self.liveEdgeMargin)
             }
 
+            #if !os(tvOS)
+            // Jump to the live edge. Not offered on tvOS: the controls overlay is
+            // display-only there (the mpv view keeps focus and drives everything
+            // from remote presses), so the button can never be reached — up on the
+            // remote opens the settings panel. The Siri Remote's skip-forward is
+            // the live-edge path on tvOS instead; it clamps to the head.
             if isLiveStream && canSeekLive {
-                // Jump to the live edge
                 Button {
                     seekLive(to: liveBufferDuration)
                 } label: {
@@ -894,6 +980,7 @@ struct PlayerView: View {
                 .buttonStyle(.plain)
                 .disabled(secondsBehindLive <= Self.liveEdgeMargin)
             }
+            #endif
         }
     }
 
@@ -1007,7 +1094,7 @@ struct PlayerView: View {
             .frame(height: 14)
 
             HStack {
-                Text(formatTime(livePlayPosition))
+                Text(formatTime(displayLivePosition))
                     .font(.caption)
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -1040,7 +1127,7 @@ struct PlayerView: View {
     private func liveProgressWidth(for totalWidth: CGFloat) -> CGFloat {
         let buffer = liveBufferDuration
         guard buffer > 0 else { return 0 }
-        let progress = livePlayPosition / buffer
+        let progress = displayLivePosition / buffer
         return max(0, min(totalWidth, CGFloat(progress) * totalWidth))
     }
 
@@ -1149,6 +1236,14 @@ struct PlayerView: View {
             },
             isPausedQuery: {
                 session.player?.isPaused ?? true
+            },
+            onSessionEnded: { [client, liveKeepalive, appState] in
+                // The PiP window was closed outright, so no PlayerView will run
+                // onDisappear — release the server-side stream here instead of
+                // leaving the tuner held until the renewal loop's next failure.
+                liveKeepalive.stop()
+                Task { await client.stopLiveStream() }
+                appState.stopPlayback()
             }
         )
     }
@@ -1809,23 +1904,37 @@ struct PlayerView: View {
     }
 
     #if os(macOS)
-    private func disableScreenSaver() {
+    /// Takes whatever assertion the current playback state calls for, swapping the
+    /// held one when the requirement changes. Idempotent, so it's safe to call from
+    /// every state change.
+    private func updatePowerAssertion() {
+        let required = PlayerPowerAssertion.required(isLiveStream: isLiveStream, isPlaying: isPlaying)
+        guard required != heldAssertion else { return }
+        releasePowerAssertion()
+        guard let type = required.ioKitType else { return }
+
+        var id: IOPMAssertionID = 0
+        let reason = required == .noIdleSleep ? "StreamClient paused live stream" : "StreamClient video playback"
         let result = IOPMAssertionCreateWithName(
-            kIOPMAssertionTypeNoDisplaySleep as CFString,
+            type as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "NexusPVR video playback" as CFString,
-            &sleepAssertionID
+            reason as CFString,
+            &id
         )
-        if result != kIOReturnSuccess {
-            print("Failed to disable screen saver: \(result)")
+        guard result == kIOReturnSuccess else {
+            print("[Player] Failed to take \(type) assertion: \(result)")
+            return
         }
+        sleepAssertionID = id
+        heldAssertion = required
     }
 
-    private func enableScreenSaver() {
+    private func releasePowerAssertion() {
         if sleepAssertionID != 0 {
             IOPMAssertionRelease(sleepAssertionID)
             sleepAssertionID = 0
         }
+        heldAssertion = .none
     }
     #endif
 

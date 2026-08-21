@@ -71,7 +71,7 @@ struct StreamSelectorView: View {
                         .controlSize(.small)
                 } else {
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10))
+                        .font(.tvScaled(size: 10))
                         .foregroundStyle(Theme.textTertiary)
                 }
             }

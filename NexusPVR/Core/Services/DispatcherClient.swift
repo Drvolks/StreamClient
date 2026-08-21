@@ -1720,6 +1720,26 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         try? await authenticatedRequestNoContent(url, method: "DELETE")
     }
 
+    // MARK: - Environment (#112)
+
+    /// Fetches the server's environment diagnostics from
+    /// `GET /api/core/settings/env/`. Returns nil when the client is
+    /// running in output-only mode (HDHR / M3U / XC) since the
+    /// endpoint requires the JWT-or-API-key auth path that those
+    /// deployments don't expose. The local mock fixture does expose it.
+    ///
+    /// The endpoint is what powers the "Public IP" panel in the
+    /// Dispatcharr web UI sidebar; the iOS / tvOS / macOS client
+    /// surfaces the same values in Settings → Server.
+    func getEnvironmentSettings() async throws -> EnvironmentSettings? {
+        guard !config.isDemoMode || config.isMockServer else { return nil }
+        if useOutputEndpoints { return nil }
+        guard let url = URL(string: "\(baseURL)/api/core/settings/env/") else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequest(url)
+    }
+
     // MARK: - Stream Switching
 
     /// Streams assigned to a channel, in the channel's configured order.

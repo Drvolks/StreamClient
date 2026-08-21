@@ -34,6 +34,22 @@ struct ProgramDetailView: View {
 
     var onRecordingChanged: (() -> Void)? = nil
 
+    /// NEW badge stacked above REC when both apply, right-aligned next to
+    /// the title.
+    @ViewBuilder
+    private var badgeStack: some View {
+        if program.isNew || isScheduled {
+            VStack(alignment: .trailing, spacing: 4) {
+                if program.isNew {
+                    NewBadge()
+                }
+                if isScheduled {
+                    RecBadge(isActive: inProgressRecording != nil)
+                }
+            }
+        }
+    }
+
     init(program: Program, channel: Channel, initialRecordingId: Int? = nil, initialCompletedRecording: Recording? = nil, onRecordingChanged: (() -> Void)? = nil) {
         self.program = program
         self.channel = channel
@@ -246,12 +262,16 @@ struct ProgramDetailView: View {
                     // Row 2: Program name (full width)
                     HStack(alignment: .top, spacing: 8) {
                         Text(program.cleanName)
-                            .font(.title2)
+                            // Was `.title2` (~45pt on tvOS), which pushed a
+                            // long program name onto three lines and shoved
+                            // the synopsis below the fold. Follows the Text
+                            // Size setting like the rest of the app (#107).
+                            .font(.tvScaled(size: 34))
                             .fontWeight(.bold)
                             .foregroundStyle(Theme.textPrimary)
                             .accessibilityIdentifier("program-detail-name")
                         Spacer()
-                        if program.isNew { NewBadge() }
+                        badgeStack
                     }
 
                     // Row 3: Date | Start time - End time | Duration
@@ -375,7 +395,7 @@ struct ProgramDetailView: View {
                         .foregroundStyle(Theme.textPrimary)
                         .accessibilityIdentifier("program-detail-name")
                     Spacer()
-                    if program.isNew { NewBadge() }
+                    badgeStack
                 }
 
                 if let subtitle = program.subtitle, !subtitle.isEmpty {

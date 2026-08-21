@@ -768,6 +768,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         return true
     }
 
+    /// True while a timeshift handle is open on the server. Guards the foreground
+    /// re-authentication, which would otherwise rotate the SID that owns it.
+    var hasActiveLiveStream: Bool { activeLiveChannelId != nil }
+
     /// Releases the server-side timeshift buffer so the tuner is freed immediately
     /// rather than after the 15s renewal timeout. Best-effort: teardown must not
     /// throw or block.

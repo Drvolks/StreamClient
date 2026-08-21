@@ -110,6 +110,7 @@ struct NavigationRouter: View {
             #if DISPATCHERPVR
             if appState.userLevel >= 1 {
                 appState.startStreamCountPolling(client: client)
+                appState.startEnvironmentSettingsRefresh(client: client)
             }
             #endif
         }
@@ -125,6 +126,8 @@ struct NavigationRouter: View {
                 appState.stopStreamCountPolling()
                 appState.activeStreamCount = 0
                 appState.hasM3UErrors = false
+                appState.stopEnvironmentSettingsRefresh()
+                appState.environmentSettings = nil
                 #endif
                 return
             }
@@ -136,6 +139,7 @@ struct NavigationRouter: View {
             #endif
             #if DISPATCHERPVR
             appState.startStreamCountPolling(client: client)
+            appState.startEnvironmentSettingsRefresh(client: client)
             #endif
         }
         .onChange(of: appState.hideRecordings) { hidden in
@@ -1397,7 +1401,7 @@ struct TVOSNavigation: View {
                                     ) {
                                         if let count = appState.topicKeywordMatchCounts[keyword] {
                                             Text("\(count)")
-                                                .font(.system(size: 20, weight: .medium))
+                                                .font(.tvSidebarScaled(size: 16, weight: .medium))
                                                 .foregroundStyle(Theme.textTertiary)
                                         }
                                     }
@@ -1611,8 +1615,8 @@ struct TVOSNavigation: View {
                     .frame(width: 4, height: indicatorHeight)
 
                 Image(systemName: icon)
-                    .font(.title3)
-                    .frame(width: 44, alignment: .center)
+                    .font(.tvSidebarIcon)
+                    .frame(width: tvOSSidebarIconColumnWidth, alignment: .center)
                     .foregroundStyle(isSelected ? Theme.accent : .secondary)
 
                 Text(label)
@@ -1631,13 +1635,23 @@ struct TVOSNavigation: View {
         .accessibilityIdentifier(tvOSSidebarIdentifier(for: item))
     }
 
+    /// Width of the sidebar's icon column. Tracks the sidebar
+    /// scale so the gutter tightens along with the icons rather than
+    /// leaving them floating in a fixed 44pt slot.
+    private var tvOSSidebarIconColumnWidth: CGFloat { Theme.scaledSidebarMetric(36) }
+
+    /// Leading indent for sub-rows, which have no icon of their own and
+    /// have to line up with the parent row's *text*: 4pt selection
+    /// indicator + 14pt stack spacing + the icon column.
+    private var tvOSSidebarSubRowIndent: CGFloat { 4 + 14 + tvOSSidebarIconColumnWidth }
+
     private func tvOSSidebarSection<Badge: View, Content: View>(
         icon: String,
         label: String,
         @ViewBuilder badge: () -> Badge,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        let iconFont: Font = icon == "recordingtape" ? .tvSidebarRecordingIcon : .title3
+        let iconFont: Font = icon == "recordingtape" ? .tvSidebarRecordingIcon : .tvSidebarIcon
 
         return VStack(alignment: .leading, spacing: 0) {
             // Section header — plain HStack, aligned with sidebar rows
@@ -1648,7 +1662,7 @@ struct TVOSNavigation: View {
 
                 Image(systemName: icon)
                     .font(iconFont)
-                    .frame(width: 44, alignment: .center)
+                    .frame(width: tvOSSidebarIconColumnWidth, alignment: .center)
 
                 Text(label)
                     .font(.tvSidebarSection)
@@ -1753,7 +1767,8 @@ struct TVOSNavigation: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.card)
-        .padding(.leading, 62) // align with parent row text
+        // Align with the parent row's text: indicator + spacing + icon column.
+        .padding(.leading, tvOSSidebarSubRowIndent)
         .focused($focusedItem, equals: item)
         .accessibilityIdentifier(tvOSSidebarIdentifier(for: item))
     }
@@ -1795,13 +1810,13 @@ struct TVOSNavigation: View {
                 .fill(Color.clear)
                 .frame(width: 3, height: 22)
             Text(label)
-                .font(.title3)
+                .font(.tvSidebar)
                 .foregroundStyle(Theme.textTertiary)
                 .lineLimit(1)
             Spacer()
         }
         .padding(.vertical, 6)
-        .padding(.leading, 62)
+        .padding(.leading, tvOSSidebarSubRowIndent)
     }
 
     @ViewBuilder
@@ -1816,7 +1831,7 @@ struct TVOSNavigation: View {
                 }
                 if appState.activeStreamCount > 0 {
                     Text("\(appState.activeStreamCount)")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.tvSidebarScaled(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)

@@ -27,6 +27,9 @@ struct SettingsView: View {
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
     @State private var theme: AppTheme = UserPreferences.load().theme
+    #if os(tvOS)
+    @State private var uiFontSize: UIFontSize = UserPreferences.load().uiFontSize
+    #endif
     #if DISPATCHERPVR
     @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
     @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
@@ -62,6 +65,7 @@ struct SettingsView: View {
         case landingTab
         case hideRecordings
         case theme
+        case uiFontSize
     }
     #endif
 
@@ -126,10 +130,10 @@ struct SettingsView: View {
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Settings")
-                                .font(.system(size: 38, weight: .bold))
+                                .font(.tvScaled(size: 38, weight: .bold))
                                 .foregroundStyle(Theme.textPrimary)
                             Text("Playback, server and diagnostics")
-                                .font(.system(size: 22, weight: .regular))
+                                .font(.tvScaled(size: 22, weight: .regular))
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         Spacer()
@@ -144,7 +148,8 @@ struct SettingsView: View {
                         tvSettingsRow(
                             title: "Server",
                             value: serverSummaryValue,
-                            icon: "network"
+                            icon: "network",
+                            detail: serverRowDetail
                         ) {
                             activeTVPopup = .server
                         }
@@ -169,6 +174,14 @@ struct SettingsView: View {
                                 icon: theme.icon
                             ) {
                                 activeTVPopup = .theme
+                            }
+                            tvSettingsRow(
+                                title: "Text Size",
+                                value: uiFontSize.displayName,
+                                icon: "textformat.size",
+                                detail: "Scales text and rows across the app"
+                            ) {
+                                activeTVPopup = .uiFontSize
                             }
                             tvSettingsRow(
                                 title: "Hide Recording Features",
@@ -310,7 +323,7 @@ struct SettingsView: View {
                     .focusSection()
 
                     Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
-                        .font(.system(size: 18, weight: .regular))
+                        .font(.tvScaled(size: 18, weight: .regular))
                         .foregroundStyle(Theme.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.top, Theme.spacingMD)
@@ -383,26 +396,26 @@ struct SettingsView: View {
         Button(action: action) {
             HStack(spacing: Theme.spacingMD) {
                 Image(systemName: icon)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.tvScaled(size: 22, weight: .medium))
                     .foregroundStyle(Theme.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.tvScaled(size: 24, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     Text(value)
-                        .font(.system(size: 20, weight: .regular))
+                        .font(.tvScaled(size: 20, weight: .regular))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                     if let detail {
                         Text(detail)
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.tvScaled(size: 16, weight: .regular))
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(2)
                     }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.tvScaled(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(.horizontal, Theme.spacingMD)
@@ -423,26 +436,26 @@ struct SettingsView: View {
         Button(action: action) {
             HStack(spacing: Theme.spacingMD) {
                 Image(systemName: icon)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.tvScaled(size: 22, weight: .medium))
                     .foregroundStyle(Theme.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.tvScaled(size: 24, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     Text(value)
-                        .font(.system(size: 20, weight: .regular))
+                        .font(.tvScaled(size: 20, weight: .regular))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                     if let detail {
                         Text(detail)
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.tvScaled(size: 16, weight: .regular))
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(2)
                     }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.tvScaled(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(.horizontal, Theme.spacingMD)
@@ -453,7 +466,13 @@ struct SettingsView: View {
         .buttonStyle(TVSettingsRowButtonStyle())
     }
 
-    #if DISPATCHERPVR
+    /// tvOS sub-line under the Server row showing the server's public IP
+    /// and geo location (#112). The full address line already shows the
+    /// host + status; the detail line below it carries the environment
+    /// info so the Network panel is no longer needed.
+    #endif
+
+    #if os(tvOS) && DISPATCHERPVR
     private var tvOSGuideSettingsSection: some View {
         TVSettingsSection(
             title: "Guide",
@@ -461,7 +480,7 @@ struct SettingsView: View {
         ) {
             VStack(spacing: Theme.spacingMD) {
                 Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.tvScaled(size: 24, weight: .semibold))
                     .modifier(TVGuideSidebarToggleForegroundStyle())
                     .padding(.horizontal, Theme.spacingMD)
                     .padding(.vertical, Theme.spacingSM)
@@ -489,7 +508,7 @@ struct SettingsView: View {
                             tvOSGuideStatusRow("No channels in any group")
                         } else {
                             Text("Included Groups")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.tvScaled(size: 18, weight: .medium))
                                 .foregroundStyle(Theme.textTertiary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, Theme.spacingMD)
@@ -502,7 +521,7 @@ struct SettingsView: View {
                 }
 
                 Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.tvScaled(size: 24, weight: .semibold))
                     .modifier(TVGuideSidebarToggleForegroundStyle())
                     .padding(.horizontal, Theme.spacingMD)
                     .padding(.vertical, Theme.spacingSM)
@@ -530,7 +549,7 @@ struct SettingsView: View {
                             tvOSGuideStatusRow("No channels in any profile")
                         } else {
                             Text("Included Profiles")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.tvScaled(size: 18, weight: .medium))
                                 .foregroundStyle(Theme.textTertiary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, Theme.spacingMD)
@@ -547,7 +566,7 @@ struct SettingsView: View {
 
     private func tvOSGuideStatusRow(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 20, weight: .regular))
+            .font(.tvScaled(size: 20, weight: .regular))
             .foregroundStyle(Theme.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.spacingMD)
@@ -611,6 +630,73 @@ struct SettingsView: View {
         return "\(host) \(status)"
     }
 
+    /// Sub-line under the tvOS Server row. Only Dispatcharr exposes the
+    /// environment endpoint that backs it (#112) — the NextPVR variant has
+    /// nothing to show there, and `environmentSubtitle` doesn't exist in
+    /// that build at all, so the branch has to happen here rather than at
+    /// the call site.
+    private var serverRowDetail: String? {
+        #if DISPATCHERPVR
+        return environmentSubtitle
+        #else
+        return nil
+        #endif
+    }
+
+    #if DISPATCHERPVR
+    /// One-line summary of the server's public IP and geo location
+    /// (#112), shared by the tvOS Server row's detail line and the
+    /// iOS / macOS Public IP row inside the Server section.
+    ///
+    /// Returns `nil` when the data isn't ready yet, so the tvOS row can
+    /// hide the sub-line until something meaningful exists while iOS /
+    /// macOS substitute an explicit fallback via `environmentServerValue`.
+    private var environmentSubtitle: String? {
+        guard appState.environmentAvailable,
+              let env = appState.environmentSettings else {
+            return nil
+        }
+        if !env.ipLookupEnabled { return "IP lookup disabled on server" }
+        if env.ipLookupPending { return "Looking up…" }
+        if env.publicIP == nil && (env.countryName ?? env.countryCode) == nil {
+            return "No IP info reported by server"
+        }
+        let publicIP = env.publicIP ?? "—"
+        guard let location = environmentLocationString(for: env) else {
+            return publicIP
+        }
+        return "\(publicIP) (\(location))"
+    }
+
+    /// iOS / macOS variant of `environmentSubtitle`. Substitutes a
+    /// non-empty fallback so the row always reads something rather than
+    /// appearing blank while the first poll is still in flight.
+    private var environmentServerValue: String {
+        if let subtitle = environmentSubtitle { return subtitle }
+        if appState.environmentSettings == nil {
+            return "Loading…"
+        }
+        return "Not available on this server version"
+    }
+
+    private func environmentLocationString(for env: EnvironmentSettings) -> String? {
+        let country = env.countryName ?? env.countryCode
+        let city = env.city
+        switch (country, city) {
+        case let (.some(country), .some(city)) where country.contains(city):
+            return country
+        case let (.some(country), .some(city)):
+            return "\(city), \(country)"
+        case let (.some(country), .none):
+            return country
+        case let (.none, .some(city)):
+            return city
+        case (.none, .none):
+            return nil
+        }
+    }
+    #endif
+
     private func rendererName(for api: GPUAPI) -> String {
         switch api {
         case .metal:
@@ -622,6 +708,7 @@ struct SettingsView: View {
         }
     }
 
+    #if os(tvOS)
     @ViewBuilder
     private func tvSettingsPopup(for popup: TVSettingsPopup) -> some View {
         let options = popupOptions(for: popup)
@@ -634,7 +721,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: Theme.spacingMD) {
                 Text(popupTitle(for: popup))
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.tvScaled(size: 30, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
 
                 VStack(spacing: Theme.spacingSM) {
@@ -694,6 +781,8 @@ struct SettingsView: View {
             return "Hide Recording Features"
         case .theme:
             return "Theme"
+        case .uiFontSize:
+            return "Text Size"
         }
     }
 
@@ -785,6 +874,25 @@ struct SettingsView: View {
                     prefs.save()
                 }
             }
+        case .uiFontSize:
+            // Applies live: `appState.uiFontSize` writes the global the
+            // scaled fonts read and invalidates every view that holds
+            // appState, so the popup itself redraws at the new size while
+            // the user is still choosing. (#107)
+            return UIFontSize.allCases.map { size in
+                TVPopupOption(
+                    id: "settings-popup-ui-font-size-\(size.rawValue)",
+                    title: size.displayName,
+                    isCurrent: uiFontSize == size,
+                    isDestructive: false
+                ) {
+                    uiFontSize = size
+                    appState.uiFontSize = size
+                    var prefs = UserPreferences.load()
+                    prefs.uiFontSize = size
+                    prefs.save()
+                }
+            }
         case .subtitleBackground:
             return [
                 TVPopupOption(id: "settings-popup-subtitle-bg-on", title: "On", isCurrent: subtitleBackground, isDestructive: false) {
@@ -848,7 +956,6 @@ struct SettingsView: View {
             }
         }
     }
-
     #endif
 
     private var generalSection: some View {
@@ -946,6 +1053,10 @@ struct SettingsView: View {
                 Text(verbatim: client.config.displayAddress)
                     .foregroundStyle(Theme.textPrimary)
             }
+
+            #if DISPATCHERPVR
+            environmentServerRow
+            #endif
 
             HStack {
                 Text("Status")
@@ -1247,6 +1358,24 @@ struct SettingsView: View {
     }
     #endif
 
+    #if DISPATCHERPVR
+    /// iOS / macOS row showing the server's public IP and geo location
+    /// (#112). Lives inside the Server section beneath the Host row so the
+    /// identity of the server (host + public IP + location) stays grouped
+    /// together instead of being split into a separate Network section.
+    private var environmentServerRow: some View {
+        HStack {
+            Text("Server Public IP")
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(verbatim: environmentServerValue)
+                .foregroundStyle(Theme.textPrimary)
+                .multilineTextAlignment(.trailing)
+                .accessibilityIdentifier("env-public-ip-and-location")
+        }
+    }
+    #endif
+
     #if DEBUG
     private var debugStreamSection: some View {
         Section {
@@ -1325,11 +1454,11 @@ private struct TVGuideToggleRowContent: View {
     var body: some View {
         HStack(spacing: Theme.spacingMD) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 24, weight: .semibold))
+                .font(.tvScaled(size: 24, weight: .semibold))
                 .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
 
             Text(title)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.tvScaled(size: 24, weight: .semibold))
                 .foregroundStyle(isFocused ? Color.white : Theme.textPrimary)
                 .lineLimit(1)
 
@@ -1371,7 +1500,7 @@ private struct TVSettingsPopupButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 24, weight: .semibold))
+            .font(.tvScaled(size: 24, weight: .semibold))
             .foregroundStyle(foregroundColor)
             .padding(.vertical, Theme.spacingMD)
             .frame(maxWidth: .infinity)

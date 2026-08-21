@@ -341,18 +341,18 @@ struct TopicProgramRowTV: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(program.cleanName)
-                                .font(.system(size: 20, weight: .semibold))
+                                .font(.tvScaled(size: 20, weight: .semibold))
                                 .foregroundStyle(.white.opacity(isFocused ? 1.0 : 0.95))
                                 .lineLimit(1)
 
                             Text(vm.programScheduleText)
-                                .font(.system(size: 24, weight: .medium))
+                                .font(.tvScaled(size: 24, weight: .medium))
                                 .foregroundStyle(.white.opacity(isFocused ? 0.82 : 0.72))
                                 .lineLimit(1)
 
                             if let subtitle = program.subtitle, !subtitle.isEmpty {
                                 Text(subtitle)
-                                    .font(.system(size: 17))
+                                    .font(.tvScaled(size: 17))
                                     .foregroundStyle(.white.opacity(isFocused ? 0.76 : 0.64))
                                     .lineLimit(1)
                             }
@@ -383,7 +383,7 @@ struct TopicProgramRowTV: View {
                                 Text(actionLabel)
                             }
                         }
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.tvScaled(size: 16, weight: .medium))
                         .foregroundStyle(actionColor.opacity(0.95))
                         .padding(.horizontal, Theme.spacingLG)
                         .padding(.vertical, Theme.spacingMD)

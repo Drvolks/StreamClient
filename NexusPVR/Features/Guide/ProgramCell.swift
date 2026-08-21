@@ -31,6 +31,42 @@ struct ProgramCell: View {
         #endif
     }
 
+    /// tvOS runs the guide noticeably smaller than the platform's semantic
+    /// `.caption` (~25pt), which crowded long program names out of a cell
+    /// at typical channel widths. iOS / macOS keep the semantic styles
+    /// they've always used. Both tvOS sizes follow the Text Size setting
+    /// (#107).
+    private var titleFont: Font {
+        #if os(tvOS)
+        .tvScaled(size: 20, weight: .medium)
+        #else
+        .caption
+        #endif
+    }
+
+    private var timeFont: Font {
+        #if os(tvOS)
+        .tvScaled(size: 17)
+        #else
+        .caption2
+        #endif
+    }
+
+    /// Room left for the start/end time + badges after the leading padding
+    /// (applied to currently-airing programs to keep text pinned to the
+    /// visible scroll position) eats into the cell's nominal width.
+    private var effectiveWidth: CGFloat {
+        width - (program.isCurrentlyAiring ? leadingPadding : 0)
+    }
+
+    /// Below this, "NEW" / "REC" next to the time text would wrap onto a
+    /// second line, so fall back to single-letter badges instead.
+    /// (ProgramCell is only used on iOS/macOS; tvOS renders its own cell in
+    /// GuideView.swift.)
+    private var useCompactBadges: Bool {
+        effectiveWidth < 180
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             // Background
@@ -44,14 +80,25 @@ struct ProgramCell: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(program.cleanName)
-                        .font(.caption)
+                        .font(titleFont)
                         .fontWeight(.medium)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
 
-                    Text(timeString)
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textTertiary)
+                    HStack(spacing: 4) {
+                        Text(timeString)
+                            .font(timeFont)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+
+                        if program.isNew {
+                            NewBadge(compact: useCompactBadges)
+                        }
+
+                        if isCurrentlyRecording || isScheduledRecording {
+                            RecBadge(isActive: isCurrentlyRecording, compact: useCompactBadges)
+                        }
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -60,43 +107,6 @@ struct ProgramCell: View {
             .padding(.leading, Theme.spacingSM + (program.isCurrentlyAiring ? leadingPadding : 0))
             .padding(.trailing, Theme.spacingSM)
             .padding(.vertical, Theme.spacingXS)
-
-            // "New" green band on top-right corner
-            if program.isNew {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Theme.success
-                            .frame(width: 6, height: 20)
-                            .clipShape(UnevenRoundedRectangle(
-                                topLeadingRadius: 0,
-                                bottomLeadingRadius: 3,
-                                bottomTrailingRadius: 0,
-                                topTrailingRadius: Theme.cornerRadiusSM
-                            ))
-                    }
-                    Spacer()
-                }
-            }
-
-            // Recording red band on bottom-right corner
-            if isCurrentlyRecording || isScheduledRecording {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Theme.recording
-                            .frame(width: 6, height: 20)
-                            .clipShape(UnevenRoundedRectangle(
-                                topLeadingRadius: 3,
-                                bottomLeadingRadius: 0,
-                                bottomTrailingRadius: Theme.cornerRadiusSM,
-                                topTrailingRadius: 0
-                            ))
-                            .opacity(isCurrentlyRecording ? 1.0 : 0.6)
-                    }
-                }
-            }
 
             // Progress indicator for currently airing
             if program.isCurrentlyAiring {

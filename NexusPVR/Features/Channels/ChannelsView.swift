@@ -23,6 +23,11 @@ struct ChannelsView: View {
     @State private var streamError: String?
     @State private var now = Date()
     @State private var showFilters = false
+    // O(1) recording-status lookup for the current-program badges, mirroring
+    // GuideViewModel's matching: primary by EPG event ID, falling back to
+    // name + start time for servers where epgEventId doesn't line up.
+    @State private var recordingsByEventId: [Int: Recording] = [:]
+    @State private var recordingsByNameAndStart: [String: Recording] = [:]
     #if os(tvOS)
     @FocusState private var focusedChannelId: Int?
     @State private var requestTVSearchKeyboard = false
@@ -253,6 +258,12 @@ struct ChannelsView: View {
                 channelGrid
             }
         }
+        .task {
+            await loadRecordings()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .recordingsDidChange)) { _ in
+            Task { await loadRecordings() }
+        }
     }
 
     /// Re-fetch channels + EPG so channels added server-side appear without
@@ -261,7 +272,32 @@ struct ChannelsView: View {
     /// page.
     private func refreshChannels() async {
         await epgCache.refresh(using: client)
+        await loadRecordings()
         now = Date()
+    }
+
+    /// Loads scheduled/in-progress recordings so channel cards can show the
+    /// NEW/REC badges for the current program.
+    private func loadRecordings() async {
+        do {
+            let (completed, recording, scheduled) = try await client.getAllRecordings()
+            let all = completed + recording + scheduled
+            recordingsByEventId = Dictionary(
+                all.compactMap { r in r.epgEventId.map { ($0, r) } },
+                uniquingKeysWith: { first, _ in first }
+            )
+            recordingsByNameAndStart = Dictionary(
+                all.compactMap { r in r.startTime.map { ("\(r.name.lowercased())_\($0)", r) } },
+                uniquingKeysWith: { first, _ in first }
+            )
+        } catch {
+            // Silently fail - cards just won't show the REC badge
+        }
+    }
+
+    private func recording(for program: Program) -> Recording? {
+        recordingsByEventId[program.id]
+            ?? recordingsByNameAndStart["\(program.name.lowercased())_\(program.start)"]
     }
 
     private func tickCurrentTime() async {
@@ -430,9 +466,13 @@ struct ChannelsView: View {
                 Button {
                     play(channel: channel)
                 } label: {
+                    let program = epgCache.currentProgram(for: channel, at: now)
+                    let rec = program.flatMap { recording(for: $0) }
                     ChannelGridCard(
                         channel: channel,
-                        currentProgram: epgCache.currentProgram(for: channel, at: now)
+                        currentProgram: program,
+                        isScheduledRecording: rec != nil,
+                        isCurrentlyRecording: rec?.recordingStatus == .recording
                     )
                 }
                 .accessibilityIdentifier("channel-card-\(channel.id)")
@@ -534,7 +574,7 @@ struct ChannelsView: View {
             Task { await refreshChannels() }
         } label: {
             Image(systemName: "arrow.clockwise")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.tvScaled(size: 16, weight: .semibold))
         }
         .buttonStyle(TVPillFieldButtonStyle(unfocusedForeground: Theme.textTertiary))
         .focusEffectDisabled()
@@ -896,6 +936,25 @@ struct ChannelGridCard: View {
     @EnvironmentObject private var client: PVRClient
     let channel: Channel
     let currentProgram: Program?
+    var isScheduledRecording: Bool = false
+    var isCurrentlyRecording: Bool = false
+
+    /// NEW badge stacked above REC when both apply, right-aligned next to
+    /// the current program's title.
+    @ViewBuilder
+    private var badgeStack: some View {
+        if let currentProgram, currentProgram.isNew || isScheduledRecording {
+            VStack(alignment: .trailing, spacing: 4) {
+                if currentProgram.isNew {
+                    NewBadge()
+                }
+                if isScheduledRecording {
+                    RecBadge(isActive: isCurrentlyRecording)
+                }
+            }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacingSM) {
             // Logo header
@@ -925,13 +984,22 @@ struct ChannelGridCard: View {
 
             if let program = currentProgram {
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                    // Top-aligned so the badges stay level with the title's
+                    // first line when the name wraps.
+                    HStack(alignment: .top, spacing: 6) {
                         Text(program.cleanName)
                             .font(.subheadline)
                             .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
+                            // Long program names get a second line rather
+                            // than being truncated. `reservesSpace` keeps
+                            // every card in a grid row the same height, so
+                            // one wrapping title doesn't make its
+                            // neighbours grow with it.
+                            .lineLimit(2, reservesSpace: true)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        if program.isNew { NewBadge() }
+                        badgeStack
                     }
 
                     // Progress bar
@@ -951,7 +1019,9 @@ struct ChannelGridCard: View {
                 Text("No program info")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
+                    // Matches the two-line reservation above so cards
+                    // without EPG data line up with the ones that have it.
+                    .lineLimit(2, reservesSpace: true)
             }
         }
         .padding(Theme.spacingMD)

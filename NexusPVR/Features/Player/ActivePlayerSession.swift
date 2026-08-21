@@ -13,7 +13,9 @@ protocol ActivePlayerSessionManaging: AnyObject {
     var hasActiveSession: Bool { get }
 
     func createSession(player: MPVPlayerCore, bridge: MPVPixelBufferBridge)
-    func setupPiP(playPauseHandler: @escaping (Bool) -> Void, isPausedQuery: @escaping () -> Bool)
+    func setupPiP(playPauseHandler: @escaping (Bool) -> Void,
+                  isPausedQuery: @escaping () -> Bool,
+                  onSessionEnded: @MainActor @escaping () -> Void)
     func detachFromView()
     func teardown()
 }
@@ -42,8 +44,13 @@ final class ActivePlayerSession: ActivePlayerSessionManaging {
         self.bridge = bridge
     }
 
+    /// - Parameter onSessionEnded: Called when PiP stops without restoring the
+    ///   player UI (the user closed the PiP window). No `PlayerView` exists at that
+    ///   point, so this is the only chance to tear down whatever the view would
+    ///   normally own — notably the live stream and its renewal loop (#133).
     func setupPiP(playPauseHandler: @escaping (Bool) -> Void,
-                  isPausedQuery: @escaping () -> Bool) {
+                  isPausedQuery: @escaping () -> Bool,
+                  onSessionEnded: @MainActor @escaping () -> Void) {
         guard pipController == nil, let bridge else { return }
 
         let delegate = PiPPlaybackDelegate()
@@ -58,6 +65,7 @@ final class ActivePlayerSession: ActivePlayerSessionManaging {
                 self.restoringFromPiP = false
             } else {
                 self.teardown()
+                onSessionEnded()
             }
         }
         controller.onRestoreUserInterface = { [weak self] completion in

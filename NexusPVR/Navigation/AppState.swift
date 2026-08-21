@@ -95,6 +95,15 @@ final class AppState: ObservableObject {
     @Published var userLevel: Int = 10 {
         didSet { reconcileSelectedTabForCurrentAccess() }
     }
+
+    /// Most recent `EnvironmentSettings` payload from
+    /// `GET /api/core/settings/env/`. Nil until the first poll completes, or
+    /// when running in demo / output-only mode (where the endpoint is not
+    /// reachable). When nil and `environmentAvailable` is false, the UI
+    /// shows "not available on this server version"; when nil and
+    /// `environmentAvailable` is true, the UI shows a "loading" placeholder.
+    /// (#112)
+    @Published var environmentSettings: EnvironmentSettings?
     #else
     /// NexusPVR users always have full access
     var userLevel: Int { 10 }
@@ -108,6 +117,22 @@ final class AppState: ObservableObject {
     /// The appearance the user chose in Settings (#108). Applied at the root
     /// of the scene so a change takes effect immediately, without a relaunch.
     @Published var theme: AppTheme = UserPreferences.load().theme
+
+    #if os(tvOS)
+    /// The tvOS UI font size the user chose in Settings (#107).
+    ///
+    /// The value that fonts and metrics actually read is the
+    /// `Theme.uiFontSize` global — `Font` extensions are static, so they
+    /// can't observe an environment object. This published mirror exists
+    /// to *invalidate* the view tree: every view holding `appState` as an
+    /// `@EnvironmentObject` re-evaluates its body when this changes, and
+    /// picks up the new global on the way through. That applies the new
+    /// size live without an `.id()` bump at the root, which would reset
+    /// navigation and bounce the user out of Settings mid-change.
+    @Published var uiFontSize: UIFontSize = UserPreferences.load().uiFontSize {
+        didSet { Theme.uiFontSize = uiFontSize }
+    }
+    #endif
 
     /// Whether recording-related UI (tabs, menus, buttons) should be shown.
     var showsRecordings: Bool { userLevel >= 1 && !hideRecordings }
@@ -155,6 +180,93 @@ final class AppState: ObservableObject {
     func stopStreamCountPolling() {
         streamCountTask?.cancel()
         streamCountTask = nil
+    }
+
+    /// Whether the `EnvironmentSettings` endpoint is reachable for this
+    /// client. Used by the Settings UI to decide between "loading…",
+    /// "not available on this server version", and the populated IP/
+    /// country panel. (#112)
+    var environmentAvailable: Bool {
+        guard let envClient = _lastEnvClient else { return false }
+        return !envClient.useOutputEndpoints
+            && (!envClient.config.isDemoMode || envClient.config.isMockServer)
+    }
+    /// Holds the most recent client used to fetch environment settings.
+    /// Tracked so `environmentAvailable` can answer without callers
+    /// needing to thread the client through. (#112)
+    private var _lastEnvClient: DispatcherClient?
+
+    private var environmentSettingsTask: Task<Void, Never>?
+
+    /// Steady-state cadence for the environment endpoint. The data changes
+    /// rarely (only on Dispatcharr restart), so 30 s is plenty. (#112)
+    static let environmentRefreshInterval: Duration = .seconds(30)
+
+    /// Faster catch-up delays used while the server reports the IP lookup as
+    /// still pending. Dispatcharr never resolves the public IP at startup: the
+    /// first `GET /api/core/settings/env/` returns `ip_lookup_pending: true`
+    /// and kicks off a background thread (ipify + geo lookup) that usually
+    /// finishes within a couple of seconds. Polling at the steady 30 s cadence
+    /// meant the UI sat on "Looking up…" long after the server had the answer,
+    /// so back off gently instead — these five retries cover the first ~30 s
+    /// before falling back to `environmentRefreshInterval`. (#112)
+    static let environmentPendingRetryDelays: [Duration] = [
+        .seconds(2), .seconds(3), .seconds(5), .seconds(8), .seconds(12)
+    ]
+
+    /// Whether the payload means "the server is still working on it", i.e. the
+    /// UI is showing a placeholder and a quick re-poll is worthwhile. A nil
+    /// `publicIP` counts even without the pending flag, since an older
+    /// Dispatcharr may omit it while the background lookup runs.
+    static func isEnvironmentLookupPending(_ env: EnvironmentSettings) -> Bool {
+        guard env.ipLookupEnabled else { return false }
+        return env.ipLookupPending || env.publicIP == nil
+    }
+
+    /// Refresh the server environment settings, polling quickly while the
+    /// server reports the lookup as pending and settling to
+    /// `environmentRefreshInterval` once it resolves. Cancels any in-flight
+    /// refresh task first. (#112)
+    func startEnvironmentSettingsRefresh(client: DispatcherClient) {
+        stopEnvironmentSettingsRefresh()
+        _lastEnvClient = client
+        // Output-only deployments don't have the env endpoint. Built-in demo
+        // mode is offline, but the local mock fixture exposes the endpoint.
+        guard !client.useOutputEndpoints,
+              !client.config.isDemoMode || client.config.isMockServer else {
+            environmentSettings = nil
+            return
+        }
+        environmentSettingsTask = Task { [weak self] in
+            var pendingRetry = 0
+            while !Task.isCancelled {
+                var delay = Self.environmentRefreshInterval
+                // Skip during playback to reduce network chatter.
+                if self?.isShowingPlayer != true {
+                    do {
+                        let result = try await client.getEnvironmentSettings()
+                        self?.environmentSettings = result
+                        if let result, Self.isEnvironmentLookupPending(result),
+                           pendingRetry < Self.environmentPendingRetryDelays.count {
+                            delay = Self.environmentPendingRetryDelays[pendingRetry]
+                            pendingRetry += 1
+                        } else {
+                            pendingRetry = 0
+                        }
+                    } catch {
+                        // Silently ignore — the UI keeps showing the last
+                        // good value. Nil is treated as "still loading" if
+                        // the endpoint is reachable.
+                    }
+                }
+                try? await Task.sleep(for: delay)
+            }
+        }
+    }
+
+    func stopEnvironmentSettingsRefresh() {
+        environmentSettingsTask?.cancel()
+        environmentSettingsTask = nil
     }
     #endif
 
@@ -267,12 +379,16 @@ final class AppState: ObservableObject {
         case .guide: return .guide
         case .channels: return .channels
         case .completedRecordings: return .recordings
+        #if DISPATCHERPVR
+        case .stats: return .stats
+        #endif
         }
     }
 
     /// Whether a landing option's target tab is available to the current
     /// user. The Completed Recordings landing requires `userLevel >= 1`
-    /// (recordings access); the other landings are always available.
+    /// (recordings access) and the Status landing (Dispatcharr only)
+    /// requires `userLevel >= 1`; the other landings are always available.
     /// Used by both the Settings picker (to filter out unavailable
     /// options) and `applyLandingTab` (to redirect to Guide if needed).
     static func isLandingOptionAvailable(
@@ -285,6 +401,10 @@ final class AppState: ObservableObject {
             return true
         case .completedRecordings:
             return userLevel >= 1 && !hideRecordings
+        #if DISPATCHERPVR
+        case .stats:
+            return userLevel >= 1
+        #endif
         }
     }
 
@@ -297,6 +417,11 @@ final class AppState: ObservableObject {
         if selectedTab == .recordings && !showsRecordings {
             selectedTab = .guide
         }
+        #if DISPATCHERPVR
+        if selectedTab == .stats && userLevel < 1 {
+            selectedTab = .guide
+        }
+        #endif
     }
 
     /// Convenience helper used by settings UI when applying a new landing
