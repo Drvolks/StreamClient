@@ -1915,6 +1915,9 @@ struct MacOSNavigation: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var epgCache: EPGCache
+    /// Lives above the player/navigation conditional so the selected guide day
+    /// survives while PlayerView temporarily owns the whole macOS window.
+    @StateObject private var guideViewModel = GuideViewModel()
 
     @State private var searchText = ""
     @State private var showSearchDropdown = false
@@ -1951,7 +1954,10 @@ struct MacOSNavigation: View {
                         Group {
                             switch appState.selectedTab {
                             case .guide:
-                                NavigationStack { GuideView() }
+                                NavigationStack {
+                                    GuideView()
+                                        .environmentObject(guideViewModel)
+                                }
                             case .channels:
                                 ChannelsView()
                             case .topics:

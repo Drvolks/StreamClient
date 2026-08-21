@@ -61,6 +61,10 @@ final class AppState: ObservableObject {
     /// stream is archived playback rather than live/recording. Revoked by
     /// `PlayerView` on teardown — see `endCatchupSessionIfNeeded()`.
     @Published var currentlyPlayingCatchupSessionId: String?
+    /// Guide time that launched the current catch-up playback. Unlike the
+    /// session id, this intentionally survives `stopPlayback()` long enough
+    /// for a reconstructed macOS guide to consume and restore it.
+    private(set) var catchupGuideReturnTime: Date?
 
     // Navigation state
     @Published var selectedChannel: Channel?
@@ -486,7 +490,8 @@ final class AppState: ObservableObject {
         channelName: String? = nil,
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
-        catchupSessionId: String? = nil
+        catchupSessionId: String? = nil,
+        catchupGuideReturnTime: Date? = nil
     ) {
         #if DEBUG
         let effectiveURL: URL
@@ -510,6 +515,7 @@ final class AppState: ObservableObject {
         currentlyPlayingIsRecordingInProgress = isRecordingInProgress
         currentlyPlayingRecordingStartTime = recordingStartTime
         currentlyPlayingCatchupSessionId = catchupSessionId
+        self.catchupGuideReturnTime = catchupGuideReturnTime
         isPreparingStream = false
         isShowingPlayer = true
     }
@@ -539,6 +545,15 @@ final class AppState: ObservableObject {
         currentlyPlayingIsRecordingInProgress = false
         currentlyPlayingRecordingStartTime = nil
         currentlyPlayingCatchupSessionId = nil
+    }
+
+    /// Clears the pending target only after the reconstructed macOS guide has
+    /// had time to install its scroll anchors and restore the horizontal
+    /// position. The match prevents an old restoration task from clearing a
+    /// newer playback target.
+    func clearCatchupGuideReturnTime(ifMatching returnTime: Date) {
+        guard catchupGuideReturnTime == returnTime else { return }
+        catchupGuideReturnTime = nil
     }
 
     /// Dismiss the player UI without clearing playback state (used for PiP).

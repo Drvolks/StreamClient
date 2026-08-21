@@ -25,7 +25,7 @@ struct GuideView: View {
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     #endif
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     @EnvironmentObject var viewModel: GuideViewModel
     #else
     @StateObject private var viewModel = GuideViewModel()
@@ -38,6 +38,10 @@ struct GuideView: View {
 
     @State private var selectedProgramDetail: (program: Program, channel: Channel)?
     @State private var streamError: String?
+    /// Captured when the player is presented, before `stopPlayback()` clears
+    /// its catch-up session id. While true, automatic "back to now" hooks must
+    /// leave the guide's selected day and horizontal position untouched.
+    @State private var preservesGuidePositionAfterCatchup = false
 
     // Keywords for pre-computing matches
     @State private var keywords: [String] = []
@@ -158,24 +162,34 @@ struct GuideView: View {
                     Task { await refreshRecordings() }
                     #if os(tvOS)
                     // Resync the guide start time so the visible window matches
-                    // the ViewModel's timelineStart (which uses current time)
-                    resyncGuideStartToNow()
+                    // the ViewModel's timelineStart (which uses current time),
+                    // unless returning to the catch-up program the user chose.
+                    if !preservesGuidePositionAfterCatchup {
+                        resyncGuideStartToNow()
+                    }
                     #endif
                 }
             }
-            #if os(tvOS)
             .onChange(of: appState.isShowingPlayer) { _, isShowing in
+                if isShowing {
+                    // Capture this before PlayerView teardown calls
+                    // stopPlayback(), which clears the session id.
+                    preservesGuidePositionAfterCatchup = appState.currentlyPlayingCatchupSessionId != nil
+                    return
+                }
+
+                #if os(tvOS)
                 // The player is presented as a .fullScreenCover, which keeps
                 // scenePhase == .active, so the scenePhase resync never fires on
-                // dismissal. Re-anchor the guide on "now" here so the visible
-                // window doesn't drift into the past during long sessions.
-                if !isShowing {
+                // dismissal. Re-anchor normal playback on "now", but keep the
+                // exact day/time/focus window that launched catch-up playback.
+                if !preservesGuidePositionAfterCatchup {
                     resyncGuideStartToNow()
                     viewModel.scrollToNow()
-                    Task { await refreshRecordings() }
                 }
+                Task { await refreshRecordings() }
+                #endif
             }
-            #endif
     }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -279,6 +293,7 @@ struct GuideView: View {
         ProgramDetailView(
             program: detail.program,
             channel: detail.channel,
+            catchupGuideReturnTime: detail.program.startDate,
             initialRecordingId: viewModel.recordingId(for: detail.program)
         )
         .environmentObject(client)
@@ -851,13 +866,48 @@ struct GuideView: View {
             }
             #endif
             .onAppear {
-                updateScrollTarget()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    if let targetId = scrollTargetId {
-                        programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                #if os(macOS)
+                let hasCatchupReturnTarget = appState.catchupGuideReturnTime != nil
+                #else
+                let hasCatchupReturnTarget = false
+                #endif
+
+                if !hasCatchupReturnTarget && !preservesGuidePositionAfterCatchup {
+                    updateScrollTarget()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        if let targetId = scrollTargetId {
+                            programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                        }
                     }
                 }
             }
+            #if os(macOS)
+            .task {
+                guard let catchupReturnTime = appState.catchupGuideReturnTime else { return }
+
+                // MacOSNavigation keeps the ViewModel alive, but reconstructs
+                // the ScrollView after PlayerView disappears. Keep the target
+                // pending and retry after layout: the first scroll request can
+                // arrive before SwiftUI has installed the horizontal anchors.
+                if !Calendar.current.isDate(viewModel.selectedDate, inSameDayAs: catchupReturnTime) {
+                    viewModel.selectedDate = catchupReturnTime
+                }
+
+                await Task.yield()
+                guard !Task.isCancelled,
+                      let targetId = updateScrollTarget(preferredTime: catchupReturnTime) else { return }
+
+                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+
+                appState.clearCatchupGuideReturnTime(ifMatching: catchupReturnTime)
+            }
+            #endif
             .onChange(of: viewModel.selectedDate) {
                 updateScrollTarget()
             }
@@ -868,7 +918,9 @@ struct GuideView: View {
             }
         }
         .onChange(of: scenePhase) {
-            if scenePhase == .active {
+            if scenePhase == .active
+                && !preservesGuidePositionAfterCatchup
+                && appState.catchupGuideReturnTime == nil {
                 viewModel.scrollToNow()
                 updateScrollTarget()
             }
@@ -1883,28 +1935,40 @@ struct GuideView: View {
         }
     }
 
-    private func updateScrollTarget() {
+    @discardableResult
+    private func updateScrollTarget(preferredTime: Date? = nil) -> String? {
         let calendar = Calendar.current
         let now = Date()
         let isToday = calendar.isDate(viewModel.selectedDate, inSameDayAs: now)
+        let preferredTime = preferredTime.flatMap {
+            calendar.isDate($0, inSameDayAs: viewModel.selectedDate) ? $0 : nil
+        }
 
         // Store scroll target for text padding calculation
-        let scrollTargetDate = GuideScrollHelper.calculateScrollTarget(currentTime: isToday ? now : viewModel.timelineStart)
+        let scrollTargetDate = GuideScrollHelper.calculateScrollTarget(
+            currentTime: preferredTime ?? (isToday ? now : viewModel.timelineStart)
+        )
         currentTimelineHour = scrollTargetDate
 
         // The regular guide starts today's timeline at the current hour, so it
         // needs no initial scroll. Catch-up keeps the whole day and opens at
         // the current half-hour, leaving the earlier schedule to its left.
-        if isToday && !viewModel.allowsPastDates {
+        if preferredTime == nil && isToday && !viewModel.allowsPastDates {
             scrollTargetId = nil
-            return
+            return nil
         }
 
-        let targetTime = isToday ? scrollTargetDate : viewModel.timelineStart
+        let targetTime = preferredTime != nil
+            ? scrollTargetDate
+            : (isToday ? scrollTargetDate : viewModel.timelineStart)
         let targetHourComponent = calendar.component(.hour, from: targetTime)
         if let targetHour = viewModel.hoursToShow.first(where: { calendar.component(.hour, from: $0) == targetHourComponent }) {
-            scrollTargetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
+            let targetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
+            scrollTargetId = targetId
+            return targetId
         }
+        scrollTargetId = nil
+        return nil
     }
 
     /// Pull-to-refresh (iOS/macOS) and the tvOS refresh button both land here:
@@ -2099,7 +2163,7 @@ private struct ScrollViewDirectionalLock: UIViewRepresentable {
         .environmentObject(PVRClient())
         .environmentObject(AppState())
         .environmentObject(EPGCache())
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         .environmentObject(GuideViewModel())
         #endif
         .preferredColorScheme(.dark)

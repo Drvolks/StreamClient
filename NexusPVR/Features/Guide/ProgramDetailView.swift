@@ -14,6 +14,9 @@ struct ProgramDetailView: View {
 
     let program: Program
     let channel: Channel
+    /// Set only when this detail was opened from the guide. Other callers can
+    /// start catch-up without leaving a stale guide restoration target behind.
+    let catchupGuideReturnTime: Date?
 
     #if DISPATCHERPVR
     @State private var isStartingCatchup = false
@@ -53,9 +56,10 @@ struct ProgramDetailView: View {
         }
     }
 
-    init(program: Program, channel: Channel, initialRecordingId: Int? = nil, initialCompletedRecording: Recording? = nil, onRecordingChanged: (() -> Void)? = nil) {
+    init(program: Program, channel: Channel, catchupGuideReturnTime: Date? = nil, initialRecordingId: Int? = nil, initialCompletedRecording: Recording? = nil, onRecordingChanged: (() -> Void)? = nil) {
         self.program = program
         self.channel = channel
+        self.catchupGuideReturnTime = catchupGuideReturnTime
         self.onRecordingChanged = onRecordingChanged
         _isScheduled = State(initialValue: initialRecordingId != nil)
         _existingRecordingId = State(initialValue: initialRecordingId)
@@ -831,7 +835,8 @@ struct ProgramDetailView: View {
                     title: "\(channel.name) - \(program.name)",
                     channelId: channel.id,
                     channelName: channel.name,
-                    catchupSessionId: session.sessionId
+                    catchupSessionId: session.sessionId,
+                    catchupGuideReturnTime: catchupGuideReturnTime
                 )
                 dismiss()
             } catch {

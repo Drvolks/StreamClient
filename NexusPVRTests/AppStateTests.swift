@@ -174,10 +174,19 @@ struct AppStateTests {
     func playStreamSetsCatchupSessionId() {
         let state = AppState()
         let url = URL(string: "http://example.com/proxy/catchup/abc")!
+        let guideReturnTime = Date(timeIntervalSince1970: 1_700_000_000)
 
-        state.playStream(url: url, title: "Archived Show", channelId: 5, channelName: "ABC", catchupSessionId: "session-123")
+        state.playStream(
+            url: url,
+            title: "Archived Show",
+            channelId: 5,
+            channelName: "ABC",
+            catchupSessionId: "session-123",
+            catchupGuideReturnTime: guideReturnTime
+        )
 
         #expect(state.currentlyPlayingCatchupSessionId == "session-123")
+        #expect(state.catchupGuideReturnTime == guideReturnTime)
     }
 
     @Test("playStream without a catch-up session leaves it nil")
@@ -240,12 +249,25 @@ struct AppStateTests {
     func stopPlaybackClearsCatchupSessionId() {
         let state = AppState()
         let url = URL(string: "http://example.com/proxy/catchup/abc")!
-        state.playStream(url: url, title: "Archived Show", channelId: 5, channelName: "ABC", catchupSessionId: "session-123")
+        let guideReturnTime = Date(timeIntervalSince1970: 1_700_000_000)
+        state.playStream(
+            url: url,
+            title: "Archived Show",
+            channelId: 5,
+            channelName: "ABC",
+            catchupSessionId: "session-123",
+            catchupGuideReturnTime: guideReturnTime
+        )
         #expect(state.currentlyPlayingCatchupSessionId == "session-123")
 
         state.stopPlayback()
 
         #expect(state.currentlyPlayingCatchupSessionId == nil)
+        #expect(state.catchupGuideReturnTime == guideReturnTime)
+        state.clearCatchupGuideReturnTime(ifMatching: guideReturnTime.addingTimeInterval(60))
+        #expect(state.catchupGuideReturnTime == guideReturnTime)
+        state.clearCatchupGuideReturnTime(ifMatching: guideReturnTime)
+        #expect(state.catchupGuideReturnTime == nil)
     }
 
     @Test("dismissPlayer hides player but preserves state")
