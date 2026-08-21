@@ -293,6 +293,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         }
         let precision = preferKeyframeSeek ? "+keyframes" : ""
         let command = "seek \(actualSeconds) relative\(precision)"
+        print("MPV: issuing '\(command)' (preferKeyframeSeek=\(preferKeyframeSeek))")
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seek command failed: \(result)")
@@ -320,6 +321,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         }
         let precision = preferKeyframeSeek ? "+keyframes" : ""
         let command = "seek \(target) absolute\(precision)"
+        print("MPV: issuing '\(command)' (preferKeyframeSeek=\(preferKeyframeSeek))")
         let result = mpv_command_string(mpv, command)
         if result < 0 {
             print("MPV: seekTo command failed: \(result)")
