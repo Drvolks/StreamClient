@@ -1050,6 +1050,11 @@ struct GuideView: View {
 
         let showSport = cellWidth > 200
         let sportIconSize = rowHeight - 10 - 16 // cell height minus padding
+        // cellWidth already reflects the visible/clipped duration for a
+        // currently-airing program (tvOSProgramPosition trims to
+        // visibleStart/visibleEnd), so it alone tells us whether "NEW" /
+        // "REC" would wrap next to the time text.
+        let useCompactBadges = cellWidth < 300
 
         return ZStack {
             HStack(spacing: 6) {
@@ -1063,52 +1068,26 @@ struct GuideView: View {
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
 
-                    Text("\(program.startDate, format: .dateTime.hour().minute()) - \(program.endDate, format: .dateTime.hour().minute())")
-                        .font(.tvScaled(size: 14))
-                        .foregroundStyle(Theme.textSecondary)
+                    HStack(spacing: 4) {
+                        Text("\(program.startDate, format: .dateTime.hour().minute()) - \(program.endDate, format: .dateTime.hour().minute())")
+                            .font(.tvScaled(size: 14))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+
+                        if program.isNew {
+                            NewBadge(compact: useCompactBadges)
+                        }
+
+                        if isScheduled {
+                            RecBadge(isActive: isRecording, compact: useCompactBadges)
+                        }
+                    }
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-
-            // "New" green band on top-right
-            if program.isNew {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Theme.success
-                            .frame(width: 8, height: 24)
-                            .clipShape(UnevenRoundedRectangle(
-                                topLeadingRadius: 0,
-                                bottomLeadingRadius: 4,
-                                bottomTrailingRadius: 0,
-                                topTrailingRadius: 10
-                            ))
-                    }
-                    Spacer()
-                }
-            }
-
-            // Scheduled/recording red band on bottom-right
-            if isScheduled {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Theme.recording
-                            .frame(width: 8, height: 24)
-                            .clipShape(UnevenRoundedRectangle(
-                                topLeadingRadius: 4,
-                                bottomLeadingRadius: 0,
-                                bottomTrailingRadius: 10,
-                                topTrailingRadius: 0
-                            ))
-                            .opacity(isRecording ? 1.0 : 0.6)
-                    }
-                }
-            }
         }
         .frame(width: max(cellWidth - 4, 80), height: rowHeight - 10, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(bgColor))

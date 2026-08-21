@@ -34,6 +34,22 @@ struct ProgramDetailView: View {
 
     var onRecordingChanged: (() -> Void)? = nil
 
+    /// NEW badge stacked above REC when both apply, right-aligned next to
+    /// the title.
+    @ViewBuilder
+    private var badgeStack: some View {
+        if program.isNew || isScheduled {
+            VStack(alignment: .trailing, spacing: 4) {
+                if program.isNew {
+                    NewBadge()
+                }
+                if isScheduled {
+                    RecBadge(isActive: inProgressRecording != nil)
+                }
+            }
+        }
+    }
+
     init(program: Program, channel: Channel, initialRecordingId: Int? = nil, initialCompletedRecording: Recording? = nil, onRecordingChanged: (() -> Void)? = nil) {
         self.program = program
         self.channel = channel
@@ -255,7 +271,7 @@ struct ProgramDetailView: View {
                             .foregroundStyle(Theme.textPrimary)
                             .accessibilityIdentifier("program-detail-name")
                         Spacer()
-                        if program.isNew { NewBadge() }
+                        badgeStack
                     }
 
                     // Row 3: Date | Start time - End time | Duration
@@ -379,7 +395,7 @@ struct ProgramDetailView: View {
                         .foregroundStyle(Theme.textPrimary)
                         .accessibilityIdentifier("program-detail-name")
                     Spacer()
-                    if program.isNew { NewBadge() }
+                    badgeStack
                 }
 
                 if let subtitle = program.subtitle, !subtitle.isEmpty {

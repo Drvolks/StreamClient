@@ -71,3 +71,4 @@ fastlane/test_output
 .claude
 .xcodebuildmcp
 .derivedData
+NexusPVR.xcodeproj/xcshareddata/xcodecloud/manifest.json

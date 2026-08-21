@@ -167,14 +167,40 @@ enum Theme {
 // MARK: - New Badge
 
 struct NewBadge: View {
+    /// Shrinks the label to a single "N" for tight spots (e.g. a guide cell
+    /// where the full word would wrap next to the program's start/end time).
+    var compact: Bool = false
+
     var body: some View {
-        Text("NEW")
+        Text(compact ? "N" : "NEW")
             .font(.system(size: 9, weight: .bold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 5)
+            .padding(.horizontal, compact ? 4 : 5)
             .padding(.vertical, 2)
             .background(Theme.success)
             .clipShape(RoundedRectangle(cornerRadius: 3))
+    }
+}
+
+// MARK: - Recording Badge
+
+struct RecBadge: View {
+    /// `true` for an in-progress recording, `false` for a recording that's
+    /// merely scheduled (rendered dimmer to distinguish the two).
+    var isActive: Bool = true
+    /// Shrinks the label to a single "R" for tight spots (e.g. a guide cell
+    /// where the full word would wrap next to the program's start/end time).
+    var compact: Bool = false
+
+    var body: some View {
+        Text(compact ? "R" : "REC")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, compact ? 4 : 5)
+            .padding(.vertical, 2)
+            .background(Theme.recording)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .opacity(isActive ? 1.0 : 0.6)
     }
 }
 
