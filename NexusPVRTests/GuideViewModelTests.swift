@@ -126,12 +126,23 @@ struct GuideViewModelTests {
 
     // MARK: - timelineStart / hoursToShow
 
-    @Test("timelineStart snaps to today's current half-hour when on today")
-    func timelineStartTodayHalfHour() {
+    @Test("timelineStart snaps to today's current half-hour when past hours are unavailable")
+    func timelineStartTodayHalfHourWithoutPastHours() {
         let vm = GuideViewModel()
+        vm.allowsPastDates = false
         let start = vm.timelineStart
         let minute = Calendar.current.component(.minute, from: start)
         #expect(minute == 0 || minute == 30)
+    }
+
+    @Test("timelineStart is midnight today when catch-up permits past hours (#119)")
+    func timelineStartTodayAtMidnightWithPastHours() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        let components = Calendar.current.dateComponents([.hour, .minute, .second], from: vm.timelineStart)
+        #expect(components.hour == 0)
+        #expect(components.minute == 0)
+        #expect(components.second == 0)
     }
 
     @Test("timelineStart is midnight for a non-today date")
@@ -153,6 +164,14 @@ struct GuideViewModelTests {
         #expect(hours.count == 24)
     }
 
+    @Test("hoursToShow includes all of today when catch-up permits past hours (#119)")
+    func hoursToShowIncludesAllOfTodayForCatchup() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        #expect(vm.hoursToShow.count == 24)
+        #expect(Calendar.current.component(.hour, from: vm.hoursToShow[0]) == 0)
+    }
+
     // MARK: - hourCount
 
     @Test("hourCount enforces minimum 6 hours even late at night")
@@ -167,6 +186,13 @@ struct GuideViewModelTests {
     func hourCountNonToday() {
         let tomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Date())!
         let count = GuideViewModel.hourCount(for: tomorrow, now: Date())
+        #expect(count == 24)
+    }
+
+    @Test("hourCount returns 24 for today when past hours are included (#119)")
+    func hourCountTodayWithPastHours() {
+        let now = Date()
+        let count = GuideViewModel.hourCount(for: now, now: now, includesPastHours: true)
         #expect(count == 24)
     }
 

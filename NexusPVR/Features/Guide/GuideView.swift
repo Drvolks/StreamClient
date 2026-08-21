@@ -709,6 +709,18 @@ struct GuideView: View {
         visibleStart.addingTimeInterval(visibleMinutes * 60)
     }
 
+    /// Earliest 30-minute window tvOS may navigate to. Dispatcharr catch-up
+    /// can move backward from the current-time anchor as far as midnight;
+    /// NextPVR retains its existing no-past-navigation behavior.
+    private var minimumTimeOffset: Int {
+        let calendar = Calendar.current
+        guard viewModel.allowsPastDates,
+              calendar.isDateInToday(viewModel.selectedDate) else { return 0 }
+        let startOfDay = calendar.startOfDay(for: guideStartTime)
+        let halfHoursSinceMidnight = Int(guideStartTime.timeIntervalSince(startOfDay) / (30 * 60))
+        return -max(0, halfHoursSinceMidnight)
+    }
+
     // Re-anchor the visible timeline on the current half-hour bucket.
     private func resyncGuideStartToNow() {
         let now = Date()
@@ -1545,7 +1557,7 @@ struct GuideView: View {
             guard focusedRow >= 0, !channels.isEmpty else { return }
             if focusedColumn > 0 {
                 focusedColumn -= 1
-            } else if timeOffset > 0 {
+            } else if timeOffset > minimumTimeOffset {
                 // Scroll back in time — focus on last program in new window
                 timeOffset -= 1
                 let newPrograms = tvOSVisiblePrograms(for: channels[focusedRow])
@@ -1880,14 +1892,15 @@ struct GuideView: View {
         let scrollTargetDate = GuideScrollHelper.calculateScrollTarget(currentTime: isToday ? now : viewModel.timelineStart)
         currentTimelineHour = scrollTargetDate
 
-        // On today, the timeline already starts at the current hour — no scroll needed.
-        // For other days, scroll to start of day.
-        guard !isToday else {
+        // The regular guide starts today's timeline at the current hour, so it
+        // needs no initial scroll. Catch-up keeps the whole day and opens at
+        // the current half-hour, leaving the earlier schedule to its left.
+        if isToday && !viewModel.allowsPastDates {
             scrollTargetId = nil
             return
         }
 
-        let targetTime = viewModel.timelineStart
+        let targetTime = isToday ? scrollTargetDate : viewModel.timelineStart
         let targetHourComponent = calendar.component(.hour, from: targetTime)
         if let targetHour = viewModel.hoursToShow.first(where: { calendar.component(.hour, from: $0) == targetHourComponent }) {
             scrollTargetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
