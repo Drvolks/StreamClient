@@ -46,39 +46,58 @@ struct CalendarView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var epgCache: EPGCache
     @State private var viewMode: ViewMode = .day
-    @State private var selectedDate: Date = Date()
     @State private var selectedProgramDetail: ProgramTopicDetail?
     @State private var selectedKeyword: String = ""
     @State private var contentWidth: CGFloat = 0
     @State private var scheduledProgramIds: Set<Int> = []
+    @State private var catchupAwareTopicPrograms: [MatchingProgram]?
 
     enum ViewMode: String, CaseIterable {
         case day = "Day"
         case week = "Week"
     }
 
+    private var selectedDate: Date {
+        get { appState.calendarSelectedDate }
+        nonmutating set { appState.calendarSelectedDate = newValue }
+    }
+
     private var keywords: [String] {
-        Array(Set(programs.map(\.matchedKeyword))).sorted()
+        Array(Set(calendarPrograms.map(\.matchedKeyword))).sorted()
+    }
+
+    private var calendarPrograms: [MatchingProgram] {
+        #if DISPATCHERPVR
+        let topicPrograms = catchupAwareTopicPrograms
+            ?? programs.filter { $0.matchedKeyword != MatchingProgram.scheduledKeyword }
+        let scheduledPrograms = programs.filter {
+            $0.matchedKeyword == MatchingProgram.scheduledKeyword
+        }
+        return topicPrograms + scheduledPrograms
+        #else
+        return programs
+        #endif
     }
 
     private var filteredPrograms: [MatchingProgram] {
         if selectedKeyword == MatchingProgram.scheduledKeyword {
             // Show all scheduled recordings
-            return programs.filter { $0.matchedKeyword == MatchingProgram.scheduledKeyword }
+            return calendarPrograms.filter { $0.matchedKeyword == MatchingProgram.scheduledKeyword }
         } else if !selectedKeyword.isEmpty {
             // Show only the selected topic keyword
-            return programs.filter { $0.matchedKeyword == selectedKeyword }
+            return calendarPrograms.filter { $0.matchedKeyword == selectedKeyword }
         }
         // "All": deduplicate — if a program has both a topic and "Scheduled" entry, keep the topic one
         let scheduledIds = Set(
-            programs.filter { $0.matchedKeyword == MatchingProgram.scheduledKeyword }.map { $0.program.id }
+            calendarPrograms.filter { $0.matchedKeyword == MatchingProgram.scheduledKeyword }.map { $0.program.id }
         )
         let topicIds = Set(
-            programs.filter { $0.matchedKeyword != MatchingProgram.scheduledKeyword }.map { $0.program.id }
+            calendarPrograms.filter { $0.matchedKeyword != MatchingProgram.scheduledKeyword }.map { $0.program.id }
         )
         let duplicateIds = scheduledIds.intersection(topicIds)
-        return programs.filter {
+        return calendarPrograms.filter {
             !($0.matchedKeyword == MatchingProgram.scheduledKeyword && duplicateIds.contains($0.program.id))
         }
     }
@@ -229,6 +248,11 @@ struct CalendarView: View {
         .task {
             await loadScheduledRecordings()
         }
+        #if DISPATCHERPVR
+        .task(id: maximumCatchupDays) {
+            await loadCatchupPrograms()
+        }
+        #endif
     }
 
     private func loadScheduledRecordings() async {
@@ -240,6 +264,40 @@ struct CalendarView: View {
             // Silently fail
         }
     }
+
+    #if DISPATCHERPVR
+    private var maximumCatchupDays: Int {
+        epgCache.channels
+            .filter(\.isCatchup)
+            .map(\.catchupDays)
+            .filter { $0 > 0 }
+            .max() ?? 0
+    }
+
+    /// Reloads the topic matches with archived programs included. Waiting for
+    /// the oldest relevant day also joins any full-EPG load already running,
+    /// so past calendar pages do not briefly appear empty.
+    private func loadCatchupPrograms() async {
+        let now = Date()
+        if Calendar.current.startOfDay(for: selectedDate) < earliestNavigableDate {
+            selectedDate = earliestNavigableDate
+        }
+        if maximumCatchupDays > 0,
+           let oldestArchiveDate = Calendar.current.date(
+               byAdding: .day,
+               value: -maximumCatchupDays,
+               to: now
+           ) {
+            await epgCache.ensureDay(oldestArchiveDate, using: client)
+        }
+
+        guard !Task.isCancelled else { return }
+        catchupAwareTopicPrograms = await epgCache.matchingPrograms(
+            keywords: UserPreferences.load().keywords,
+            includesCatchup: true
+        )
+    }
+    #endif
 
     // MARK: - Navigation Bar
 
@@ -350,6 +408,11 @@ struct CalendarView: View {
                     proxy.scrollTo(scrollTarget, anchor: .top)
                 }
             }
+            .onChange(of: selectedDate) { _, _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    proxy.scrollTo(scrollTarget, anchor: .top)
+                }
+            }
         }
     }
 
@@ -361,7 +424,18 @@ struct CalendarView: View {
         let dayFormatter = DateFormatter()
         let totalHeight = CGFloat(endHour - startHour) * hourHeight
         let columnWidth = contentWidth > 0 ? (contentWidth - timeColumnWidth) / CGFloat(dates.count) : 0
-        let currentHour = max(0, cal.component(.hour, from: Date()) - 1)
+        let weekPrograms = dates.flatMap {
+            programsByDate[cal.startOfDay(for: $0)] ?? []
+        }
+        let scrollTarget: Int = {
+            if dates.contains(where: { cal.isDateInToday($0) }) {
+                return max(0, cal.component(.hour, from: Date()) - 1)
+            }
+            if let first = weekPrograms.min(by: { $0.program.startDate < $1.program.startDate }) {
+                return max(0, cal.component(.hour, from: first.program.startDate) - 1)
+            }
+            return 0
+        }()
 
         return VStack(spacing: 0) {
             // Day headers
@@ -422,7 +496,12 @@ struct CalendarView: View {
                 }
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        proxy.scrollTo(currentHour, anchor: .top)
+                        proxy.scrollTo(scrollTarget, anchor: .top)
+                    }
+                }
+                .onChange(of: selectedDate) { _, _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        proxy.scrollTo(scrollTarget, anchor: .top)
                     }
                 }
             }
@@ -512,6 +591,15 @@ struct CalendarView: View {
         let durationMinutes = CGFloat(item.program.durationMinutes)
         let yOffset = (totalStartMinutes / 60.0) * hourHeight
         let blockHeight = max((durationMinutes / 60.0) * hourHeight, 20)
+        #if DISPATCHERPVR
+        let catchupAvailable = CatchupAvailability.isAvailable(
+            program: item.program,
+            channelIsCatchup: item.channel.isCatchup,
+            catchupDays: item.channel.catchupDays
+        )
+        #else
+        let catchupAvailable = false
+        #endif
 
         return Button {
             selectedProgramDetail = ProgramTopicDetail(
@@ -551,8 +639,23 @@ struct CalendarView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .overlay {
-                // "New" green band on top-right
-                if item.program.isNew {
+                // Catch-up replaces NEW in the top-right status position.
+                if catchupAvailable {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Theme.catchup
+                                .frame(width: 4, height: 14)
+                                .clipShape(UnevenRoundedRectangle(
+                                    topLeadingRadius: 0,
+                                    bottomLeadingRadius: 2,
+                                    bottomTrailingRadius: 0,
+                                    topTrailingRadius: 4
+                                ))
+                        }
+                        Spacer()
+                    }
+                } else if item.program.isNew {
                     VStack {
                         HStack {
                             Spacer()
@@ -615,13 +718,35 @@ struct CalendarView: View {
 
     private var canNavigateBack: Bool {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
         switch viewMode {
         case .day:
-            return cal.startOfDay(for: selectedDate) > today
+            return cal.startOfDay(for: selectedDate) > earliestNavigableDate
         case .week:
-            return visibleDates.last.map { cal.startOfDay(for: $0) > today } ?? false
+            return visibleDates.first.map {
+                cal.startOfDay(for: $0) > earliestNavigableWeekStart
+            } ?? false
         }
+    }
+
+    private var earliestNavigableDate: Date {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        #if DISPATCHERPVR
+        return cal.date(byAdding: .day, value: -maximumCatchupDays, to: today) ?? today
+        #else
+        return today
+        #endif
+    }
+
+    private var earliestNavigableWeekStart: Date {
+        let cal = Calendar.current
+        let weekday = cal.component(.weekday, from: earliestNavigableDate)
+        let diff = weekday - cal.firstWeekday
+        return cal.date(
+            byAdding: .day,
+            value: -(diff < 0 ? diff + 7 : diff),
+            to: earliestNavigableDate
+        ) ?? earliestNavigableDate
     }
 
     private func navigateBack() {
@@ -629,10 +754,10 @@ struct CalendarView: View {
         switch viewMode {
         case .day:
             let newDate = cal.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
-            let today = cal.startOfDay(for: Date())
-            selectedDate = max(newDate, today)
+            selectedDate = max(newDate, earliestNavigableDate)
         case .week:
-            selectedDate = cal.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
+            let newDate = cal.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
+            selectedDate = max(newDate, earliestNavigableDate)
         }
     }
 

@@ -466,7 +466,10 @@ final class EPGCache: ObservableObject {
 
     // MARK: - Topic Matching
 
-    func matchingPrograms(keywords: [String]) async -> [MatchingProgram] {
+    func matchingPrograms(
+        keywords: [String],
+        includesCatchup: Bool = false
+    ) async -> [MatchingProgram] {
         let start = CFAbsoluteTimeGetCurrent()
         let epg = self.epg
         let channelMap = self.channelMap
@@ -481,7 +484,14 @@ final class EPGCache: ObservableObject {
                 guard let channel = channelMap[channelId] else { continue }
 
                 for program in programs {
-                    guard program.endDate > now else { continue }
+                    let isUpcoming = program.endDate > now
+                    let isCatchupAvailable = includesCatchup && CatchupAvailability.isAvailable(
+                        program: program,
+                        channelIsCatchup: channel.isCatchup,
+                        catchupDays: channel.catchupDays,
+                        now: now
+                    )
+                    guard isUpcoming || isCatchupAvailable else { continue }
 
                     let searchText = [
                         program.name,

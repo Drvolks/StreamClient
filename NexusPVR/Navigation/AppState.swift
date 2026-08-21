@@ -38,6 +38,9 @@ final class AppState: ObservableObject {
     @Published var selectedTopicKeyword: String = ""
     @Published var showingKeywordsEditor = false
     @Published var showingCalendar = false
+    /// Persists the calendar's visible day while macOS temporarily replaces
+    /// navigation with PlayerView during catch-up playback.
+    @Published var calendarSelectedDate = Date()
 
     // Recordings filter state (shared between RecordingsListView and iOS nav bar)
     @Published var recordingsFilter: RecordingsFilter = .completed
