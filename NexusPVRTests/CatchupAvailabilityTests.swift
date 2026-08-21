@@ -10,11 +10,11 @@ import Foundation
 @testable import NextPVR
 
 struct CatchupAvailabilityTests {
-    private func program(startingHoursAgo hoursAgo: Double, durationMinutes: Int = 60, now: Date) -> Program {
+    private func program(id: Int = 1, startingHoursAgo hoursAgo: Double, durationMinutes: Int = 60, now: Date) -> Program {
         let start = now.addingTimeInterval(-hoursAgo * 3600)
         let end = start.addingTimeInterval(TimeInterval(durationMinutes * 60))
         return Program(
-            id: 1,
+            id: id,
             name: "Test Show",
             subtitle: nil,
             desc: nil,
@@ -65,5 +65,23 @@ struct CatchupAvailabilityTests {
         let now = Date()
         let p = program(startingHoursAgo: 24 * 3 - 1, durationMinutes: 30, now: now) // ~3 days ago, within 7
         #expect(CatchupAvailability.isAvailable(program: p, channelIsCatchup: true, catchupDays: 7, now: now))
+    }
+
+    @Test("Catch-up browser keeps playable programs and sorts newest first")
+    func availableProgramsAreFilteredAndSorted() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let older = program(id: 1, startingHoursAgo: 20, now: now)
+        let newer = program(id: 2, startingHoursAgo: 3, now: now)
+        let stillAiring = program(id: 3, startingHoursAgo: 0.25, now: now)
+        let expired = program(id: 4, startingHoursAgo: 24 * 10, now: now)
+
+        let results = CatchupAvailability.availablePrograms(
+            from: [older, stillAiring, expired, newer],
+            channelIsCatchup: true,
+            catchupDays: 7,
+            now: now
+        )
+
+        #expect(results.map(\.id) == [2, 1])
     }
 }

@@ -369,6 +369,13 @@ final class EPGCache: ObservableObject {
 
     // MARK: - Programs Access
 
+    /// Complete cached EPG for one channel. Callers that need an archive-wide
+    /// view (rather than a single guide day) can filter this snapshot without
+    /// repeatedly scanning the same channel data for every date.
+    func allPrograms(for channelId: Int) -> [Program] {
+        epg[channelId] ?? []
+    }
+
     func programs(for channelId: Int, on date: Date) -> [Program] {
         let calendar = Calendar.current
         let dayStart = calendar.startOfDay(for: date)

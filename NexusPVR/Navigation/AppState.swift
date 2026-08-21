@@ -70,6 +70,12 @@ final class AppState: ObservableObject {
     @Published var selectedChannel: Channel?
     @Published var selectedProgram: Program?
     @Published var selectedRecording: Recording?
+    #if DISPATCHERPVR
+    /// Channel whose archive browser is opened from the Channels page.
+    /// Global navigation state lets macOS restore the destination after PlayerView
+    /// temporarily replaces the entire navigation hierarchy.
+    @Published var selectedCatchupChannel: Channel?
+    #endif
     #if os(tvOS)
     /// When true, the global tvOS escape handler must not move focus to the sidebar.
     @Published var tvosBlocksSidebarExitCommand = false

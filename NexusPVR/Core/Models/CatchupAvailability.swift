@@ -34,4 +34,24 @@ nonisolated enum CatchupAvailability {
         }
         return program.startDate >= earliestStart
     }
+
+    /// Filters a channel's cached EPG down to playable archive entries and
+    /// orders the list newest-first for the channel catch-up browser.
+    static func availablePrograms(
+        from programs: [Program],
+        channelIsCatchup: Bool,
+        catchupDays: Int,
+        now: Date = Date()
+    ) -> [Program] {
+        programs
+            .filter {
+                isAvailable(
+                    program: $0,
+                    channelIsCatchup: channelIsCatchup,
+                    catchupDays: catchupDays,
+                    now: now
+                )
+            }
+            .sorted { $0.startDate > $1.startDate }
+    }
 }
