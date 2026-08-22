@@ -803,6 +803,18 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         // software permanently before the first IDR frame arrives.
         mpv_set_option_string(mpv, "vd-lavc-software-fallback", "600")
 
+        // Deinterlacing (#142) — DVB/ATSC broadcasts are frequently interlaced
+        // (1080i50, 576i50, 1080i60). Without a deinterlacer these show combing
+        // and judder, worst during sport. `auto` (the default preference) only
+        // filters streams flagged as interlaced, so progressive channels are
+        // passed through unchanged. Field parity is taken from the stream.
+        // Note: on Apple platforms there is no VideoToolbox deinterlacer, so
+        // mpv runs the filter in software — hardware-decoded frames are
+        // downloaded automatically when the filter kicks in.
+        let deinterlaceMode = UserPreferences.load().deinterlaceMode
+        mpv_set_option_string(mpv, "deinterlace", deinterlaceMode.mpvValue)
+        mpv_set_option_string(mpv, "deinterlace-field-parity", "auto")
+
         // CPU threading for software decode (MPV recommends max 16)
         let threadCount = min(ProcessInfo.processInfo.processorCount * 2, 16)
         mpv_set_option_string(mpv, "vd-lavc-threads", "\(threadCount)")

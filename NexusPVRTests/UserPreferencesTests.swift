@@ -23,6 +23,7 @@ struct UserPreferencesTests {
         prefs.audioChannels = "stereo"
         prefs.subtitleSize = .large
         prefs.subtitleBackground = false
+        prefs.deinterlaceMode = .on
         prefs.preferredSubtitleLanguage = "eng"
         prefs.landingTab = .channels
         prefs.hideRecordings = true
@@ -38,6 +39,7 @@ struct UserPreferencesTests {
         #expect(decoded.audioChannels == prefs.audioChannels)
         #expect(decoded.subtitleSize == prefs.subtitleSize)
         #expect(decoded.subtitleBackground == prefs.subtitleBackground)
+        #expect(decoded.deinterlaceMode == prefs.deinterlaceMode)
         #expect(decoded.preferredSubtitleLanguage == prefs.preferredSubtitleLanguage)
         #expect(decoded.landingTab == prefs.landingTab)
         #expect(decoded.landingTabRawValue == prefs.landingTabRawValue)
@@ -57,6 +59,7 @@ struct UserPreferencesTests {
         #expect(prefs.audioChannels == "auto")
         #expect(prefs.subtitleSize == .medium)
         #expect(prefs.subtitleBackground == true)
+        #expect(prefs.deinterlaceMode == .auto)
         #expect(prefs.preferredSubtitleLanguage == nil)
         #expect(prefs.landingTab == .guide)
         #expect(prefs.landingTabRawValue == LandingTabOption.guide.rawValue)
@@ -64,6 +67,22 @@ struct UserPreferencesTests {
         #expect(prefs.theme == .system)
         #expect(prefs.themeRawValue == AppTheme.system.rawValue)
         #expect(prefs.updatedAt == .distantPast)
+    }
+
+    @Test("Decoding prefs written before deinterlacing defaults to Automatic")
+    func decodeLegacyWithoutDeinterlaceMode() throws {
+        // Blobs saved before #142 carry no `deinterlaceMode`; existing users
+        // get the recommended automatic mode rather than a decode failure.
+        let json = #"{"keywords": ["news"], "audioChannels": "stereo"}"#
+        let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+        #expect(prefs.deinterlaceMode == .auto)
+    }
+
+    @Test("DeinterlaceMode maps to the matching mpv option value")
+    func deinterlaceModeMpvValues() {
+        #expect(DeinterlaceMode.off.mpvValue == "no")
+        #expect(DeinterlaceMode.auto.mpvValue == "auto")
+        #expect(DeinterlaceMode.on.mpvValue == "yes")
     }
 
     @Test("Decoding legacy JSON without landingTab defaults to Guide")
