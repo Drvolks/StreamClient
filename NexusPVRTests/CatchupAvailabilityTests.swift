@@ -84,4 +84,44 @@ struct CatchupAvailabilityTests {
 
         #expect(results.map(\.id) == [2, 1])
     }
+
+    // MARK: - Restart-from-start gating (#143)
+
+    @Test("Airing program can be restarted from its start when catch-up is on")
+    func airingRestartAvailable() {
+        let now = Date()
+        let p = program(startingHoursAgo: 0.25, durationMinutes: 60, now: now)
+        #expect(CatchupAvailability.isAvailableFromStart(program: p, channelIsCatchup: true, catchupDays: 7, now: now))
+    }
+
+    @Test("Restart-from-start is off for channels without catch-up or with a zero window")
+    func airingRestartRequiresCatchupChannel() {
+        let now = Date()
+        let p = program(startingHoursAgo: 0.25, durationMinutes: 60, now: now)
+        #expect(!CatchupAvailability.isAvailableFromStart(program: p, channelIsCatchup: false, catchupDays: 7, now: now))
+        #expect(!CatchupAvailability.isAvailableFromStart(program: p, channelIsCatchup: true, catchupDays: 0, now: now))
+    }
+
+    @Test("Restart-from-start is off for ended programs — those use isAvailable")
+    func endedProgramIsNotRestartable() {
+        let now = Date()
+        let p = program(startingHoursAgo: 5, durationMinutes: 60, now: now)
+        #expect(!CatchupAvailability.isAvailableFromStart(program: p, channelIsCatchup: true, catchupDays: 7, now: now))
+        #expect(CatchupAvailability.isAvailable(program: p, channelIsCatchup: true, catchupDays: 7, now: now))
+    }
+
+    @Test("Restart-from-start is off for a program that hasn't started yet")
+    func futureProgramIsNotRestartable() {
+        let now = Date()
+        let p = program(startingHoursAgo: -1, durationMinutes: 60, now: now)
+        #expect(!CatchupAvailability.isAvailableFromStart(program: p, channelIsCatchup: true, catchupDays: 7, now: now))
+    }
+
+    @Test("An airing program that started before the archive window can't be restarted")
+    func airingProgramOutsideWindow() {
+        let now = Date()
+        // Marathon broadcast that started 10 days ago and is still running.
+        let p = program(startingHoursAgo: 24 * 10, durationMinutes: 60 * 24 * 11, now: now)
+        #expect(!CatchupAvailability.isAvailableFromStart(program: p, channelIsCatchup: true, catchupDays: 7, now: now))
+    }
 }
