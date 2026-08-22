@@ -24,6 +24,7 @@ struct SettingsView: View {
     @State private var subtitleMode: SubtitleMode = UserPreferences.load().subtitleMode
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
+    @State private var deinterlaceMode: DeinterlaceMode = UserPreferences.load().deinterlaceMode
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
     @State private var theme: AppTheme = UserPreferences.load().theme
@@ -61,6 +62,7 @@ struct SettingsView: View {
         case subtitleMode
         case subtitleSize
         case subtitleBackground
+        case deinterlace
         case renderer
         case landingTab
         case hideRecordings
@@ -219,6 +221,14 @@ struct SettingsView: View {
                                 icon: "speaker.wave.2"
                             ) {
                                 activeTVPopup = .audioOutput
+                            }
+                            tvSettingsRow(
+                                title: "Deinterlacing",
+                                value: deinterlaceMode.label,
+                                icon: deinterlaceMode.icon,
+                                detail: deinterlaceDescription
+                            ) {
+                                activeTVPopup = .deinterlace
                             }
                             tvSettingsRow(
                                 title: "Subtitles",
@@ -767,6 +777,8 @@ struct SettingsView: View {
             return "Seek Forward"
         case .audioOutput:
             return "Audio Output"
+        case .deinterlace:
+            return "Deinterlacing"
         case .subtitleMode:
             return "Subtitles"
         case .subtitleSize:
@@ -845,6 +857,20 @@ struct SettingsView: View {
                     prefs.save()
                 }
             ]
+        case .deinterlace:
+            return DeinterlaceMode.allCases.map { mode in
+                TVPopupOption(
+                    id: "settings-popup-deinterlace-\(mode.rawValue)",
+                    title: mode.label,
+                    isCurrent: deinterlaceMode == mode,
+                    isDestructive: false
+                ) {
+                    deinterlaceMode = mode
+                    var prefs = UserPreferences.load()
+                    prefs.deinterlaceMode = mode
+                    prefs.save()
+                }
+            }
         case .subtitleMode:
             return [
                 TVPopupOption(id: "settings-popup-subtitle-manual", title: "Manual", isCurrent: subtitleMode == .manual, isDestructive: false) {
@@ -1139,6 +1165,15 @@ struct SettingsView: View {
                 Text("Stereo").tag("stereo")
             }
 
+            Picker("Deinterlacing", selection: $deinterlaceMode) {
+                ForEach(DeinterlaceMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            Text(deinterlaceDescription)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+
             Picker("Subtitles", selection: $subtitleMode) {
                 Text("Manual").tag(SubtitleMode.manual)
                 Text("Auto").tag(SubtitleMode.auto)
@@ -1192,6 +1227,11 @@ struct SettingsView: View {
             prefs.audioChannels = audioChannels
             prefs.save()
         }
+        .onChange(of: deinterlaceMode) { _ in
+            var prefs = UserPreferences.load()
+            prefs.deinterlaceMode = deinterlaceMode
+            prefs.save()
+        }
         .onChange(of: subtitleMode) { _ in
             var prefs = UserPreferences.load()
             prefs.subtitleMode = subtitleMode
@@ -1229,6 +1269,13 @@ struct SettingsView: View {
         case .auto:
             return "Automatically select the last used subtitle language when available."
         }
+    }
+
+    /// Explains the selected deinterlacing mode (#142). Changing the mode
+    /// takes effect the next time playback starts, since mpv is configured
+    /// when the player is created.
+    private var deinterlaceDescription: String {
+        deinterlaceMode.summary + " Applies to the next stream you play."
     }
 
     private func rendererDescription(for api: GPUAPI) -> String {

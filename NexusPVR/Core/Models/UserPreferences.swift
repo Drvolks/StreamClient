@@ -18,6 +18,10 @@ nonisolated struct UserPreferences: Codable {
     var subtitleMode: SubtitleMode = .manual
     var subtitleSize: SubtitleSize = .medium
     var subtitleBackground: Bool = true
+    /// Deinterlacing mode applied by the player (#142). Defaults to `.auto`
+    /// so interlaced broadcasts (DVB 1080i50 / 576i50, ATSC 1080i60) play
+    /// without combing while progressive channels are left untouched.
+    var deinterlaceMode: DeinterlaceMode = .auto
     /// User-selectable tvOS UI font size (#107). Default `.medium`
     /// preserves the pre-feature visual output exactly — existing
     /// users see zero change on first launch after upgrade.
@@ -62,6 +66,25 @@ nonisolated struct UserPreferences: Codable {
     var theme: AppTheme {
         get { AppTheme(rawValue: themeRawValue) ?? .system }
         set { themeRawValue = newValue.rawValue }
+    }
+
+    /// User-selectable deinterlacing mode (#142). Nested here for the same
+    /// reason as `AppTheme` — the tvOS Top Shelf extension shares
+    /// `UserPreferences.swift` but not its sibling Core/Models files.
+    nonisolated enum DeinterlaceMode: String, CaseIterable, Identifiable, Codable {
+        case off = "Off"
+        case auto = "Auto"
+        case on = "On"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .off: return "Off"
+            case .auto: return "Automatic"
+            case .on: return "Always On"
+            }
+        }
     }
 
     /// User-selectable appearance override (#108). Nested here for the same
@@ -130,6 +153,7 @@ nonisolated struct UserPreferences: Codable {
         case subtitleMode
         case subtitleSize
         case subtitleBackground
+        case deinterlaceMode
         case uiFontSize
         case preferredSubtitleLanguage
         case guideShowGroupsInSidebar
@@ -163,6 +187,9 @@ nonisolated struct UserPreferences: Codable {
         subtitleMode = try container.decodeIfPresent(SubtitleMode.self, forKey: .subtitleMode) ?? .manual
         subtitleSize = try container.decodeIfPresent(SubtitleSize.self, forKey: .subtitleSize) ?? .medium
         subtitleBackground = try container.decodeIfPresent(Bool.self, forKey: .subtitleBackground) ?? true
+        // Prefs written before #142 have no `deinterlaceMode`; they decode to
+        // .auto, which is the recommended default for broadcast streams.
+        deinterlaceMode = try container.decodeIfPresent(DeinterlaceMode.self, forKey: .deinterlaceMode) ?? .auto
         // Forward- and backward-compat: a blob without `uiFontSize`
         // (any prefs written before #107) decodes to .medium so
         // existing users see no visual change.
@@ -190,6 +217,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(subtitleMode, forKey: .subtitleMode)
         try container.encode(subtitleSize, forKey: .subtitleSize)
         try container.encode(subtitleBackground, forKey: .subtitleBackground)
+        try container.encode(deinterlaceMode, forKey: .deinterlaceMode)
         try container.encode(uiFontSize, forKey: .uiFontSize)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
         try container.encode(guideShowGroupsInSidebar, forKey: .guideShowGroupsInSidebar)
