@@ -569,4 +569,49 @@ struct GuideScrollHelperTests {
         #expect(isAiring2 == true)
         #expect(padding2 == 0) // Program still starts at scroll target
     }
+
+    // MARK: - Initial current-time positioning (#140)
+
+    @Test("Expected offset spans midnight to the current half-hour on catch-up timelines")
+    func expectedOffsetFromMidnight() {
+        let calendar = Calendar.current
+        let midnight = calendar.startOfDay(for: Date())
+        let target = makeDate(hour: 16, minute: 30)
+        let offset = GuideScrollHelper.expectedScrollOffsetX(
+            timelineStart: midnight,
+            scrollTarget: target,
+            hourWidth: 100
+        )
+        #expect(offset == 1650) // 16.5 hours * 100pt
+    }
+
+    @Test("Expected offset is zero when the timeline already starts at the target")
+    func expectedOffsetAtTimelineStart() {
+        let target = makeDate(hour: 9, minute: 0)
+        let offset = GuideScrollHelper.expectedScrollOffsetX(
+            timelineStart: target,
+            scrollTarget: target,
+            hourWidth: 100
+        )
+        #expect(offset == 0)
+    }
+
+    @Test("Expected offset is zero when the target precedes the timeline start")
+    func expectedOffsetBeforeTimelineStart() {
+        let offset = GuideScrollHelper.expectedScrollOffsetX(
+            timelineStart: makeDate(hour: 12, minute: 0),
+            scrollTarget: makeDate(hour: 9, minute: 30),
+            hourWidth: 100
+        )
+        #expect(offset == 0)
+    }
+
+    @Test("Expected offset scales with the hour column width")
+    func expectedOffsetScalesWithHourWidth() {
+        let calendar = Calendar.current
+        let midnight = calendar.startOfDay(for: Date())
+        let target = makeDate(hour: 2, minute: 0)
+        #expect(GuideScrollHelper.expectedScrollOffsetX(timelineStart: midnight, scrollTarget: target, hourWidth: 150) == 300)
+        #expect(GuideScrollHelper.expectedScrollOffsetX(timelineStart: midnight, scrollTarget: target, hourWidth: 300) == 600)
+    }
 }

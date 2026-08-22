@@ -719,6 +719,56 @@ struct GuideView: View {
 
     #if !os(tvOS)
     @State private var scrollViewHeight: CGFloat = 0
+    /// Guards the once-per-appearance current-time positioning (#140).
+    @State private var hasCompletedInitialScroll = false
+    @State private var initialScrollTask: Task<Void, Never>?
+
+    /// Positions the timeline on the current half-hour when the guide appears.
+    ///
+    /// Catch-up builds keep the whole day in the timeline, so the grid starts
+    /// at midnight and only reaches "now" by scrolling. A single scroll
+    /// request issued before the rows have landed is silently dropped, which
+    /// left the guide sitting at 00:00 on first launch (#140) — so this
+    /// retries until the observed offset shows the scroll took effect.
+    /// Navigating the timeline afterwards moves the offset too, which ends the
+    /// retries as well: the guide never yanks itself back.
+    private func startInitialScroll(using proxy: ScrollViewProxy) {
+        guard !hasCompletedInitialScroll, initialScrollTask == nil else { return }
+
+        #if os(macOS)
+        let hasCatchupReturnTarget = appState.catchupGuideReturnTime != nil
+        #else
+        let hasCatchupReturnTarget = false
+        #endif
+        guard !hasCatchupReturnTarget, !preservesGuidePositionAfterCatchup else { return }
+
+        // Nothing to scroll against until the grid has rows.
+        guard !viewModel.channels.isEmpty else { return }
+
+        initialScrollTask = Task { @MainActor in
+            defer { initialScrollTask = nil }
+            hasCompletedInitialScroll = true
+
+            guard let targetId = updateScrollTarget() else { return }
+            let expectedOffset = GuideScrollHelper.expectedScrollOffsetX(
+                timelineStart: viewModel.timelineStart,
+                scrollTarget: currentTimelineHour ?? viewModel.timelineStart,
+                hourWidth: hourWidth
+            )
+
+            for attempt in 0..<8 {
+                proxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                try? await Task.sleep(for: .milliseconds(attempt == 0 ? 150 : 300))
+                guard !Task.isCancelled else { return }
+                // `anchor` leaves the target inset from the leading edge, so
+                // compare against a fraction of the expected distance rather
+                // than the exact value.
+                if expectedOffset <= 1 || gridHorizontalOffset > expectedOffset * 0.5 {
+                    return
+                }
+            }
+        }
+    }
 
     private var iOSMacOSGuideContent: some View {
         // Main grid — single LazyVStack for guaranteed lazy rendering
@@ -825,20 +875,20 @@ struct GuideView: View {
             }
             #endif
             .onAppear {
-                #if os(macOS)
-                let hasCatchupReturnTarget = appState.catchupGuideReturnTime != nil
-                #else
-                let hasCatchupReturnTarget = false
-                #endif
-
-                if !hasCatchupReturnTarget && !preservesGuidePositionAfterCatchup {
-                    updateScrollTarget()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        if let targetId = scrollTargetId {
-                            programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
-                        }
-                    }
-                }
+                startInitialScroll(using: programProxy)
+            }
+            .onChange(of: viewModel.channels.count) {
+                // The first rows can land after the grid appears; a scroll
+                // requested against an empty grid never sticks (#140).
+                startInitialScroll(using: programProxy)
+            }
+            .onChange(of: epgCache.isFullyLoaded) {
+                startInitialScroll(using: programProxy)
+            }
+            .onDisappear {
+                initialScrollTask?.cancel()
+                initialScrollTask = nil
+                hasCompletedInitialScroll = false
             }
             #if os(macOS)
             .task {
