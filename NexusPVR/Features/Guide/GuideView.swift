@@ -719,9 +719,55 @@ struct GuideView: View {
 
     #if !os(tvOS)
     @State private var scrollViewHeight: CGFloat = 0
+    @State private var scrollViewWidth: CGFloat = 0
+    /// Hour offsets from `timelineStart` currently worth rendering (#141).
+    /// `nil` until the scroll view reports its size — every program is drawn
+    /// until then, so the grid is never blank on first paint.
+    @State private var visibleHourWindow: ClosedRange<Int>?
     /// Guards the once-per-appearance current-time positioning (#140).
     @State private var hasCompletedInitialScroll = false
     @State private var initialScrollTask: Task<Void, Never>?
+
+    /// Recomputes which hour slots the grid should render, quantized to whole
+    /// hours with one hour of slack on each side (#141).
+    ///
+    /// Rows are positioned by offset inside a full-width ZStack, so nothing
+    /// vertical or horizontal shifts when the window narrows — the cells
+    /// outside it simply are not built. Quantizing matters: keying the filter
+    /// on the raw offset would rebuild every row on every scroll frame, which
+    /// costs more than it saves. This only changes state when the scroll
+    /// crosses an hour boundary.
+    private func updateVisibleHourWindow() {
+        guard scrollViewWidth > 0, hourWidth > 0 else { return }
+
+        // Content x of the timeline's first hour, past the channel column.
+        let timelineOriginX = channelWidth
+        let leadingHour = Int(floor((gridHorizontalOffset - timelineOriginX) / hourWidth)) - 1
+        let trailingHour = Int(ceil((gridHorizontalOffset + scrollViewWidth - timelineOriginX) / hourWidth)) + 1
+        let window = max(0, leadingHour)...max(0, trailingHour)
+
+        if visibleHourWindow != window {
+            visibleHourWindow = window
+        }
+    }
+
+    /// Narrows a row's programs to the ones intersecting the rendered window.
+    /// Cells are absolutely positioned, so dropping the rest changes nothing
+    /// about where the survivors land (#141).
+    private func renderedPrograms(from programs: [Program]) -> [Program] {
+        guard let window = visibleTimeWindow else { return programs }
+        return programs.filter { $0.endDate > window.start && $0.startDate < window.end }
+    }
+
+    /// The time span the grid is currently rendering, or `nil` for "everything".
+    private var visibleTimeWindow: (start: Date, end: Date)? {
+        guard let visibleHourWindow else { return nil }
+        let timelineStart = viewModel.timelineStart
+        return (
+            start: timelineStart.addingTimeInterval(Double(visibleHourWindow.lowerBound) * 3600),
+            end: timelineStart.addingTimeInterval(Double(visibleHourWindow.upperBound + 1) * 3600)
+        )
+    }
 
     /// Positions the timeline on the current half-hour when the guide appears.
     ///
@@ -831,15 +877,18 @@ struct GuideView: View {
             .refreshable {
                 await refreshGuide()
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.containerSize.height
+            .onScrollGeometryChange(for: CGSize.self) { geo in
+                geo.containerSize
             } action: { _, new in
-                scrollViewHeight = new
+                scrollViewHeight = new.height
+                scrollViewWidth = new.width
+                updateVisibleHourWindow()
             }
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 geo.contentOffset.x
             } action: { _, new in
                 gridHorizontalOffset = new
+                updateVisibleHourWindow()
             }
             #if os(iOS)
             .onScrollGeometryChange(for: CGFloat.self) { geo in
@@ -1790,16 +1839,25 @@ struct GuideView: View {
 
     private func programsRow(_ channel: Channel) -> some View {
         let timelineStart = viewModel.timelineStart
-        let programs = viewModel.visiblePrograms(for: channel)
-        // Calculate scroll target: :00 or :30 based on current minute
-        let scrollTarget = GuideScrollHelper.calculateScrollTarget(currentTime: Date())
+        let dayPrograms = viewModel.visiblePrograms(for: channel)
+        #if os(tvOS)
+        let programs = dayPrograms
+        #else
+        // Only build the cells the viewer can actually see (#141).
+        let programs = renderedPrograms(from: dayPrograms)
+        #endif
+        // Scroll target: :00 or :30 based on current minute
+        let scrollTarget = viewModel.scrollTargetTime
 
         return ZStack(alignment: .leading) {
             // Background for the full timeline
             Color.clear
                 .frame(width: hourWidth * CGFloat(viewModel.hoursToShow.count))
 
-            if programs.isEmpty {
+            // Keyed off the whole day, not the rendered window, so scrolling
+            // into an empty stretch of a populated row doesn't swap in the
+            // channel-name placeholder.
+            if dayPrograms.isEmpty {
                 // Show channel name as placeholder so user can still tap to play
                 Button {
                     playLiveChannel(channel)
@@ -1821,11 +1879,7 @@ struct GuideView: View {
                 let matchesKeywords = viewModel.keywordMatchedProgramIds.contains(program.id)
                 let sport = viewModel.detectedSport(for: program)
                 #if DISPATCHERPVR
-                let catchupAvailable = CatchupAvailability.isAvailable(
-                    program: program,
-                    channelIsCatchup: channel.isCatchup,
-                    catchupDays: channel.catchupDays
-                )
+                let catchupAvailable = viewModel.isCatchupAvailable(program, on: channel)
                 #else
                 let catchupAvailable = false
                 #endif

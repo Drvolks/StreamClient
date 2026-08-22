@@ -52,6 +52,52 @@ final class NexusPVRUITests: XCTestCase {
     }
 
     #if os(iOS)
+    /// The grid only builds the programme cells inside the visible time
+    /// window (#141), so scrolling must keep filling it — horizontally as the
+    /// window moves along the timeline, and vertically as rows are realized.
+    @MainActor
+    func testGuideKeepsRenderingProgramsWhileScrolling() throws {
+        let app = launchApp()
+        navigateToTab("Guide", app: app)
+        XCTAssertTrue(waitForGuideContent(in: app), "Guide content should be loaded")
+
+        let grid = app.scrollViews["guide-view"].firstMatch
+        let programCells = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'guide-program-'"))
+        XCTAssertTrue(waitForCondition(timeout: 8) { programCells.count > 0 }, "Guide should render programme cells")
+
+        guard grid.waitForExistence(timeout: 5) else {
+            throw XCTSkip("Guide scroll view is not exposed on this platform")
+        }
+
+        // Forward along the timeline, then back to where we started.
+        for _ in 0..<3 {
+            grid.swipeLeft()
+            pause(0.4)
+            XCTAssertTrue(
+                waitForCondition(timeout: 4) { programCells.count > 0 },
+                "Programme cells should keep rendering while scrolling forward"
+            )
+        }
+
+        grid.swipeDown()
+        pause(0.4)
+        XCTAssertTrue(
+            waitForCondition(timeout: 4) { programCells.count > 0 },
+            "Programme cells should keep rendering while scrolling vertically"
+        )
+
+        for _ in 0..<3 {
+            grid.swipeRight()
+            pause(0.4)
+        }
+        XCTAssertTrue(
+            waitForCondition(timeout: 4) { programCells.count > 0 },
+            "Programme cells should keep rendering after scrolling back"
+        )
+    }
+    #endif
+
+    #if os(iOS)
     /// A currently airing program offers `Watch Live`, and the catch-up
     /// restart action (#143) is a separate control — never the same button.
     /// Demo/NextPVR data has no catch-up channels, so the restart action is

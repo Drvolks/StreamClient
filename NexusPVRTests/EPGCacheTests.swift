@@ -54,6 +54,19 @@ struct EPGCacheTests {
         #expect(cache.isFullyLoaded == false)
     }
 
+    // MARK: - EPG generation (#141)
+
+    @Test("epgGeneration starts at zero and advances when the EPG is replaced")
+    func epgGenerationAdvancesOnMutation() {
+        let cache = EPGCache()
+        #expect(cache.epgGeneration == 0)
+
+        // invalidate() reassigns `epg`, which is what consumers key their
+        // memoized slices on.
+        cache.invalidate()
+        #expect(cache.epgGeneration > 0)
+    }
+
     // MARK: - Refresh
 
     @Test("refresh keeps cached data when the server is not configured")

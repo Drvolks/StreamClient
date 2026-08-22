@@ -55,23 +55,107 @@ final class GuideViewModel: ObservableObject {
     // Cached sport detection results (avoids re-running regex per render)
     private var sportCache: [Int: Sport?] = [:]
 
+    // Cached per-channel programs for the selected day (#141)
+    private var programsCache: [Int: [Program]] = [:]
+    private var programsCacheDayStart: Date?
+    private var programsCacheGeneration: Int?
+
+    // Cached catch-up availability per program (#141) — the underlying check
+    // walks the calendar, and the guide asked it once per cell per pass.
+    private var catchupAvailabilityCache: [Int: Bool] = [:]
+    private var catchupAvailabilityBucket: Int?
+
     // Keyword-matched program IDs (O(1) lookup per cell)
     @Published private(set) var keywordMatchedProgramIds: Set<Int> = []
 
     // Reference to EPGCache (set during loadData)
     weak var epgCache: EPGCache?
 
-    var timelineStart: Date {
+    /// Memoized timeline geometry (#141).
+    ///
+    /// `timelineStart` / `hoursToShow` / `hourSlotCount` are read once per
+    /// program cell during a guide pass, and each recomputation walked the
+    /// calendar 24 times. They only actually change when the selected day, the
+    /// past-dates flag, or the current half-hour changes — so they are
+    /// computed once per those inputs and served from here afterwards.
+    /// Validity is checked with plain `Date` comparisons and one integer
+    /// division, no calendar arithmetic.
+    private struct TimelineGeometry {
+        let dayStart: Date
+        let dayEnd: Date
+        let allowsPastDates: Bool
+        let halfHourBucket: Int
+        let start: Date
+        let hours: [Date]
+
+        func isValid(for date: Date, allowsPastDates: Bool, bucket: Int) -> Bool {
+            self.allowsPastDates == allowsPastDates
+                && self.halfHourBucket == bucket
+                && date >= dayStart
+                && date < dayEnd
+        }
+    }
+
+    private var timelineGeometry: TimelineGeometry?
+    private var cachedScrollTarget: Date?
+    private var cachedScrollTargetBucket: Int?
+
+    private static func halfHourBucket(for now: Date) -> Int {
+        Int(now.timeIntervalSince1970 / 1800)
+    }
+
+    private func geometry(now: Date = Date()) -> TimelineGeometry {
+        let bucket = Self.halfHourBucket(for: now)
+        if let cached = timelineGeometry,
+           cached.isValid(for: selectedDate, allowsPastDates: allowsPastDates, bucket: bucket) {
+            return cached
+        }
+
         let calendar = Calendar.current
-        if isOnToday && !allowsPastDates {
+        let dayStart = calendar.startOfDay(for: selectedDate)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 3600)
+        let isToday = calendar.isDate(selectedDate, inSameDayAs: now)
+
+        let start: Date
+        if isToday && !allowsPastDates {
             // Start from current half-hour (round down to :00 or :30)
-            let now = Date()
             let minute = calendar.component(.minute, from: now)
             let roundedMinute = minute >= 30 ? 30 : 0
-            return calendar.date(bySettingHour: calendar.component(.hour, from: now),
-                                minute: roundedMinute, second: 0, of: now) ?? now
+            start = calendar.date(bySettingHour: calendar.component(.hour, from: now),
+                                  minute: roundedMinute, second: 0, of: now) ?? now
+        } else {
+            start = dayStart
         }
-        return calendar.startOfDay(for: selectedDate)
+
+        let count = Self.hourCount(for: selectedDate, now: now, includesPastHours: allowsPastDates)
+        var hours: [Date] = []
+        hours.reserveCapacity(count)
+        var current = start
+        for _ in 0..<count {
+            hours.append(current)
+            current = calendar.date(byAdding: .hour, value: 1, to: current) ?? current
+        }
+
+        let geometry = TimelineGeometry(
+            dayStart: dayStart,
+            dayEnd: dayEnd,
+            allowsPastDates: allowsPastDates,
+            halfHourBucket: bucket,
+            start: start,
+            hours: hours
+        )
+        timelineGeometry = geometry
+        return geometry
+    }
+
+    var timelineStart: Date {
+        geometry().start
+    }
+
+    /// Number of hour slots in the rendered timeline, without rebuilding the
+    /// hour array to count it.
+    var hourSlotCount: Int {
+        geometry().hours.count
     }
 
     var hasActiveFilters: Bool {
@@ -117,21 +201,42 @@ final class GuideViewModel: ObservableObject {
     }
 
     var hoursToShow: [Date] {
-        var hours: [Date] = []
-        let calendar = Calendar.current
-        var current = timelineStart
-        let count = Self.hourCount(
-            for: selectedDate,
-            now: Date(),
-            includesPastHours: allowsPastDates
-        )
-
-        for _ in 0..<count {
-            hours.append(current)
-            current = calendar.date(byAdding: .hour, value: 1, to: current) ?? current
-        }
-        return hours
+        geometry().hours
     }
+
+    /// The half-hour the guide scrolls to and aligns live cell text against,
+    /// memoized per half-hour bucket (#141) — it was recomputed per row.
+    var scrollTargetTime: Date {
+        let bucket = Self.halfHourBucket(for: Date())
+        if let cached = cachedScrollTarget, cachedScrollTargetBucket == bucket {
+            return cached
+        }
+        let target = GuideScrollHelper.calculateScrollTarget(currentTime: Date())
+        cachedScrollTarget = target
+        cachedScrollTargetBucket = bucket
+        return target
+    }
+
+    #if DISPATCHERPVR
+    /// Whether `program` can be played back via catch-up, memoized per program
+    /// for the current half-hour (#141). The window slides with `now`, so the
+    /// cache is dropped whenever the half-hour bucket changes.
+    func isCatchupAvailable(_ program: Program, on channel: Channel) -> Bool {
+        let bucket = Self.halfHourBucket(for: Date())
+        if catchupAvailabilityBucket != bucket {
+            catchupAvailabilityCache = [:]
+            catchupAvailabilityBucket = bucket
+        }
+        if let cached = catchupAvailabilityCache[program.id] { return cached }
+        let available = CatchupAvailability.isAvailable(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+        catchupAvailabilityCache[program.id] = available
+        return available
+    }
+    #endif
 
     /// Returns cached sport detection result for a program
     func detectedSport(for program: Program) -> Sport? {
@@ -237,8 +342,7 @@ final class GuideViewModel: ObservableObject {
     /// preserves earlier programs when catch-up expands today's timeline to
     /// midnight, while keeping the existing future-only behavior elsewhere.
     func visiblePrograms(for channel: Channel) -> [Program] {
-        guard let cache = epgCache else { return [] }
-        let programs = cache.programs(for: channel.id, on: selectedDate)
+        let programs = programsOnSelectedDate(for: channel)
         if isOnToday {
             // Show any program that overlaps the visible timeline (ends after timeline start)
             let start = timelineStart
@@ -247,9 +351,32 @@ final class GuideViewModel: ObservableObject {
         return programs
     }
 
+    /// The selected day's programs for a channel, memoized (#141).
+    ///
+    /// `EPGCache.programs(for:on:)` scans the channel's whole multi-day array
+    /// and does calendar work to bound the day; the guide asked for it once per
+    /// row per pass. The cache is keyed on the selected day plus the cache's
+    /// `epgGeneration`, so a background merge or a refresh drops it.
+    private func programsOnSelectedDate(for channel: Channel) -> [Program] {
+        guard let cache = epgCache else { return [] }
+        let geometry = geometry()
+        let generation = cache.epgGeneration
+
+        if programsCacheDayStart != geometry.dayStart || programsCacheGeneration != generation {
+            programsCache = [:]
+            programsCacheDayStart = geometry.dayStart
+            programsCacheGeneration = generation
+        }
+
+        if let cached = programsCache[channel.id] { return cached }
+        let programs = cache.programs(for: channel.id, on: selectedDate)
+        programsCache[channel.id] = programs
+        return programs
+    }
+
     func programWidth(for program: Program, hourWidth: CGFloat, startTime: Date) -> CGFloat {
         let visibleStart = max(program.startDate, startTime)
-        let timelineEnd = startTime.addingTimeInterval(Double(hoursToShow.count) * 3600)
+        let timelineEnd = startTime.addingTimeInterval(Double(hourSlotCount) * 3600)
         let visibleEnd = min(program.endDate, timelineEnd)
         let duration = visibleEnd.timeIntervalSince(visibleStart)
         return max(CGFloat(duration / 3600) * hourWidth, 50)

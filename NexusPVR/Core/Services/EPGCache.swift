@@ -34,7 +34,14 @@ final class EPGCache: ObservableObject {
     @Published private(set) var earliestEPGDate: Date?
 
     private(set) var channelMap: [Int: Channel] = [:]
-    private(set) var epg: [Int: [Program]] = [:]
+    private(set) var epg: [Int: [Program]] = [:] {
+        didSet { epgGeneration &+= 1 }
+    }
+    /// Bumped whenever `epg` is replaced or merged into. Views that memoize
+    /// derived slices of the EPG (see `GuideViewModel.programs(for:)`) key
+    /// their caches on this so a background merge or refresh invalidates them
+    /// without any explicit notification (#141).
+    private(set) var epgGeneration: Int = 0
     private var loadedDays: Set<String> = [] // "yyyy-MM-dd" keys
     private var backgroundLoadTask: Task<Void, Never>?
     private var isLoadInProgress = false
