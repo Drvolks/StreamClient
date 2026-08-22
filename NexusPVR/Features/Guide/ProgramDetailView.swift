@@ -486,6 +486,19 @@ struct ProgramDetailView: View {
             catchupDays: channel.catchupDays
         )
     }
+
+    /// Whether the currently airing program can be restarted from its
+    /// scheduled start via catch-up (#143). Also requires the channel UUID
+    /// the mint call needs, so the button stays hidden when that metadata
+    /// hasn't been loaded.
+    private var catchupFromStartAvailable: Bool {
+        guard client.channelUUID(forChannelId: channel.id) != nil else { return false }
+        return CatchupAvailability.isAvailableFromStart(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        )
+    }
     #endif
 
     private var actionSection: some View {
@@ -576,6 +589,36 @@ struct ProgramDetailView: View {
                     }
                     #endif
                 }
+
+                #if DISPATCHERPVR
+                // Restart the airing program from its scheduled start using
+                // the same catch-up session API as the archive flow (#143).
+                // Skipped when an in-progress recording already offers its own
+                // "Watch from Beginning" button just above.
+                if catchupFromStartAvailable, completedRecording == nil, inProgressRecording == nil {
+                    Button {
+                        watchCatchup()
+                    } label: {
+                        HStack {
+                            if isStartingCatchup {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "backward.end.fill")
+                                Text("Watch from Beginning")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    #if os(tvOS)
+                    .buttonStyle(TVProgramPopupButtonStyle(variant: .accent))
+                    #else
+                    .buttonStyle(AccentButtonStyle())
+                    #endif
+                    .disabled(isStartingCatchup)
+                    .accessibilityIdentifier("watch-from-beginning-catchup-button")
+                }
+                #endif
 
                 Button {
                     watchLive()

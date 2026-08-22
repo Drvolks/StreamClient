@@ -51,6 +51,64 @@ final class NexusPVRUITests: XCTestCase {
         XCTAssertTrue(waitForGuideContent(in: app), "Guide should be visible after player dismissal")
     }
 
+    #if os(iOS)
+    /// A currently airing program offers `Watch Live`, and the catch-up
+    /// restart action (#143) is a separate control — never the same button.
+    /// Demo/NextPVR data has no catch-up channels, so the restart action is
+    /// expected to be absent there; when a catch-up channel is present it must
+    /// coexist with `Watch Live` rather than replace it.
+    @MainActor
+    func testLiveProgramDetailOffersLiveAndCatchupAsDistinctActions() throws {
+        let app = launchApp()
+        navigateToTab("Guide", app: app)
+        XCTAssertTrue(waitForGuideContent(in: app), "Guide content should be loaded before opening details")
+
+        let watchLive = app.buttons["watch-live-button"].firstMatch
+        let watchFromBeginning = app.buttons["watch-from-beginning-catchup-button"].firstMatch
+
+        let programButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'guide-program-'"))
+        XCTAssertTrue(waitForCondition(timeout: 5) { programButtons.count > 0 })
+
+        var foundLiveProgram = false
+        for index in 0..<min(programButtons.count, 12) {
+            let button = programButtons.element(boundBy: index)
+            guard button.exists else { continue }
+            let frame = button.frame
+            guard frame.width > 1, frame.height > 1 else { continue }
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            pause(1.0)
+
+            if watchLive.waitForExistence(timeout: 1.5) {
+                foundLiveProgram = true
+                break
+            }
+
+            if app.otherElements["player-view"].exists {
+                dismissPlayer(app: app)
+            } else {
+                dismissPresentedDetail(app: app)
+            }
+            pause(0.3)
+        }
+
+        try XCTSkipUnless(foundLiveProgram, "No currently airing program was reachable in the visible guide window")
+
+        XCTAssertTrue(watchLive.exists, "A currently airing program should offer Watch Live")
+        XCTAssertTrue(watchLive.isEnabled, "Watch Live should be actionable for an airing program")
+
+        if watchFromBeginning.exists {
+            XCTAssertTrue(watchFromBeginning.isEnabled, "Catch-up restart should be actionable when offered")
+            XCTAssertNotEqual(
+                watchFromBeginning.frame,
+                watchLive.frame,
+                "Watch from Beginning and Watch Live must be two distinct controls"
+            )
+        }
+
+        dismissPresentedDetail(app: app)
+    }
+    #endif
+
     @MainActor
     func testSchedulingFromGuideAppearsInScheduledRecordings() throws {
         let app = launchApp()

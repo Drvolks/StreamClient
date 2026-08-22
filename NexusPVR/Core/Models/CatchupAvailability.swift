@@ -35,6 +35,29 @@ nonisolated enum CatchupAvailability {
         return program.startDate >= earliestStart
     }
 
+    /// Whether a **currently airing** `program` can be restarted from its
+    /// scheduled start via catch-up (#143).
+    ///
+    /// Same channel/window gating as `isAvailable`, but for the live case:
+    /// the program must have started and not yet ended. The archive segment
+    /// for the already-aired portion is what the mint call asks for, so the
+    /// start still has to fall inside the rolling `catchup_days` window.
+    /// As with `isAvailable`, the server remains the source of truth.
+    static func isAvailableFromStart(
+        program: Program,
+        channelIsCatchup: Bool,
+        catchupDays: Int,
+        now: Date = Date()
+    ) -> Bool {
+        guard channelIsCatchup, catchupDays > 0 else { return false }
+        // Only the live window — ended programs go through `isAvailable`.
+        guard program.startDate <= now, now < program.endDate else { return false }
+        guard let earliestStart = Calendar.current.date(byAdding: .day, value: -catchupDays, to: now) else {
+            return false
+        }
+        return program.startDate >= earliestStart
+    }
+
     /// Filters a channel's cached EPG down to playable archive entries and
     /// orders the list newest-first for the channel catch-up browser.
     static func availablePrograms(
