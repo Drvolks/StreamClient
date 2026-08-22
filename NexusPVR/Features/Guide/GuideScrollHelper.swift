@@ -45,6 +45,27 @@ nonisolated enum GuideScrollHelper {
         return "scroll-\(scrollTimestamp)"
     }
 
+    /// Horizontal distance, in points, between the timeline's left edge and
+    /// `scrollTarget` — i.e. where the guide should sit once it has been
+    /// positioned at the current time (#140).
+    ///
+    /// Catch-up builds keep the whole day in the timeline, so the guide opens
+    /// at midnight and has to scroll right to reach "now". A caller can compare
+    /// this against the observed scroll offset to tell whether its initial
+    /// `scrollTo` actually took effect, and retry while the answer is no.
+    /// Returns 0 when the target is at or before the timeline start (the
+    /// non-catch-up case, where the timeline already begins at the current
+    /// half-hour and no scrolling is needed).
+    static func expectedScrollOffsetX(
+        timelineStart: Date,
+        scrollTarget: Date,
+        hourWidth: CGFloat
+    ) -> CGFloat {
+        let seconds = scrollTarget.timeIntervalSince(timelineStart)
+        guard seconds > 0 else { return 0 }
+        return CGFloat(seconds / 3600) * hourWidth
+    }
+
     /// Calculates the leading padding for a program cell to align text with the visible scroll position
     /// - Parameters:
     ///   - programStart: The program's start time

@@ -84,6 +84,40 @@ struct GuideViewModelTests {
         #endif
     }
 
+    // MARK: - Timeline anchoring (#140)
+
+    @Test("Catch-up timelines start at midnight, so the guide must scroll to reach now")
+    func catchupTimelineStartsAtMidnight() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        let midnight = Calendar.current.startOfDay(for: Date())
+        #expect(vm.timelineStart == midnight)
+
+        // The distance the guide has to travel to sit on the current
+        // half-hour — zero would mean no scroll is needed, which is exactly
+        // the assumption that left the guide at 00:00 (#140).
+        let target = GuideScrollHelper.calculateScrollTarget(currentTime: Date())
+        let offset = GuideScrollHelper.expectedScrollOffsetX(
+            timelineStart: vm.timelineStart,
+            scrollTarget: target,
+            hourWidth: 150
+        )
+        #expect(offset == CGFloat(target.timeIntervalSince(midnight) / 3600) * 150)
+    }
+
+    @Test("Without catch-up the timeline already starts at the current half-hour")
+    func regularTimelineStartsAtNow() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = false
+        let target = GuideScrollHelper.calculateScrollTarget(currentTime: Date())
+        #expect(vm.timelineStart == target)
+        #expect(GuideScrollHelper.expectedScrollOffsetX(
+            timelineStart: vm.timelineStart,
+            scrollTarget: target,
+            hourWidth: 150
+        ) == 0)
+    }
+
     @Test("previousDay moves backward from a future date")
     func previousDayMovesBack() {
         let vm = GuideViewModel()
