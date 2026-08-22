@@ -206,6 +206,61 @@ struct GuideViewModelTests {
         #expect(Calendar.current.component(.hour, from: vm.hoursToShow[0]) == 0)
     }
 
+    // MARK: - Memoized timeline geometry (#141)
+
+    @Test("Repeated timeline reads return identical geometry")
+    func timelineGeometryIsStableAcrossReads() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        #expect(vm.timelineStart == vm.timelineStart)
+        #expect(vm.hoursToShow == vm.hoursToShow)
+        #expect(vm.hourSlotCount == vm.hoursToShow.count)
+    }
+
+    @Test("Changing the selected day recomputes the memoized timeline")
+    func timelineGeometryFollowsSelectedDate() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        #expect(Calendar.current.isDateInToday(vm.timelineStart))
+
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        vm.selectedDate = tomorrow
+        #expect(vm.timelineStart == Calendar.current.startOfDay(for: tomorrow))
+        #expect(vm.hoursToShow.first == Calendar.current.startOfDay(for: tomorrow))
+        #expect(vm.hourSlotCount == 24)
+    }
+
+    @Test("Changing allowsPastDates recomputes the memoized timeline")
+    func timelineGeometryFollowsPastDatesFlag() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        #expect(vm.timelineStart == Calendar.current.startOfDay(for: Date()))
+
+        vm.allowsPastDates = false
+        let minute = Calendar.current.component(.minute, from: vm.timelineStart)
+        #expect(minute == 0 || minute == 30)
+        #expect(vm.timelineStart > Calendar.current.startOfDay(for: Date()) || minute == 0)
+    }
+
+    @Test("scrollTargetTime matches the helper and is stable across reads")
+    func scrollTargetTimeIsMemoized() {
+        let vm = GuideViewModel()
+        let expected = GuideScrollHelper.calculateScrollTarget(currentTime: Date())
+        #expect(vm.scrollTargetTime == expected)
+        #expect(vm.scrollTargetTime == vm.scrollTargetTime)
+    }
+
+    @Test("hourSlotCount matches hourCount for the selected date")
+    func hourSlotCountMatchesHourCount() {
+        let vm = GuideViewModel()
+        vm.allowsPastDates = true
+        #expect(vm.hourSlotCount == GuideViewModel.hourCount(for: vm.selectedDate, includesPastHours: true))
+
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        vm.selectedDate = tomorrow
+        #expect(vm.hourSlotCount == GuideViewModel.hourCount(for: tomorrow, includesPastHours: true))
+    }
+
     // MARK: - hourCount
 
     @Test("hourCount enforces minimum 6 hours even late at night")
