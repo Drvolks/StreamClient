@@ -86,9 +86,10 @@ struct PlayerView: View {
     /// extrapolated between polls (the buffer grows in real time).
     @State private var liveStreamInfo: LiveStreamInfo?
     @State private var liveStreamInfoAt: Date = .distantPast
-    /// Buffer position (seconds from buffer start) that the current stream begins at.
-    /// Non-zero after a live seek, since reopening at a byte offset resets mpv to 0.
-    @State private var liveBaseOffset: Double = 0
+    /// Where playback sits inside the server-side buffer. Integrated from mpv's
+    /// position rather than read off it, since mpv's origin shifts under us —
+    /// see `LivePositionTracker` (#148).
+    @State private var liveTracker = LivePositionTracker()
     @State private var isLiveSeeking = false
     /// Target of skip presses not yet committed to a reload — see `seekLiveBy`.
     @State private var pendingLiveSeekTarget: Double?
@@ -705,6 +706,9 @@ struct PlayerView: View {
             if liveEdgeRetryCount > 0 && position > 2 {
                 liveEdgeRetryCount = 0
             }
+            if isLiveStream {
+                liveTracker.update(playerPosition: position)
+            }
             detectBuffering()
         }
         #if os(tvOS)
@@ -760,7 +764,7 @@ struct PlayerView: View {
     private func resetLiveTimeshiftState() {
         liveStreamInfo = nil
         liveStreamInfoAt = .distantPast
-        liveBaseOffset = 0
+        liveTracker = LivePositionTracker()
     }
 
     // MARK: - Live timeshift buffer
@@ -774,9 +778,10 @@ struct PlayerView: View {
     }
 
     /// Play position measured from the start of the buffer, not from the start of
-    /// the current stream — those differ once a seek has reopened at an offset.
+    /// the current stream — those differ once a seek has reopened at an offset,
+    /// and mpv's own origin can move mid-stream (#148).
     private var livePlayPosition: Double {
-        liveBaseOffset + max(0, currentPosition)
+        liveTracker.position
     }
 
     private var secondsBehindLive: Double {
@@ -810,7 +815,7 @@ struct PlayerView: View {
 
         // mpv restarts at 0 in the reopened stream, so the buffer position it maps
         // to has to be carried separately.
-        liveBaseOffset = target
+        liveTracker.anchor(at: target)
         currentPosition = 0
         isLiveSeeking = true
         lastLiveSeekAt = Date()
