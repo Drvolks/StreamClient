@@ -64,6 +64,10 @@ final class AppState: ObservableObject {
     /// stream is archived playback rather than live/recording. Revoked by
     /// `PlayerView` on teardown — see `endCatchupSessionIfNeeded()`.
     @Published var currentlyPlayingCatchupSessionId: String?
+    /// The programme the current catch-up session was minted for (#150), so the
+    /// player can mint the next session in the chain when the archive runs out
+    /// while the programme is still airing.
+    @Published var currentlyPlayingCatchupProgram: CatchupProgramContext?
     /// Guide time that launched the current catch-up playback. Unlike the
     /// session id, this intentionally survives `stopPlayback()` long enough
     /// for a reconstructed macOS guide to consume and restore it.
@@ -500,6 +504,7 @@ final class AppState: ObservableObject {
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
         catchupSessionId: String? = nil,
+        catchupProgram: CatchupProgramContext? = nil,
         catchupGuideReturnTime: Date? = nil
     ) {
         #if DEBUG
@@ -524,6 +529,7 @@ final class AppState: ObservableObject {
         currentlyPlayingIsRecordingInProgress = isRecordingInProgress
         currentlyPlayingRecordingStartTime = recordingStartTime
         currentlyPlayingCatchupSessionId = catchupSessionId
+        currentlyPlayingCatchupProgram = catchupProgram
         self.catchupGuideReturnTime = catchupGuideReturnTime
         isPreparingStream = false
         isShowingPlayer = true
@@ -554,6 +560,7 @@ final class AppState: ObservableObject {
         currentlyPlayingIsRecordingInProgress = false
         currentlyPlayingRecordingStartTime = nil
         currentlyPlayingCatchupSessionId = nil
+        currentlyPlayingCatchupProgram = nil
     }
 
     /// Clears the pending target only after the reconstructed macOS guide has
