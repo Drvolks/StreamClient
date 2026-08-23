@@ -360,7 +360,8 @@ struct IOSNavigation: View {
                     resumePosition: appState.currentlyPlayingResumePosition,
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
-                    catchupSessionId: appState.currentlyPlayingCatchupSessionId
+                    catchupSessionId: appState.currentlyPlayingCatchupSessionId,
+                    catchupProgram: appState.currentlyPlayingCatchupProgram
                 )
                 .statusBarHidden()
             }
@@ -1274,7 +1275,8 @@ struct TVOSNavigation: View {
                     resumePosition: appState.currentlyPlayingResumePosition,
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
-                    catchupSessionId: appState.currentlyPlayingCatchupSessionId
+                    catchupSessionId: appState.currentlyPlayingCatchupSessionId,
+                    catchupProgram: appState.currentlyPlayingCatchupProgram
                 )
             }
         }
@@ -1952,7 +1954,8 @@ struct MacOSNavigation: View {
                     resumePosition: appState.currentlyPlayingResumePosition,
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
-                    catchupSessionId: appState.currentlyPlayingCatchupSessionId
+                    catchupSessionId: appState.currentlyPlayingCatchupSessionId,
+                    catchupProgram: appState.currentlyPlayingCatchupProgram
                 )
             } else {
                 // Show regular navigation with sidebar

@@ -879,6 +879,11 @@ struct ProgramDetailView: View {
                     channelId: channel.id,
                     channelName: channel.name,
                     catchupSessionId: session.sessionId,
+                    catchupProgram: CatchupProgramContext(
+                        channelUuid: channelUuid,
+                        programStart: program.startDate,
+                        programEnd: program.endDate
+                    ),
                     catchupGuideReturnTime: catchupGuideReturnTime
                 )
                 dismiss()

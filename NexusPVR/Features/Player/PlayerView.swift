@@ -37,6 +37,10 @@ struct PlayerView: View {
     /// the recording-style seek bar, not the live-edge one) and is revoked
     /// server-side on teardown — see `endCatchupSessionIfNeeded()`.
     let catchupSessionId: String?
+    /// The programme `catchupSessionId` was minted for (#150). Present for
+    /// Dispatcharr catch-up playback; lets the player mint the next session in
+    /// the chain when the archive ends while the programme is still airing.
+    let catchupProgram: CatchupProgramContext?
 
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
@@ -110,6 +114,20 @@ struct PlayerView: View {
     /// isRecordingInProgress-only and never applies to catch-up.
     @State private var isCatchupSeeking = false
     @State private var catchupSeekSafetyTask: Task<Void, Never>?
+    /// Seconds of the programme played by *earlier* catch-up sessions in this
+    /// continuation chain (#150). Stays 0 until the first remint, so every
+    /// display and seek expression below is unchanged for a single-session
+    /// playback.
+    @State private var catchupPlayedOffset: Double = 0
+    /// The session currently feeding the player. Diverges from
+    /// `catchupSessionId` after the first continuation remint.
+    @State private var activeCatchupSessionId: String?
+    @State private var catchupContinuationTask: Task<Void, Never>?
+    @State private var isContinuingCatchup = false
+    @State private var catchupShortSessionCount = 0
+    /// Set across a continuation reload: the replacement stream has its own PTS
+    /// base, so `startTimeOffset` has to be recaptured from it.
+    @State private var pendingCatchupRebase = false
     @State private var bufferingStallCount = 0
     #if DISPATCHERPVR
     @State private var dispatchProfileBadge: String?
@@ -138,6 +156,7 @@ struct PlayerView: View {
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
         catchupSessionId: String? = nil,
+        catchupProgram: CatchupProgramContext? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
         networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger,
         liveKeepalive: LiveStreamKeepalive = Dependencies.liveStreamKeepalive
@@ -149,6 +168,7 @@ struct PlayerView: View {
         self.isRecordingInProgress = isRecordingInProgress
         self.recordingStartTime = recordingStartTime
         self.catchupSessionId = catchupSessionId
+        self.catchupProgram = catchupProgram
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
         self.liveKeepalive = liveKeepalive
@@ -177,12 +197,7 @@ struct PlayerView: View {
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
-                    if recoverFromLiveEdgeEOF() { return }
-                    savePlaybackPosition()
-                    markAsWatched()
-                    if !isRecordingInProgress {
-                        appState.stopPlayback()
-                    }
+                    handlePlaybackEnded()
                 },
                 onPlaybackRestarted: {
                     endCatchupSeekIndicator()
@@ -279,12 +294,7 @@ struct PlayerView: View {
                 activePlayerSession: activePlayerSession,
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
-                    if recoverFromLiveEdgeEOF() { return }
-                    savePlaybackPosition()
-                    markAsWatched()
-                    if !isRecordingInProgress {
-                        appState.stopPlayback()
-                    }
+                    handlePlaybackEnded()
                 },
                 onPlaybackRestarted: {
                     endCatchupSeekIndicator()
@@ -338,12 +348,7 @@ struct PlayerView: View {
                 streamHeaders: client.streamAuthHeaders(),
                 networkEventLogger: networkEventLogger,
                 onPlaybackEnded: {
-                    if recoverFromLiveEdgeEOF() { return }
-                    savePlaybackPosition()
-                    markAsWatched()
-                    if !isRecordingInProgress {
-                        appState.stopPlayback()
-                    }
+                    handlePlaybackEnded()
                 },
                 onPlaybackRestarted: {
                     endCatchupSeekIndicator()
@@ -645,6 +650,8 @@ struct PlayerView: View {
             #endif
             catchupSeekSafetyTask?.cancel()
             catchupSeekSafetyTask = nil
+            catchupContinuationTask?.cancel()
+            catchupContinuationTask = nil
         }
         #if DISPATCHERPVR
         .onChange(of: appState.currentlyPlayingChannelName) { _ in
@@ -652,6 +659,12 @@ struct PlayerView: View {
         }
         #endif
         .onChange(of: duration) { _ in
+            // A continuation stream (#150) carries its own PTS base, so the
+            // display offset has to be recaptured the way the first load does.
+            if pendingCatchupRebase && duration > 0 {
+                pendingCatchupRebase = false
+                startTimeOffset = currentPosition > 1 ? currentPosition : 0
+            }
             // Resume playback position once duration is known (playback has started)
             if !hasResumed && duration > 0 {
                 hasResumed = true
@@ -899,10 +912,137 @@ struct PlayerView: View {
     /// (called just before this in `.onDisappear`) already clears the
     /// published copy.
     private func endCatchupSessionIfNeeded() {
-        guard let catchupSessionId else { return }
+        // After a continuation remint (#150) the session feeding the player is
+        // no longer the one this view was created with.
+        guard let sessionId = activeCatchupSessionId ?? catchupSessionId else { return }
         #if DISPATCHERPVR
-        Task { [client] in await client.endCatchupSession(catchupSessionId) }
+        Task { [client] in await client.endCatchupSession(sessionId) }
         #endif
+    }
+
+    /// Playback reached the end of the file mpv is reading. That means the
+    /// stream ended for a recording, but for live TV and for catch-up on a
+    /// programme that is still airing it only means the readable edge moved
+    /// ahead of us — both get a chance to recover before playback ends.
+    private func handlePlaybackEnded() {
+        if recoverFromLiveEdgeEOF() { return }
+        if continueCatchupIfNeeded() { return }
+        savePlaybackPosition()
+        markAsWatched()
+        if !isRecordingInProgress {
+            appState.stopPlayback()
+        }
+    }
+
+    /// Whether this EOF is the archive edge of a catch-up session for a
+    /// programme that is still airing — in which case a fresh session picks up
+    /// where this one stopped instead of playback ending (#150).
+    private func continueCatchupIfNeeded() -> Bool {
+        #if DISPATCHERPVR
+        guard let catchupProgram, catchupSessionId != nil else { return false }
+        // A single EOF surfaces twice (END_FILE plus the eof-reached property);
+        // the second one must not mint a second session.
+        guard !isContinuingCatchup else { return true }
+
+        let playedThisSession = max(0, currentPosition - startTimeOffset)
+        if CatchupContinuation.isShortSession(playedSeconds: playedThisSession) {
+            catchupShortSessionCount += 1
+        } else {
+            catchupShortSessionCount = 0
+        }
+        guard !CatchupContinuation.shouldGiveUp(consecutiveShortSessions: catchupShortSessionCount) else {
+            print("[Catchup] Ending playback: \(catchupShortSessionCount) continuations made no progress")
+            return false
+        }
+
+        let played = catchupPlayedOffset + playedThisSession
+        let decision = CatchupContinuation.decide(
+            programStart: catchupProgram.programStart,
+            programEnd: catchupProgram.programEnd,
+            playedSeconds: played,
+            now: Date()
+        )
+        guard decision != .finished else { return false }
+
+        isContinuingCatchup = true
+        startCatchupSeekIndicatorIfNeeded()
+        catchupContinuationTask?.cancel()
+        catchupContinuationTask = Task {
+            await continueCatchup(playedSeconds: played, context: catchupProgram)
+        }
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    #if DISPATCHERPVR
+    /// Mints the next session in the chain and reloads the player into it.
+    /// `playedSeconds` is where playback got to, measured from the programme's
+    /// scheduled start, which is exactly the `start` the new session needs.
+    private func continueCatchup(playedSeconds: Double, context: CatchupProgramContext) async {
+        defer { isContinuingCatchup = false }
+
+        while !Task.isCancelled {
+            switch CatchupContinuation.decide(
+                programStart: context.programStart,
+                programEnd: context.programEnd,
+                playedSeconds: playedSeconds,
+                now: Date()
+            ) {
+            case .finished:
+                endCatchupPlayback()
+                return
+
+            case .wait(let seconds):
+                // Playback has drawn level with the broadcast; let a little more
+                // of the programme air rather than mint a near-empty archive.
+                try? await Task.sleep(for: .seconds(seconds))
+
+            case .resume(let start):
+                do {
+                    let service = CatchupService(client: client, baseURL: client.baseURL)
+                    let session = try await service.startSession(
+                        channelUuid: context.channelUuid,
+                        startISO8601: ISO8601DateFormatter().string(from: start)
+                    )
+                    let url = try service.playbackURL(for: session)
+                    guard !Task.isCancelled, let reload = reloadURLFunc else { return }
+
+                    let previousSessionId = activeCatchupSessionId ?? catchupSessionId
+                    activeCatchupSessionId = session.sessionId
+                    // mpv restarts the new file at its own origin, so the part of
+                    // the programme already played has to be carried separately —
+                    // same shape as the live seek path's LivePositionTracker.
+                    catchupPlayedOffset = playedSeconds
+                    pendingCatchupRebase = true
+                    startTimeOffset = 0
+                    currentPosition = 0
+                    duration = 0
+                    reload(url)
+                    isPlaying = true
+                    print("[Catchup] Continuing at \(Int(playedSeconds))s into the programme")
+
+                    if let previousSessionId {
+                        Task { [client] in await client.endCatchupSession(previousSessionId) }
+                    }
+                } catch {
+                    print("[Catchup] Continuation failed: \(error.localizedDescription)")
+                    endCatchupPlayback()
+                }
+                return
+            }
+        }
+    }
+    #endif
+
+    /// Ends playback the way `handlePlaybackEnded` would have, once the
+    /// continuation chain decides there is nothing left to play.
+    private func endCatchupPlayback() {
+        endCatchupSeekIndicator()
+        savePlaybackPosition()
+        markAsWatched()
+        appState.stopPlayback()
     }
 
     /// Detects when playback has stalled (position not advancing while
@@ -1109,12 +1249,12 @@ struct PlayerView: View {
                         .onChanged { value in
                             isSeeking = true
                             let progress = max(0, min(1, value.location.x / geometry.size.width))
-                            seekPosition = progress * duration + startTimeOffset
+                            seekPosition = playerPosition(forDisplayed: progress * displayedDuration)
                             scheduleHideControls()
                         }
                         .onEnded { value in
                             let progress = max(0, min(1, value.location.x / geometry.size.width))
-                            let targetPosition = progress * duration + startTimeOffset
+                            let targetPosition = playerPosition(forDisplayed: progress * displayedDuration)
                             seekToPosition(targetPosition)
                             isSeeking = false
                         }
@@ -1125,14 +1265,14 @@ struct PlayerView: View {
 
             // Time labels
             HStack {
-                Text(formatTime((isSeeking ? seekPosition : currentPosition) - startTimeOffset))
+                Text(formatTime(displayedPosition))
                     .font(.caption)
                     .foregroundStyle(.white)
                     .monospacedDigit()
 
                 Spacer()
 
-                Text(formatTime(duration))
+                Text(formatTime(displayedDuration))
                     .font(.caption)
                     .foregroundStyle(.white)
                     .monospacedDigit()
@@ -1214,10 +1354,27 @@ struct PlayerView: View {
     }
 
     private func progressWidth(for totalWidth: CGFloat) -> CGFloat {
-        guard duration > 0 else { return 0 }
-        let adjPosition = (isSeeking ? seekPosition : currentPosition) - startTimeOffset
-        let progress = adjPosition / duration
+        guard displayedDuration > 0 else { return 0 }
+        let progress = displayedPosition / displayedDuration
         return max(0, min(totalWidth, CGFloat(progress) * totalWidth))
+    }
+
+    /// How far into the *programme* playback is, which after a catch-up
+    /// continuation (#150) is ahead of the current stream's own timeline.
+    /// Identical to the raw position while `catchupPlayedOffset` is 0.
+    private var displayedPosition: Double {
+        (isSeeking ? seekPosition : currentPosition) - startTimeOffset + catchupPlayedOffset
+    }
+
+    /// Length of the programme as far as it has been fetched: what the current
+    /// session holds, plus everything earlier sessions already played.
+    private var displayedDuration: Double {
+        duration + catchupPlayedOffset
+    }
+
+    /// Maps a point on the scrubber back onto the current stream's timeline.
+    private func playerPosition(forDisplayed displayed: Double) -> Double {
+        max(0, displayed - catchupPlayedOffset) + startTimeOffset
     }
 
     #if os(tvOS)
