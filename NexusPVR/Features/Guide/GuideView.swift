@@ -1672,10 +1672,28 @@ struct GuideView: View {
             if focusedColumn > 0 {
                 focusedColumn -= 1
             } else if timeOffset > minimumTimeOffset {
-                // Scroll back in time — focus on last program in new window
+                // Scroll back in time — focus the program immediately before the
+                // one that was focused, mirroring the forward-scroll behavior.
+                // Jumping to the last cell of the new window would throw focus
+                // back to the right edge on every left press (#152).
+                let programs = tvOSVisiblePrograms(for: channels[focusedRow])
+                let previousProgram = programs.isEmpty
+                    ? nil
+                    : programs[min(focusedColumn, programs.count - 1)]
                 timeOffset -= 1
                 let newPrograms = tvOSVisiblePrograms(for: channels[focusedRow])
-                focusedColumn = newPrograms.isEmpty ? 0 : newPrograms.count - 1
+                if newPrograms.isEmpty {
+                    focusedColumn = 0
+                } else if let previousProgram,
+                          let priorIndex = newPrograms.lastIndex(where: { $0.startDate < previousProgram.startDate }) {
+                    focusedColumn = priorIndex
+                } else if let previousProgram,
+                          let sameIndex = newPrograms.firstIndex(where: { $0.startDate == previousProgram.startDate }) {
+                    // Nothing earlier on this channel — stay on the same program.
+                    focusedColumn = sameIndex
+                } else {
+                    focusedColumn = 0
+                }
             } else {
                 // Already on leftmost program of the row — open the nav bar
                 onRequestNavBarFocus?()
