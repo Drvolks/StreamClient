@@ -294,11 +294,39 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
         displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = NSColor.black.cgColor
         view.layer?.addSublayer(displayLayer)
+        // Fired on mpv's VO thread when the video format changes; the new
+        // aspect ratio only becomes readable at that point.
+        bridge?.onReconfig = { [weak self] _, _, _ in
+            self?.updateDisplayLayerGeometryOnMain()
+        }
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        bridge?.displayLayer.frame = view.bounds
+        updateDisplayLayerGeometry()
+    }
+
+    /// Callable from mpv's threads — the geometry update itself is main-thread only.
+    private nonisolated func updateDisplayLayerGeometryOnMain() {
+        MPVPlayerCore.scheduleOnMain { [weak self] in
+            self?.updateDisplayLayerGeometry()
+        }
+    }
+
+    /// The pixelbuffer VO delivers frames at the coded resolution with no
+    /// sample-aspect metadata, so anamorphic streams would render squeezed if
+    /// the layer simply fit the pixel grid. Size the layer to mpv's display
+    /// aspect and let the frames fill it instead (#152). Falls back to plain
+    /// aspect-fit while the aspect is still unknown.
+    private func updateDisplayLayerGeometry() {
+        guard let displayLayer = bridge?.displayLayer else { return }
+        if let aspect = player?.videoDisplayAspect {
+            displayLayer.videoGravity = .resize
+            displayLayer.frame = VideoAspectCorrection.fittedRect(displayAspect: aspect, in: view.bounds)
+        } else {
+            displayLayer.videoGravity = .resizeAspect
+            displayLayer.frame = view.bounds
+        }
     }
 
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
@@ -317,6 +345,9 @@ final class MPVPlayerPixelBufferNSViewController: NSViewController, MPVPlayerMac
             self?.onPlaybackRestarted?()
         }
         player?.onVideoInfoUpdate = { [weak self] codec, height, hwdec, audioChannels, dropped, gamma, fps in
+            // Safety net in case the aspect wasn't readable yet at reconfig
+            // time; this callback can arrive off the main thread.
+            self?.updateDisplayLayerGeometryOnMain()
             self?.onVideoInfoUpdate?(codec, height, hwdec, audioChannels, dropped, gamma, fps)
         }
     }

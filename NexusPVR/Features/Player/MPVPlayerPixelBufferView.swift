@@ -60,8 +60,8 @@ class MPVPlayerPixelBufferView: UIView {
 
         let displayLayer = session.displayLayer
         displayLayer.backgroundColor = UIColor.black.cgColor
-        displayLayer.frame = bounds
         layer.addSublayer(displayLayer)
+        updateDisplayLayerGeometry()
 
         #if os(tvOS)
         for direction: UISwipeGestureRecognizer.Direction in [.left, .right, .up, .down] {
@@ -77,7 +77,30 @@ class MPVPlayerPixelBufferView: UIView {
         if session.displayLayer.superlayer !== layer {
             layer.addSublayer(session.displayLayer)
         }
-        session.displayLayer.frame = bounds
+        updateDisplayLayerGeometry()
+    }
+
+    /// Callable from mpv's threads — the geometry update itself is main-thread only.
+    private nonisolated func updateDisplayLayerGeometryOnMain() {
+        MPVPlayerCore.scheduleOnMain { [weak self] in
+            self?.updateDisplayLayerGeometry()
+        }
+    }
+
+    /// The pixelbuffer VO delivers frames at the coded resolution with no
+    /// sample-aspect metadata, so anamorphic streams would render squeezed if
+    /// the layer simply fit the pixel grid. Size the layer to mpv's display
+    /// aspect and let the frames fill it instead (#152). Falls back to plain
+    /// aspect-fit while the aspect is still unknown.
+    private func updateDisplayLayerGeometry() {
+        let displayLayer = session.displayLayer
+        if let aspect = session.player?.videoDisplayAspect {
+            displayLayer.videoGravity = .resize
+            displayLayer.frame = VideoAspectCorrection.fittedRect(displayAspect: aspect, in: bounds)
+        } else {
+            displayLayer.videoGravity = .resizeAspect
+            displayLayer.frame = bounds
+        }
     }
 
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) {
@@ -108,6 +131,11 @@ class MPVPlayerPixelBufferView: UIView {
     }
 
     private func wireCallbacks() {
+        // Fired on mpv's VO thread when the video format changes; the new
+        // aspect ratio only becomes readable at that point.
+        session.bridge?.onReconfig = { [weak self] _, _, _ in
+            self?.updateDisplayLayerGeometryOnMain()
+        }
         session.player?.onPositionUpdate = { [weak self] position, duration in
             self?.onPositionUpdate?(position, duration)
         }
@@ -118,6 +146,9 @@ class MPVPlayerPixelBufferView: UIView {
             self?.onPlaybackRestarted?()
         }
         session.player?.onVideoInfoUpdate = { [weak self] codec, width, hwdec, audioChannels, dropped, gamma, fps in
+            // Safety net in case the aspect wasn't readable yet at reconfig
+            // time; this callback can arrive off the main thread.
+            self?.updateDisplayLayerGeometryOnMain()
             self?.onVideoInfoUpdate?(codec, width, hwdec, audioChannels, dropped, gamma, fps)
         }
     }
