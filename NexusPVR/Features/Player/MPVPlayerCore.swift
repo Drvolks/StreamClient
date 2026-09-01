@@ -519,6 +519,18 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         return flag != 0
     }
 
+    /// Display aspect ratio (width / height) of the current video as reported
+    /// by mpv, which folds in the stream's sample aspect ratio. `nil` while no
+    /// video is loaded or the aspect is unknown. Used by the PixelBuffer
+    /// renderer, which receives frames stripped of aspect metadata (#152).
+    var videoDisplayAspect: Double? {
+        guard let mpv = mpv else { return nil }
+        var aspect: Double = 0
+        guard mpv_get_property(mpv, "video-params/aspect", MPV_FORMAT_DOUBLE, &aspect) >= 0,
+              aspect.isFinite, aspect > 0 else { return nil }
+        return aspect
+    }
+
     func getVideoInfo() -> (codec: String?, width: Int?, height: Int?, hwdec: String?, audioChannels: String?, droppedFrames: Int64, gamma: String?, fps: Double) {
         guard let mpv = mpv else { return (nil, nil, nil, nil, nil, 0, nil, 0) }
 
