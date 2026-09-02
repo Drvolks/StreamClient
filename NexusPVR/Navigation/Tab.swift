@@ -14,6 +14,9 @@ enum Tab: String, Identifiable, Codable {
     case topics = "Topics"
     case calendar = "Calendar"
     case search = "Search"
+    #if os(macOS)
+    case downloads = "Downloads"
+    #endif
     #if DISPATCHERPVR
     case stats = "Status"
     #endif
@@ -29,6 +32,9 @@ enum Tab: String, Identifiable, Codable {
         case .calendar: return "calendar.badge.clock"
         case .search: return "magnifyingglass"
         case .recordings: return "recordingtape"
+        #if os(macOS)
+        case .downloads: return "arrow.down.circle"
+        #endif
         #if DISPATCHERPVR
         case .stats: return "chart.bar.fill"
         #endif
@@ -72,7 +78,7 @@ enum Tab: String, Identifiable, Codable {
     static func macOSTabs(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
-        cases.append(contentsOf: [.topics, .calendar])
+        cases.append(contentsOf: [.topics, .calendar, .downloads])
         #if DISPATCHERPVR
         if userLevel >= 1 { cases.append(.stats) }
         #endif

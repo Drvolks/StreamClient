@@ -1982,6 +1982,8 @@ struct MacOSNavigation: View {
                                 SearchView()
                             case .recordings:
                                 RecordingsListView()
+                            case .downloads:
+                                DownloadsView()
                             #if DISPATCHERPVR
                             case .stats:
                                 StatsView()
@@ -2237,6 +2239,16 @@ struct MacOSNavigation: View {
                 Spacer()
                 if tab == .recordings && appState.recordingsHasActive {
                     Circle().fill(Theme.recording).frame(width: 8, height: 8)
+                }
+                if tab == .downloads, appState.activeDownloadCount > 0 {
+                    Text("\(appState.activeDownloadCount)")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.accent)
+                        .clipShape(Capsule())
+                        .accessibilityIdentifier("downloads-active-badge")
                 }
                 #if DISPATCHERPVR
                 if tab == .stats {

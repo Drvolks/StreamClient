@@ -163,6 +163,16 @@ struct TabTests {
         #expect(cases.contains(.settings))
     }
 
+    @Test("Downloads is offered on macOS at every user level")
+    func macOSTabsIncludeDownloads() {
+        #expect(Tab.macOSTabs(userLevel: 0).contains(.downloads))
+        #expect(Tab.macOSTabs(userLevel: 10).contains(.downloads))
+        #expect(Tab.macOSTabs(userLevel: 10, hideRecordings: true).contains(.downloads))
+        #expect(Tab.downloads.id == "Downloads")
+        #expect(Tab.downloads.label == "Downloads")
+        #expect(Tab.downloads.icon == "arrow.down.circle")
+    }
+
     @Test("Channels tab appears directly below Guide in macOS tabs")
     func macOSTabsChannelsAfterGuide() {
         let cases = Tab.macOSTabs(userLevel: 10)

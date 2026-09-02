@@ -1,1 +1,6 @@
 #include "Secret.xcconfig"
+
+// Stub headers for AMD's AMF SDK. FFmpeg's hwcontext_amf.h sits in the
+// Libavutil framework's umbrella header, so `import Libavformat` can't build
+// without them. See ThirdParty/AMFStub/AMF/core/Factory.h.
+HEADER_SEARCH_PATHS = $(inherited) $(SRCROOT)/ThirdParty/AMFStub

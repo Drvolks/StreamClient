@@ -11,6 +11,9 @@ struct ProgramDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
+    #if os(macOS) && DISPATCHERPVR
+    @EnvironmentObject private var downloads: DownloadManager
+    #endif
 
     let program: Program
     let channel: Channel
@@ -501,6 +504,43 @@ struct ProgramDetailView: View {
     }
     #endif
 
+    #if os(macOS) && DISPATCHERPVR
+    @ViewBuilder
+    private var downloadCatchupButton: some View {
+        let alreadyDownloaded = downloads.hasDownload(
+            for: .catchup(channelUuid: client.channelUUID(forChannelId: channel.id) ?? "", start: program.startDate)
+        )
+        Button {
+            downloadCatchup()
+        } label: {
+            HStack {
+                Image(systemName: alreadyDownloaded ? "checkmark.circle.fill" : "arrow.down.circle")
+                Text(alreadyDownloaded ? "In Downloads" : "Download")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .disabled(alreadyDownloaded)
+        .accessibilityIdentifier("download-catchup-button")
+    }
+
+    private func downloadCatchup() {
+        guard let channelUuid = client.channelUUID(forChannelId: channel.id) else {
+            scheduleError = "Catch-up isn't available for this channel."
+            return
+        }
+        Task {
+            await downloads.download(
+                program: program,
+                channel: channel,
+                channelUuid: channelUuid,
+                using: client
+            )
+        }
+        dismiss()
+    }
+    #endif
+
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
             if let recording = completedRecording, !isScheduled {
@@ -543,6 +583,14 @@ struct ProgramDetailView: View {
                 #endif
                 .disabled(isStartingCatchup)
                 .accessibilityIdentifier("watch-catchup-button")
+
+                #if os(macOS)
+                // Keeping an aired programme means downloading it: Dispatcharr
+                // can only record what hasn't happened yet, so the catch-up
+                // archive is the only copy that exists, and it ages out of the
+                // channel's rolling window.
+                downloadCatchupButton
+                #endif
             }
             #endif
 

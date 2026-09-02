@@ -1144,7 +1144,13 @@ struct PlayerView: View {
     /// duration/scrubber controls as a recording (`!isLiveStream && duration
     /// > 0`) instead of the live-edge timeshift bar, and skips the live
     /// keepalive/EOF-recovery machinery that's meaningless for it.
-    private var isLiveStream: Bool { recordingId == nil && catchupSessionId == nil }
+    ///
+    /// A local file is never live either. An offline download carries neither a
+    /// recording id nor a catch-up session, so without this it would land on
+    /// the live-edge bar and refuse to seek.
+    private var isLiveStream: Bool {
+        recordingId == nil && catchupSessionId == nil && !url.isFileURL
+    }
 
     private var centerControls: some View {
         HStack(spacing: 48) {

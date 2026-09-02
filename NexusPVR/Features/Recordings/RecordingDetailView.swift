@@ -11,6 +11,9 @@ struct RecordingDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
+    #if os(macOS)
+    @EnvironmentObject private var downloads: DownloadManager
+    #endif
 
     let recording: Recording
     private var canPlayInProgress: Bool { UserPreferences.load().currentGPUAPI == .pixelbuffer }
@@ -509,6 +512,27 @@ struct RecordingDetailView: View {
         .cardStyle()
     }
 
+    #if os(macOS)
+    /// Keeps a copy of the recording on this Mac, through the same remuxing
+    /// engine catch-up downloads use.
+    @ViewBuilder
+    private var downloadButton: some View {
+        let alreadyDownloaded = downloads.hasDownload(for: .recording(id: recording.id))
+        Button {
+            Task { await downloads.download(recording: recording, using: client) }
+        } label: {
+            HStack {
+                Image(systemName: alreadyDownloaded ? "checkmark.circle.fill" : "arrow.down.circle")
+                Text(alreadyDownloaded ? "In Downloads" : "Download")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .disabled(alreadyDownloaded)
+        .accessibilityIdentifier("download-recording-button")
+    }
+    #endif
+
     private var actionSection: some View {
         VStack(spacing: Theme.spacingMD) {
             if recording.recordingStatus == .recording {
@@ -576,6 +600,10 @@ struct RecordingDetailView: View {
                     }
                     .buttonStyle(AccentButtonStyle())
                 }
+
+                #if os(macOS)
+                downloadButton
+                #endif
             }
 
             #if DISPATCHERPVR
