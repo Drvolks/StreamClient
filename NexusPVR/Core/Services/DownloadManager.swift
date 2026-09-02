@@ -43,6 +43,39 @@ final class DownloadManager: ObservableObject {
 
     init(store: DownloadStore = DownloadStore()) {
         self.store = store
+        // The player doesn't know where downloads live, so it announces the
+        // position and this writes it down.
+        //
+        // The token is deliberately not kept for removal: a `@MainActor` type's
+        // `deinit` is nonisolated and can't touch the non-`Sendable` token, and
+        // the app holds exactly one manager for its whole lifetime. The weak
+        // capture makes an outlived registration a no-op.
+        NotificationCenter.default.addObserver(
+            forName: .downloadPositionDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let id = notification.userInfo?["downloadId"] as? UUID,
+                  let position = notification.userInfo?["position"] as? Double else {
+                return
+            }
+            Task { @MainActor [weak self] in
+                await self?.recordPlaybackPosition(position, for: id)
+            }
+        }
+    }
+
+    /// Stores how far playback got, so the next Play resumes there.
+    func recordPlaybackPosition(_ position: Double, for id: UUID) async {
+        guard items.contains(where: { $0.id == id && $0.state == .completed }) else { return }
+        update(id) { $0.playbackPosition = position }
+        await persist(id)
+    }
+
+    /// Forgets the position, so playback starts from the beginning again.
+    func clearPlaybackPosition(for item: DownloadItem) async {
+        update(item.id) { $0.playbackPosition = nil }
+        await persist(item.id)
     }
 
     /// How many downloads are queued or running, for the sidebar badge.

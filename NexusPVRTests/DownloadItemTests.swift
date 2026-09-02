@@ -109,6 +109,45 @@ struct DownloadItemTests {
         #expect(decoded.state == .running(seconds: 12.5, bytes: 4096))
     }
 
+    @Test("Resume only kicks in past the first few seconds")
+    func resumeThreshold() {
+        var item = DownloadItem(title: "Show", source: .recording(id: 1))
+        item.writtenSeconds = 3600
+
+        item.playbackPosition = nil
+        #expect(item.resumeSeconds == nil)
+
+        // A few seconds in is a false start, not a place to come back to.
+        item.playbackPosition = 5
+        #expect(item.resumeSeconds == nil)
+        #expect(!item.hasResumePosition)
+
+        item.playbackPosition = 1200
+        #expect(item.resumeSeconds == 1200)
+        #expect(item.hasResumePosition)
+    }
+
+    @Test("Finishing a programme starts the next play from the beginning")
+    func resumeNearTheEnd() {
+        var item = DownloadItem(title: "Show", source: .recording(id: 1))
+        item.writtenSeconds = 3600
+
+        // Dropping the viewer on the closing credits is worse than starting over.
+        item.playbackPosition = 3590
+        #expect(item.resumeSeconds == nil)
+
+        item.playbackPosition = 3600 - DownloadItem.finishedTailSeconds - 1
+        #expect(item.resumeSeconds != nil)
+    }
+
+    @Test("A position is still usable when the duration isn't known")
+    func resumeWithoutDuration() {
+        var item = DownloadItem(title: "Show", source: .recording(id: 1))
+        item.writtenSeconds = nil
+        item.playbackPosition = 1200
+        #expect(item.resumeSeconds == 1200)
+    }
+
     @Test("Only running and queued count as active")
     func activeStates() {
         #expect(DownloadState.queued.isActive)

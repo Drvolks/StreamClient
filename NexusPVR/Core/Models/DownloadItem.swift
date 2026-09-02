@@ -36,6 +36,9 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
     /// Size on disk in bytes, filled in when the job ends.
     var byteSize: Int64?
     var state: DownloadState
+    /// How far playback has got, in seconds. Local to this device — a
+    /// downloaded file has no server-side position to sync with.
+    var playbackPosition: Double?
 
     /// Container the file was written in. Normally `mp4`; `MediaRemuxer` falls
     /// back to Matroska for codecs MP4 has no tag for, and the library has to
@@ -49,6 +52,25 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
 
     /// The sidecar's file name.
     var metadataFileName: String { "\(id.uuidString).json" }
+
+    /// Seconds below which a position isn't worth resuming from — the same
+    /// threshold `Recording.hasResumePosition` uses.
+    static let minimumResumeSeconds: Double = 10
+
+    /// How close to the end counts as finished, so the next play starts over
+    /// rather than dropping the viewer on the closing credits.
+    static let finishedTailSeconds: Double = 30
+
+    /// Where playback should pick up, or `nil` to start from the beginning.
+    var resumeSeconds: Int? {
+        guard let playbackPosition, playbackPosition > Self.minimumResumeSeconds else { return nil }
+        if let total = writtenSeconds, playbackPosition >= total - Self.finishedTailSeconds {
+            return nil
+        }
+        return Int(playbackPosition)
+    }
+
+    var hasResumePosition: Bool { resumeSeconds != nil }
 
     /// Title and episode joined the way rows and the player title bar want it.
     var displayTitle: String {
@@ -69,7 +91,8 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
         writtenSeconds: Double? = nil,
         byteSize: Int64? = nil,
         fileExtension: String = "mp4",
-        state: DownloadState = .queued
+        state: DownloadState = .queued,
+        playbackPosition: Double? = nil
     ) {
         self.id = id
         self.title = title
@@ -84,6 +107,7 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
         self.byteSize = byteSize
         self.fileExtension = fileExtension
         self.state = state
+        self.playbackPosition = playbackPosition
     }
 }
 

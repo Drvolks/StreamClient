@@ -46,7 +46,8 @@ struct DownloadsView: View {
                     DownloadRow(
                         item: item,
                         fileURL: downloads.fileURL(for: item),
-                        play: { play(item) },
+                        play: { play(item, fromStart: false) },
+                        playFromStart: { play(item, fromStart: true) },
                         reveal: { reveal(item) },
                         retry: { Task { await downloads.retry(item, using: client) } },
                         remove: { Task { await downloads.delete(item) } }
@@ -82,9 +83,17 @@ struct DownloadsView: View {
         #endif
     }
 
-    private func play(_ item: DownloadItem) {
+    private func play(_ item: DownloadItem, fromStart: Bool) {
         guard let url = downloads.fileURL(for: item) else { return }
-        appState.playStream(url: url, title: item.displayTitle)
+        if fromStart {
+            Task { await downloads.clearPlaybackPosition(for: item) }
+        }
+        appState.playStream(
+            url: url,
+            title: item.displayTitle,
+            downloadId: item.id,
+            resumePosition: fromStart ? nil : item.resumeSeconds
+        )
     }
 
     /// macOS only: iOS has no file viewer to reveal into, and gets a share

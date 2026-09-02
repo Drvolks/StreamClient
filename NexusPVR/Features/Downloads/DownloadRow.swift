@@ -14,6 +14,7 @@ struct DownloadRow: View {
     /// has been read from disk.
     let fileURL: URL?
     let play: () -> Void
+    let playFromStart: () -> Void
     let reveal: () -> Void
     let retry: () -> Void
     let remove: () -> Void
@@ -93,6 +94,9 @@ struct DownloadRow: View {
         if let seconds = item.writtenSeconds { parts.append(Self.duration(seconds)) }
         if let bytes = item.byteSize { parts.append(Self.size(bytes)) }
         if item.fileExtension != "mp4" { parts.append(item.fileExtension.uppercased()) }
+        if let resume = item.resumeSeconds {
+            parts.append("\(Self.duration(Double(resume))) watched")
+        }
         return parts.isEmpty ? "Ready to watch" : parts.joined(separator: " · ")
     }
 
@@ -113,9 +117,18 @@ struct DownloadRow: View {
             switch item.state {
             case .completed:
                 Button(action: play) {
-                    Label("Play", systemImage: "play.fill")
+                    Label(item.hasResumePosition ? "Resume" : "Play", systemImage: "play.fill")
                 }
                 .accessibilityIdentifier("download-play-button")
+
+                if item.hasResumePosition {
+                    Button(action: playFromStart) {
+                        Label("Start Over", systemImage: "arrow.counterclockwise")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Start Over")
+                    .accessibilityIdentifier("download-restart-button")
+                }
 
                 #if os(macOS)
                 Button(action: reveal) {

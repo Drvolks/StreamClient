@@ -29,6 +29,9 @@ struct PlayerView: View {
     let url: URL
     let title: String
     let recordingId: Int?
+    /// Set when this is a local downloaded file. Its position belongs in the
+    /// download's sidecar, not on the server — see `savePlaybackPosition()`.
+    let downloadId: UUID?
     let resumePosition: Int?
     let isRecordingInProgress: Bool
     let recordingStartTime: Date?
@@ -152,6 +155,7 @@ struct PlayerView: View {
         url: URL,
         title: String,
         recordingId: Int? = nil,
+        downloadId: UUID? = nil,
         resumePosition: Int? = nil,
         isRecordingInProgress: Bool = false,
         recordingStartTime: Date? = nil,
@@ -164,6 +168,7 @@ struct PlayerView: View {
         self.url = url
         self.title = title
         self.recordingId = recordingId
+        self.downloadId = downloadId
         self.resumePosition = resumePosition
         self.isRecordingInProgress = isRecordingInProgress
         self.recordingStartTime = recordingStartTime
@@ -1079,6 +1084,17 @@ struct PlayerView: View {
     }
 
     private func savePlaybackPosition() {
+        if let downloadId {
+            // A local file: hand the position to whoever owns the library.
+            let position = currentPosition
+            guard position > 0 else { return }
+            NotificationCenter.default.post(
+                name: .downloadPositionDidChange,
+                object: nil,
+                userInfo: ["downloadId": downloadId, "position": position]
+            )
+            return
+        }
         guard let recordingId = recordingId else {
             print("[Player] savePlaybackPosition: no recordingId")
             return
