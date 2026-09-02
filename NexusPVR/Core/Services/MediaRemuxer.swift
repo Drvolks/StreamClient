@@ -266,10 +266,15 @@ nonisolated final class MediaRemuxer: @unchecked Sendable {
             av_packet_free(&owned)
         }
 
-        /// First timestamp seen per stream, subtracted from everything that
-        /// follows. A broadcast TS starts at whatever the mux's clock happened
-        /// to be, and a file that starts three hours in confuses every player.
-        var firstTimestamp: [Int: Int64] = [:]
+        /// One timeline per stream, rebasing timestamps and absorbing the
+        /// discontinuities a broadcast recording is full of. Created lazily
+        /// because the anchor is the first timestamp seen anywhere in the file
+        /// — shared by every stream so audio stays in sync with video.
+        var timelines: [Int: PacketTimeline] = [:]
+        /// Last decode timestamp written per output stream, in the output's own
+        /// ticks — the units the muxer's monotonicity check uses.
+        var lastWrittenDts: [Int32: Int64] = [:]
+        var anchorSeconds: Double?
         var writtenSeconds: Double = 0
         var writtenBytes: Int64 = 0
         var lastReport = Date.distantPast
@@ -291,26 +296,54 @@ nonisolated final class MediaRemuxer: @unchecked Sendable {
 
             let inputTimeBase = inputStream.pointee.time_base
             let outputTimeBase = outputStream.pointee.time_base
+            let secondsPerTick = av_q2d(inputTimeBase)
 
-            let reference = packet.pointee.dts != Self.noTimestamp ? packet.pointee.dts : packet.pointee.pts
-            if reference != Self.noTimestamp, firstTimestamp[inputIndex] == nil {
-                firstTimestamp[inputIndex] = reference
+            let pts = packet.pointee.pts != Self.noTimestamp ? packet.pointee.pts : nil
+            let dts = packet.pointee.dts != Self.noTimestamp ? packet.pointee.dts : nil
+
+            if anchorSeconds == nil, let reference = dts ?? pts {
+                anchorSeconds = Double(reference) * secondsPerTick
             }
-            let offset = firstTimestamp[inputIndex] ?? 0
+            if timelines[inputIndex] == nil {
+                let anchorTicks = Int64((anchorSeconds ?? 0) / secondsPerTick)
+                timelines[inputIndex] = PacketTimeline(secondsPerTick: secondsPerTick, anchor: anchorTicks)
+            }
+            // A packet that can't be placed at all (no timestamps, nothing
+            // written yet to carry on from) is dropped rather than handed to a
+            // muxer that would reject it.
+            guard let normalized = timelines[inputIndex]?.normalize(
+                pts: pts,
+                dts: dts,
+                duration: packet.pointee.duration
+            ) else { continue }
+
+            let rescaled = PacketTimeline.enforcingIncrease(
+                pts: av_rescale_q_rnd(normalized.pts, inputTimeBase, outputTimeBase, Self.rounding),
+                dts: av_rescale_q_rnd(normalized.dts, inputTimeBase, outputTimeBase, Self.rounding),
+                after: lastWrittenDts[outputIndex]
+            )
+            lastWrittenDts[outputIndex] = rescaled.dts
 
             packet.pointee.stream_index = outputIndex
-            packet.pointee.pts = Self.rescale(packet.pointee.pts, offset: offset, from: inputTimeBase, to: outputTimeBase)
-            packet.pointee.dts = Self.rescale(packet.pointee.dts, offset: offset, from: inputTimeBase, to: outputTimeBase)
+            packet.pointee.pts = rescaled.pts
+            packet.pointee.dts = rescaled.dts
             packet.pointee.duration = av_rescale_q(packet.pointee.duration, inputTimeBase, outputTimeBase)
             packet.pointee.pos = -1
 
             // Read what we need before writing: `av_interleaved_write_frame`
             // takes the packet's reference and leaves it blank.
             let size = Int64(packet.pointee.size)
-            let presentation = packet.pointee.pts
+            let presentation = rescaled.pts
 
             status = av_interleaved_write_frame(outputContext, packet)
-            guard status >= 0 else { throw RemuxError.writeFailed(Self.message(for: status)) }
+            guard status >= 0 else {
+                // Include what the muxer choked on: which stream, and the
+                // timestamps it was handed. Without that, "Invalid argument" is
+                // unactionable.
+                throw RemuxError.writeFailed(
+                    "\(Self.message(for: status)) [stream \(outputIndex), pts \(rescaled.pts), dts \(rescaled.dts)]"
+                )
+            }
             writtenBytes += size
 
             if presentation != Self.noTimestamp {
@@ -341,16 +374,9 @@ nonisolated final class MediaRemuxer: @unchecked Sendable {
     /// `0x8000000000000000` reinterpreted as a signed 64-bit integer.
     private static let noTimestamp = Int64.min
 
-    private static func rescale(
-        _ timestamp: Int64,
-        offset: Int64,
-        from source: AVRational,
-        to destination: AVRational
-    ) -> Int64 {
-        guard timestamp != Self.noTimestamp else { return timestamp }
-        let rounding = AVRounding(rawValue: AV_ROUND_NEAR_INF.rawValue | AV_ROUND_PASS_MINMAX.rawValue)
-        return av_rescale_q_rnd(max(0, timestamp - offset), source, destination, rounding)
-    }
+    private static let rounding = AVRounding(
+        rawValue: AV_ROUND_NEAR_INF.rawValue | AV_ROUND_PASS_MINMAX.rawValue
+    )
 
     /// `av_err2str` is a macro, so Swift has to call the underlying function.
     private static func message(for code: Int32) -> String {

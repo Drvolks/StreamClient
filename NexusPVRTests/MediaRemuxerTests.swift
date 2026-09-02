@@ -46,17 +46,35 @@ struct MediaRemuxerTests {
 
     /// Builds a `seconds`-long MPEG-TS with H.264 video and AAC audio — the
     /// same shape as what a Dispatcharr catch-up session serves.
-    private static func makeFixture(seconds: Int, audioCodec: String = "aac", in directory: URL) throws -> URL? {
+    ///
+    /// - Parameters:
+    ///   - bFrames: reordered frames, so `pts > dts` — every real broadcast
+    ///     encode has them, and `ultrafast` (the default here) has none.
+    ///   - clockOffset: starts the mux clock this many seconds in, the way a
+    ///     broadcast stream's clock is wherever it happens to be.
+    private static func makeFixture(
+        seconds: Int,
+        audioCodec: String = "aac",
+        bFrames: Int = 0,
+        clockOffset: Int? = nil,
+        named name: String? = nil,
+        in directory: URL
+    ) throws -> URL? {
         guard let ffmpeg = tool("ffmpeg") else { return nil }
-        let output = directory.appendingPathComponent("fixture-\(audioCodec).ts")
-        try run(ffmpeg, [
+        let output = directory.appendingPathComponent(name ?? "fixture-\(audioCodec).ts")
+        var arguments = [
             "-y", "-loglevel", "error",
             "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=\(seconds)",
             "-f", "lavfi", "-i", "sine=frequency=440:duration=\(seconds)",
-            "-c:v", "libx264", "-preset", "ultrafast", "-g", "25",
-            "-c:a", audioCodec, "-shortest",
-            "-f", "mpegts", output.path
-        ])
+            "-c:v", "libx264", "-preset", bFrames > 0 ? "veryfast" : "ultrafast",
+            "-bf", "\(bFrames)", "-g", "25",
+            "-c:a", audioCodec, "-shortest"
+        ]
+        if let clockOffset {
+            arguments += ["-output_ts_offset", "\(clockOffset)"]
+        }
+        arguments += ["-f", "mpegts", output.path]
+        try run(ffmpeg, arguments)
         return FileManager.default.fileExists(atPath: output.path) ? output : nil
     }
 
@@ -170,6 +188,60 @@ struct MediaRemuxerTests {
                 onProgress: { _, _ in }
             )
         }
+    }
+
+    @Test("Handles a broadcast-shaped source: B-frames and a clock that starts hours in", .enabled(if: MediaRemuxerTests.toolsAvailable))
+    func broadcastShapedSource() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = try #require(try Self.makeFixture(
+            seconds: 6, bFrames: 3, clockOffset: 40_000, named: "broadcast.ts", in: directory
+        ))
+
+        let result = try await MediaRemuxer().run(
+            input: fixture,
+            headers: [:],
+            outputDirectory: directory,
+            baseName: "broadcast",
+            stopAfterSeconds: nil,
+            onProgress: { _, _ in }
+        )
+
+        // The mux clock started 40000 s in; the file must not claim to.
+        #expect(abs(result.seconds - 6) < 0.5)
+        if let duration = try Self.duration(of: result.url) {
+            #expect(abs(duration - 6) < 0.5)
+        }
+    }
+
+    @Test("A timestamp discontinuity doesn't inflate the duration", .enabled(if: MediaRemuxerTests.toolsAvailable))
+    func timestampDiscontinuity() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Two segments whose clocks are 30000 s apart, spliced — what a DVB mux
+        // does at an ad break. Taken at face value the join reads as eight
+        // hours of programme.
+        let first = try #require(try Self.makeFixture(
+            seconds: 6, bFrames: 3, clockOffset: 40_000, named: "part1.ts", in: directory
+        ))
+        let second = try #require(try Self.makeFixture(
+            seconds: 4, bFrames: 3, clockOffset: 10_000, named: "part2.ts", in: directory
+        ))
+        let spliced = directory.appendingPathComponent("spliced.ts")
+        try (try Data(contentsOf: first) + (try Data(contentsOf: second))).write(to: spliced)
+
+        let result = try await MediaRemuxer().run(
+            input: spliced,
+            headers: [:],
+            outputDirectory: directory,
+            baseName: "spliced",
+            stopAfterSeconds: nil,
+            onProgress: { _, _ in }
+        )
+
+        // Roughly the content that's actually there, not the clock difference.
+        #expect(result.seconds < 30)
     }
 
     @Test("A source that isn't there fails with an open error")
