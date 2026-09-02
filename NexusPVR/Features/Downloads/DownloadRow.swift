@@ -9,6 +9,10 @@ import SwiftUI
 
 #if !os(tvOS)
 struct DownloadRow: View {
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
     let item: DownloadItem
     /// Where the media file sits, for the share sheet. `nil` until the library
     /// has been read from disk.
@@ -25,7 +29,12 @@ struct DownloadRow: View {
                 Text(item.title)
                     .font(.headline)
                     .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
+                    // Two lines, wrapping: a programme title is the one thing
+                    // in the row worth reading in full, and truncating it to
+                    // one line loses the episode or event that distinguishes
+                    // two recordings of the same show.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
@@ -37,13 +46,20 @@ struct DownloadRow: View {
                 Text(contextLine)
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
+                    // Secondary detail: better clipped than wrapped onto a
+                    // second line that pushes the status out of view.
+                    .lineLimit(1)
 
                 statusView
             }
-
-            Spacer(minLength: Theme.spacingSM)
+            // Claims every point the buttons don't need. Without this the text
+            // column and a `Spacer` are both flexible, so the layout splits the
+            // leftover width between them — truncating the title while empty
+            // space sits next to it.
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             actions
+                .layoutPriority(1)
         }
         .padding(Theme.spacingMD)
         .background(Theme.surface)
@@ -103,16 +119,39 @@ struct DownloadRow: View {
     private var contextLine: String {
         var parts: [String] = []
         if let channelName = item.channelName { parts.append(channelName) }
-        if let start = item.programStart {
-            parts.append(start.formatted(date: .abbreviated, time: .shortened))
-        }
+        if let start = item.programStart { parts.append(Self.broadcastDate(start)) }
         return parts.joined(separator: " · ")
+    }
+
+    /// Day, month and time — with the year only when it isn't this one. The
+    /// full `.abbreviated` style spends a quarter of a phone-width row on
+    /// "2026", which pushes the channel name out of view.
+    private static func broadcastDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: Date())
+        let style = Date.FormatStyle()
+            .month(.abbreviated)
+            .day()
+            .hour()
+            .minute()
+        return date.formatted(sameYear ? style : style.year())
     }
 
     // MARK: - Actions
 
     @ViewBuilder
     private var actions: some View {
+        // On a phone the labelled buttons take a third of the row — width the
+        // title and channel need more than the words do.
+        if isCompact {
+            actionButtons.labelStyle(.iconOnly)
+        } else {
+            actionButtons
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
         HStack(spacing: Theme.spacingSM) {
             switch item.state {
             case .completed:
@@ -165,6 +204,14 @@ struct DownloadRow: View {
             .accessibilityIdentifier("download-remove-button")
         }
         .buttonStyle(.bordered)
+    }
+
+    private var isCompact: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     // MARK: - Formatting
