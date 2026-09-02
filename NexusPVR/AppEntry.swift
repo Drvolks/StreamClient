@@ -13,6 +13,11 @@ struct PVRApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var client = PVRClient()
     @StateObject private var epgCache = EPGCache()
+    #if !os(tvOS)
+    /// Offline downloads library — see `DownloadsView`. Not offered on tvOS,
+    /// which has no meaningful local storage for it.
+    @StateObject private var downloadManager = DownloadManager()
+    #endif
     @State private var foregroundAuthTask: Task<Void, Never>?
 
     init() {
@@ -58,6 +63,13 @@ struct PVRApp: App {
                 .environmentObject(appState)
                 .environmentObject(client)
                 .environmentObject(epgCache)
+                #if !os(tvOS)
+                .environmentObject(downloadManager)
+                .task {
+                    downloadManager.appState = appState
+                    await downloadManager.refresh()
+                }
+                #endif
                 .tint(Theme.accent)
                 #if !os(macOS)
                 .ignoresSafeArea()

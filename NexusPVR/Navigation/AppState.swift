@@ -55,6 +55,9 @@ final class AppState: ObservableObject {
     @Published var currentlyPlayingURL: URL?
     @Published var currentlyPlayingTitle: String?
     @Published var currentlyPlayingRecordingId: Int?
+    /// Set when the player is showing a local downloaded file, so its position
+    /// is saved to that item's sidecar rather than to the server.
+    @Published var currentlyPlayingDownloadId: UUID?
     @Published var currentlyPlayingResumePosition: Int?
     @Published var currentlyPlayingChannelId: Int?
     @Published var currentlyPlayingChannelName: String?
@@ -106,6 +109,14 @@ final class AppState: ObservableObject {
     /// and waiting for it to fill, which takes a few seconds — long enough that
     /// without feedback it looks like the tap did nothing.
     @Published var isPreparingStream = false
+
+    #if !os(tvOS)
+    /// Queued + running offline downloads, mirrored from `DownloadManager` for
+    /// the sidebar badge. Kept here rather than read from the manager directly
+    /// so a download's twice-a-second progress tick doesn't re-render the whole
+    /// navigation tree — this only changes when the count does.
+    @Published var activeDownloadCount = 0
+    #endif
 
     #if DISPATCHERPVR
     // Active stream count for badge
@@ -497,6 +508,7 @@ final class AppState: ObservableObject {
     func playStream(
         url: URL,
         title: String,
+        downloadId: UUID? = nil,
         recordingId: Int? = nil,
         resumePosition: Int? = nil,
         channelId: Int? = nil,
@@ -522,6 +534,7 @@ final class AppState: ObservableObject {
         #endif
         currentlyPlayingURL = effectiveURL
         currentlyPlayingTitle = title
+        currentlyPlayingDownloadId = downloadId
         currentlyPlayingRecordingId = recordingId
         currentlyPlayingResumePosition = resumePosition
         currentlyPlayingChannelId = channelId
@@ -553,6 +566,7 @@ final class AppState: ObservableObject {
         isShowingPlayer = false
         currentlyPlayingURL = nil
         currentlyPlayingTitle = nil
+        currentlyPlayingDownloadId = nil
         currentlyPlayingRecordingId = nil
         currentlyPlayingResumePosition = nil
         currentlyPlayingChannelId = nil

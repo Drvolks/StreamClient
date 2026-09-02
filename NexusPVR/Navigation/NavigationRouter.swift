@@ -245,6 +245,15 @@ struct IOSNavigation: View {
                     SearchView()
                 case .recordings:
                     RecordingsListView()
+                case .downloads:
+                    // Like StatsView, DownloadsView has no NavigationStack of
+                    // its own — without one there's no toolbar to hang the
+                    // sidebar button on, and the tab becomes a dead end.
+                    NavigationStack {
+                        DownloadsView()
+                            .sidebarMenuToolbar()
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
                 #if DISPATCHERPVR
                 case .stats:
                     // StatsView has no NavigationStack — wrap it
@@ -357,6 +366,7 @@ struct IOSNavigation: View {
                     url: url,
                     title: appState.currentlyPlayingTitle ?? "",
                     recordingId: appState.currentlyPlayingRecordingId,
+                    downloadId: appState.currentlyPlayingDownloadId,
                     resumePosition: appState.currentlyPlayingResumePosition,
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
@@ -999,6 +1009,16 @@ struct IOSNavigation: View {
                 .fill(Theme.recording)
                 .frame(width: 10, height: 10)
         }
+        if tab == .downloads, appState.activeDownloadCount > 0 {
+            Text("\(appState.activeDownloadCount)")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Theme.accent)
+                .clipShape(Capsule())
+                .accessibilityIdentifier("downloads-active-badge")
+        }
         #if DISPATCHERPVR
         if tab == .stats {
             HStack(spacing: 4) {
@@ -1272,6 +1292,7 @@ struct TVOSNavigation: View {
                     url: url,
                     title: appState.currentlyPlayingTitle ?? "",
                     recordingId: appState.currentlyPlayingRecordingId,
+                    downloadId: appState.currentlyPlayingDownloadId,
                     resumePosition: appState.currentlyPlayingResumePosition,
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
@@ -1951,6 +1972,7 @@ struct MacOSNavigation: View {
                     url: url,
                     title: appState.currentlyPlayingTitle ?? "",
                     recordingId: appState.currentlyPlayingRecordingId,
+                    downloadId: appState.currentlyPlayingDownloadId,
                     resumePosition: appState.currentlyPlayingResumePosition,
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
@@ -1982,6 +2004,8 @@ struct MacOSNavigation: View {
                                 SearchView()
                             case .recordings:
                                 RecordingsListView()
+                            case .downloads:
+                                DownloadsView()
                             #if DISPATCHERPVR
                             case .stats:
                                 StatsView()
@@ -2237,6 +2261,16 @@ struct MacOSNavigation: View {
                 Spacer()
                 if tab == .recordings && appState.recordingsHasActive {
                     Circle().fill(Theme.recording).frame(width: 8, height: 8)
+                }
+                if tab == .downloads, appState.activeDownloadCount > 0 {
+                    Text("\(appState.activeDownloadCount)")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.accent)
+                        .clipShape(Capsule())
+                        .accessibilityIdentifier("downloads-active-badge")
                 }
                 #if DISPATCHERPVR
                 if tab == .stats {
