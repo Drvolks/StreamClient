@@ -107,7 +107,7 @@ final class AppState: ObservableObject {
     /// without feedback it looks like the tap did nothing.
     @Published var isPreparingStream = false
 
-    #if os(macOS)
+    #if !os(tvOS)
     /// Queued + running offline downloads, mirrored from `DownloadManager` for
     /// the sidebar badge. Kept here rather than read from the manager directly
     /// so a download's twice-a-second progress tick doesn't re-render the whole

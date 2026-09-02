@@ -26,7 +26,7 @@ struct RecordingsListView: View {
 private struct RecordingsListContentView: View {
     @ObservedObject var client: PVRClient
     @ObservedObject var appState: AppState
-    #if os(macOS)
+    #if !os(tvOS)
     @EnvironmentObject private var downloads: DownloadManager
     #endif
     @StateObject private var viewModel: RecordingsViewModel
@@ -458,7 +458,7 @@ private struct RecordingsListContentView: View {
                 }
             }
 
-            #if os(macOS)
+            #if !os(tvOS)
             let alreadyDownloaded = downloads.hasDownload(for: .recording(id: recording.id))
             Button {
                 Task { await downloads.download(recording: recording, using: client) }

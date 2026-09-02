@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-#if os(macOS)
+#if !os(tvOS)
 struct DownloadsView: View {
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
@@ -45,8 +45,9 @@ struct DownloadsView: View {
                 ForEach(downloads.items) { item in
                     DownloadRow(
                         item: item,
+                        fileURL: downloads.fileURL(for: item),
                         play: { play(item) },
-                        showInFinder: { showInFinder(item) },
+                        reveal: { reveal(item) },
                         retry: { Task { await downloads.retry(item, using: client) } },
                         remove: { Task { await downloads.delete(item) } }
                     )
@@ -64,7 +65,7 @@ struct DownloadsView: View {
             Text("No Downloads")
                 .font(.headline)
                 .foregroundStyle(Theme.textPrimary)
-            Text("Download a catch-up programme or a recording to keep it on this Mac and watch it offline.")
+            Text(emptyMessage)
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -73,18 +74,26 @@ struct DownloadsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func play(_ item: DownloadItem) {
-        Task {
-            guard let url = await downloads.fileURL(for: item) else { return }
-            appState.playStream(url: url, title: item.displayTitle)
-        }
+    private var emptyMessage: String {
+        #if os(macOS)
+        "Download a catch-up programme or a recording to keep it on this Mac and watch it offline."
+        #else
+        "Download a catch-up programme or a recording to keep it on this device and watch it offline."
+        #endif
     }
 
-    private func showInFinder(_ item: DownloadItem) {
-        Task {
-            guard let url = await downloads.fileURL(for: item) else { return }
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
+    private func play(_ item: DownloadItem) {
+        guard let url = downloads.fileURL(for: item) else { return }
+        appState.playStream(url: url, title: item.displayTitle)
+    }
+
+    /// macOS only: iOS has no file viewer to reveal into, and gets a share
+    /// sheet in the row instead.
+    private func reveal(_ item: DownloadItem) {
+        #if os(macOS)
+        guard let url = downloads.fileURL(for: item) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        #endif
     }
 }
 #endif

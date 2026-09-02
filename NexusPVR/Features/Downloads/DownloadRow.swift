@@ -7,11 +7,14 @@
 
 import SwiftUI
 
-#if os(macOS)
+#if !os(tvOS)
 struct DownloadRow: View {
     let item: DownloadItem
+    /// Where the media file sits, for the share sheet. `nil` until the library
+    /// has been read from disk.
+    let fileURL: URL?
     let play: () -> Void
-    let showInFinder: () -> Void
+    let reveal: () -> Void
     let retry: () -> Void
     let remove: () -> Void
 
@@ -114,11 +117,22 @@ struct DownloadRow: View {
                 }
                 .accessibilityIdentifier("download-play-button")
 
-                Button(action: showInFinder) {
+                #if os(macOS)
+                Button(action: reveal) {
                     Label("Show in Finder", systemImage: "folder")
                 }
                 .labelStyle(.iconOnly)
                 .help("Show in Finder")
+                #else
+                // iOS has no Finder to reveal into; sharing is how a file
+                // leaves the app — "Save to Files" included.
+                if let fileURL, item.state == .completed {
+                    ShareLink(item: fileURL) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .labelStyle(.iconOnly)
+                }
+                #endif
 
             case .failed:
                 Button(action: retry) {

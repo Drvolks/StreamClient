@@ -11,7 +11,7 @@ struct RecordingDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
-    #if os(macOS)
+    #if !os(tvOS)
     @EnvironmentObject private var downloads: DownloadManager
     #endif
 
@@ -512,7 +512,7 @@ struct RecordingDetailView: View {
         .cardStyle()
     }
 
-    #if os(macOS)
+    #if !os(tvOS)
     /// Keeps a copy of the recording on this Mac, through the same remuxing
     /// engine catch-up downloads use.
     @ViewBuilder
@@ -601,7 +601,7 @@ struct RecordingDetailView: View {
                     .buttonStyle(AccentButtonStyle())
                 }
 
-                #if os(macOS)
+                #if !os(tvOS)
                 downloadButton
                 #endif
             }

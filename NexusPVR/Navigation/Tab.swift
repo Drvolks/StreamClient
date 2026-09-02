@@ -14,7 +14,7 @@ enum Tab: String, Identifiable, Codable {
     case topics = "Topics"
     case calendar = "Calendar"
     case search = "Search"
-    #if os(macOS)
+    #if !os(tvOS)
     case downloads = "Downloads"
     #endif
     #if DISPATCHERPVR
@@ -32,7 +32,7 @@ enum Tab: String, Identifiable, Codable {
         case .calendar: return "calendar.badge.clock"
         case .search: return "magnifyingglass"
         case .recordings: return "recordingtape"
-        #if os(macOS)
+        #if !os(tvOS)
         case .downloads: return "arrow.down.circle"
         #endif
         #if DISPATCHERPVR
@@ -64,7 +64,7 @@ enum Tab: String, Identifiable, Codable {
     static func iOSTabs(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
-        cases.append(contentsOf: [.topics, .calendar])
+        cases.append(contentsOf: [.topics, .calendar, .downloads])
         #if DISPATCHERPVR
         if userLevel >= 1 { cases.append(.stats) }
         #endif

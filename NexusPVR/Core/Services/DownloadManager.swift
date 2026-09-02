@@ -7,6 +7,9 @@
 
 import Combine
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 
 /// The Downloads feature's view-facing state and engine.
 ///
@@ -23,6 +26,10 @@ final class DownloadManager: ObservableObject {
     /// Set once at startup so the sidebar badge can track activity without
     /// observing this manager (and so re-rendering on every progress tick).
     weak var appState: AppState?
+
+    /// The downloads directory, cached from the store so views can build file
+    /// URLs without awaiting the actor.
+    @Published private(set) var directory: URL?
     /// Set when starting a download fails outright (no space, no catch-up
     /// metadata); the view shows it in an alert and clears it.
     @Published var startError: String?
@@ -42,8 +49,8 @@ final class DownloadManager: ObservableObject {
     var activeCount: Int { items.filter { $0.state.isActive }.count }
 
     private func publishActiveCount() {
-        // The badge, and so the mirrored count, is macOS-only for now.
-        #if os(macOS)
+        // No downloads UI on tvOS, so no badge to feed.
+        #if !os(tvOS)
         guard let appState else { return }
         let count = activeCount
         // Only on a real change: `items` is rewritten on every progress tick.
@@ -68,6 +75,7 @@ final class DownloadManager: ObservableObject {
     /// for one the app abandoned and report it as interrupted.
     func refresh() async {
         do {
+            directory = try? await store.directory()
             let inFlight = items.filter { $0.state.isActive }
             let inFlightIds = Set(inFlight.map(\.id))
             let stored = try await store.scan(preserving: inFlightIds)
@@ -78,9 +86,11 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    /// Local file URL for a finished download.
-    func fileURL(for item: DownloadItem) async -> URL? {
-        try? await store.mediaURL(for: item)
+    /// Local file URL for a finished download. Synchronous because the rows
+    /// need it while building their body — `ShareLink` wants the URL up front,
+    /// not from a task.
+    func fileURL(for item: DownloadItem) -> URL? {
+        directory?.appendingPathComponent(item.fileName)
     }
 
     // MARK: - Enqueuing
@@ -146,6 +156,18 @@ final class DownloadManager: ObservableObject {
 
     private func run(_ item: DownloadItem, using client: PVRClient) async {
         var sessionId: String?
+        #if os(iOS)
+        // Buys the job a grace period when the user switches away. iOS suspends
+        // the app soon after, which kills an in-process download — the sidecar
+        // is then repaired to "interrupted" on next launch (`DownloadStore.scan`)
+        // so it reads as failed rather than silently stalled.
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Offline download")
+        defer {
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+            }
+        }
+        #endif
         do {
             let resolved = try await resolve(item, using: client)
             sessionId = resolved.sessionId
@@ -156,6 +178,7 @@ final class DownloadManager: ObservableObject {
             defer { activeRemuxer = nil }
 
             let directory = try await store.directory()
+            self.directory = directory
             let itemId = item.id
             let result = try await remuxer.run(
                 input: resolved.url,

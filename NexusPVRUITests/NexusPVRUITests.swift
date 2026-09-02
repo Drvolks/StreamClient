@@ -98,6 +98,31 @@ final class NexusPVRUITests: XCTestCase {
     #endif
 
     #if os(iOS)
+    /// The Downloads tab has to be a place you can leave again. It owns no
+    /// NavigationStack of its own, and without one being wrapped around it
+    /// there is no toolbar to carry the sidebar button — the tab becomes a
+    /// dead end with no way back to any other page.
+    @MainActor
+    func testDownloadsTabOffersTheSidebarButton() throws {
+        let app = launchApp()
+        navigateToTab("Downloads", app: app)
+
+        let expandButton = app.buttons["nav-expand-button"].firstMatch
+        XCTAssertTrue(
+            expandButton.waitForExistence(timeout: 5),
+            "Downloads must offer the sidebar button, or the tab can't be left"
+        )
+
+        // And it genuinely navigates: prove another tab can be reached from here.
+        navigateToTab("Settings", app: app)
+        XCTAssertTrue(
+            waitForCondition(timeout: 5) { !app.staticTexts["No Downloads"].exists },
+            "Expected to leave the Downloads tab"
+        )
+    }
+    #endif
+
+    #if os(iOS)
     /// A currently airing program offers `Watch Live`, and the catch-up
     /// restart action (#143) is a separate control — never the same button.
     /// Demo/NextPVR data has no catch-up channels, so the restart action is

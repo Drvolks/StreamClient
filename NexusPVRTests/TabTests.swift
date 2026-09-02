@@ -124,6 +124,13 @@ struct TabTests {
         #expect(cases.contains(.settings))
     }
 
+    @Test("Downloads is offered on iOS at every user level")
+    func iOSTabsIncludeDownloads() {
+        #expect(Tab.iOSTabs(userLevel: 0).contains(.downloads))
+        #expect(Tab.iOSTabs(userLevel: 10).contains(.downloads))
+        #expect(Tab.iOSTabs(userLevel: 10, hideRecordings: true).contains(.downloads))
+    }
+
     @Test("Channels tab appears directly below Guide in iOS tabs")
     func iOSTabsChannelsAfterGuide() {
         let cases = Tab.iOSTabs(userLevel: 10)

@@ -11,7 +11,7 @@ struct ProgramDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
-    #if os(macOS) && DISPATCHERPVR
+    #if !os(tvOS) && DISPATCHERPVR
     @EnvironmentObject private var downloads: DownloadManager
     #endif
 
@@ -504,7 +504,7 @@ struct ProgramDetailView: View {
     }
     #endif
 
-    #if os(macOS) && DISPATCHERPVR
+    #if !os(tvOS) && DISPATCHERPVR
     @ViewBuilder
     private var downloadCatchupButton: some View {
         let alreadyDownloaded = downloads.hasDownload(
@@ -584,7 +584,7 @@ struct ProgramDetailView: View {
                 .disabled(isStartingCatchup)
                 .accessibilityIdentifier("watch-catchup-button")
 
-                #if os(macOS)
+                #if !os(tvOS)
                 // Keeping an aired programme means downloading it: Dispatcharr
                 // can only record what hasn't happened yet, so the catch-up
                 // archive is the only copy that exists, and it ages out of the

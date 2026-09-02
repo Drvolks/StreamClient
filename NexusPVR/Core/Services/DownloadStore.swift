@@ -46,9 +46,18 @@ actor DownloadStore {
             throw StoreError.noDirectory
         }
         let bundleId = Bundle.main.bundleIdentifier ?? "NexusPVR"
-        let directory = base.appendingPathComponent(bundleId, isDirectory: true)
+        var directory = base.appendingPathComponent(bundleId, isDirectory: true)
             .appendingPathComponent("Downloads", isDirectory: true)
+        let existed = fileManager.fileExists(atPath: directory.path)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        if !existed {
+            // Re-downloadable media has no business in a device backup: it is
+            // large, it is reproducible from the server, and on iOS backing it
+            // up is grounds for App Review rejection.
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? directory.setResourceValues(values)
+        }
         return directory
     }
 
