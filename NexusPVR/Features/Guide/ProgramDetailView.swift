@@ -590,6 +590,22 @@ struct ProgramDetailView: View {
                     #endif
                 }
 
+                Button {
+                    watchLive()
+                } label: {
+                    HStack {
+                        Image(systemName: "play.fill")
+                        Text("Watch Live")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                #if os(tvOS)
+                .buttonStyle(TVProgramPopupButtonStyle(variant: .accent))
+                #else
+                .buttonStyle(AccentButtonStyle())
+                #endif
+                .accessibilityIdentifier("watch-live-button")
+
                 #if DISPATCHERPVR
                 // Restart the airing program from its scheduled start using
                 // the same catch-up session API as the archive flow (#143).
@@ -619,22 +635,6 @@ struct ProgramDetailView: View {
                     .accessibilityIdentifier("watch-from-beginning-catchup-button")
                 }
                 #endif
-
-                Button {
-                    watchLive()
-                } label: {
-                    HStack {
-                        Image(systemName: "play.fill")
-                        Text("Watch Live")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                #if os(tvOS)
-                .buttonStyle(TVProgramPopupButtonStyle(variant: .accent))
-                #else
-                .buttonStyle(AccentButtonStyle())
-                #endif
-                .accessibilityIdentifier("watch-live-button")
             }
 
             let canRecord = appState.canManageRecordings
