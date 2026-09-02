@@ -218,7 +218,7 @@ final class DownloadManager: ObservableObject {
                 headers: resolved.headers,
                 outputDirectory: directory,
                 baseName: item.id.uuidString,
-                stopAfterSeconds: item.expectedDuration,
+                stopAfterSeconds: item.stopAfterSeconds,
                 onProgress: { [weak self] seconds, bytes in
                     Task { @MainActor [weak self] in
                         self?.update(itemId) { $0.state = .running(seconds: seconds, bytes: bytes) }

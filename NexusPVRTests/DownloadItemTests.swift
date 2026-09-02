@@ -60,25 +60,42 @@ struct DownloadItemTests {
             channelUuid: "uuid-1"
         )
         #expect(item.expectedDuration == 1800 + DownloadPolicy.catchupTailSeconds)
+        // Catch-up is the case that must stop itself: its archive runs to the
+        // moment the session was minted, not to the end of the programme.
+        #expect(item.stopAfterSeconds == 1800 + DownloadPolicy.catchupTailSeconds)
         #expect(item.source == .catchup(channelUuid: "uuid-1", start: start))
         #expect(item.channelName == "BBC One")
         #expect(item.state == .queued)
     }
 
-    @Test("A recording item has no duration cap — the file ends on its own")
-    func recordingHasNoCap() {
+    @Test("A recording knows its length for the progress bar but isn't cut short by it")
+    func recordingDurationDrivesProgressOnly() {
         let recording = Recording(
             id: 99,
             name: "Recorded Show",
             subtitle: "Episode 2",
             startTime: 1_700_000_000,
             duration: 3600,
-            channel: "ITV"
+            channel: "ITV",
+            prePadding: 1,
+            postPadding: 2
         )
         let item = DownloadItem.recording(recording)
-        #expect(item.expectedDuration == nil)
+        // Padded length (3600 + 1 min pre + 2 min post): that's what the file
+        // actually holds, so it's what the progress bar should measure against.
+        #expect(item.expectedDuration == 3780.0)
+        // But nothing stops it early — that would truncate the post-padding.
+        #expect(item.stopAfterSeconds == nil)
         #expect(item.source == .recording(id: 99))
         #expect(item.channelName == "ITV")
+    }
+
+    @Test("A recording with no reported duration still downloads")
+    func recordingWithoutDuration() {
+        let recording = Recording(id: 100, name: "Unknown length")
+        let item = DownloadItem.recording(recording)
+        #expect(item.expectedDuration == nil)
+        #expect(item.stopAfterSeconds == nil)
     }
 
     @Test("Round-trips through JSON, including the state and source")

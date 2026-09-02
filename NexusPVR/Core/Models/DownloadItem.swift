@@ -25,9 +25,9 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
     /// Scheduled broadcast window, for display and for `expectedDuration`.
     let programStart: Date?
     let programEnd: Date?
-    /// How much programme this download should contain, in seconds. `nil` for
-    /// sources that end on their own (a recording file), which also means
-    /// progress can only be reported in bytes.
+    /// How long the finished download should be, in seconds — the denominator
+    /// the progress bar needs. `nil` only when the source can't say, and the
+    /// row falls back to an indeterminate indicator.
     let expectedDuration: Double?
     let source: DownloadSource
     let createdAt: Date
@@ -52,6 +52,21 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
 
     /// The sidecar's file name.
     var metadataFileName: String { "\(id.uuidString).json" }
+
+    /// When the download has to stop itself, in seconds, or `nil` to run to the
+    /// source's own end of stream.
+    ///
+    /// Only catch-up needs this. A catch-up session's archive runs from the
+    /// programme's start to the moment the session was minted, so a show that
+    /// aired two days ago would otherwise deliver two days of stream. A
+    /// recording is a finite file that ends on its own — and stopping it at its
+    /// nominal duration would cut off the post-padding.
+    var stopAfterSeconds: Double? {
+        switch source {
+        case .catchup: return expectedDuration
+        case .recording: return nil
+        }
+    }
 
     /// Seconds below which a position isn't worth resuming from — the same
     /// threshold `Recording.hasResumePosition` uses.
@@ -131,8 +146,11 @@ extension DownloadItem {
         )
     }
 
-    /// Builds the entry for a completed server recording. No duration cap: the
-    /// recording is a finite file that ends on its own.
+    /// Builds the entry for a completed server recording.
+    ///
+    /// `expectedDuration` uses the padded length where the server reports one,
+    /// since that's what the file actually contains — it only drives the
+    /// progress bar, never a stop (see `stopAfterSeconds`).
     static func recording(_ recording: Recording) -> DownloadItem {
         DownloadItem(
             title: recording.cleanName,
@@ -140,7 +158,7 @@ extension DownloadItem {
             channelName: recording.channel,
             programStart: recording.startDate,
             programEnd: recording.endDate,
-            expectedDuration: nil,
+            expectedDuration: (recording.totalRecordingDuration ?? recording.duration).map(Double.init),
             source: .recording(id: recording.id)
         )
     }
