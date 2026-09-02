@@ -26,6 +26,9 @@ struct RecordingsListView: View {
 private struct RecordingsListContentView: View {
     @ObservedObject var client: PVRClient
     @ObservedObject var appState: AppState
+    #if os(macOS)
+    @EnvironmentObject private var downloads: DownloadManager
+    #endif
     @StateObject private var viewModel: RecordingsViewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Binding var selectedRecording: Recording?
@@ -454,6 +457,19 @@ private struct RecordingsListContentView: View {
                     Label("Watch from Beginning", systemImage: "arrow.counterclockwise")
                 }
             }
+
+            #if os(macOS)
+            let alreadyDownloaded = downloads.hasDownload(for: .recording(id: recording.id))
+            Button {
+                Task { await downloads.download(recording: recording, using: client) }
+            } label: {
+                Label(
+                    alreadyDownloaded ? "In Downloads" : "Download",
+                    systemImage: alreadyDownloaded ? "checkmark.circle.fill" : "arrow.down.circle"
+                )
+            }
+            .disabled(alreadyDownloaded)
+            #endif
         }
 
         Button {
