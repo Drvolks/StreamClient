@@ -250,13 +250,22 @@ nonisolated extension ServerConfig {
             // Save to iCloud for sync
             Self.ubiquitousStore.set(data, forKey: Self.storageKey)
             Self.ubiquitousStore.synchronize()
-
-            // Also save locally as backup
-            UserDefaults.standard.set(data, forKey: Self.storageKey)
-
-            // Save to App Group for Top Shelf extension
-            UserDefaults(suiteName: Self.appGroupSuite)?.set(data, forKey: Self.storageKey)
         }
+        saveLocally()
+    }
+
+    /// Mirrors the config to the local stores without republishing it to iCloud.
+    /// Launch uses this so a device holding a stale copy (or one that read the
+    /// iCloud store before it finished syncing) can't overwrite a newer config
+    /// saved on another device.
+    func saveLocally() {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+
+        // Local backup
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+
+        // App Group copy for the Top Shelf extension
+        UserDefaults(suiteName: Self.appGroupSuite)?.set(data, forKey: Self.storageKey)
     }
 
     static func clear() {

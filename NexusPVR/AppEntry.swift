@@ -39,9 +39,16 @@ struct PVRApp: App {
         // Trigger iCloud sync on startup to pull latest data
         NSUbiquitousKeyValueStore.default.synchronize()
 
-        // Ensure App Group has latest data for Top Shelf extension
-        UserPreferences.load().save()
-        ServerConfig.load().save()
+        // Ensure App Group has latest data for Top Shelf extension.
+        // Both loads mirror the resolved value to the App Group on their own;
+        // neither may re-publish it as if it were a fresh edit. `synchronize()`
+        // above doesn't block, so a launch can still read a stale local copy,
+        // and stamping that as new would clobber a newer value from another
+        // device — `load()` alone keeps `updatedAt` intact so the timestamp
+        // resolution still picks the real winner, and `saveLocally()` skips the
+        // iCloud write entirely (ServerConfig has no timestamp to resolve with).
+        _ = UserPreferences.load()
+        ServerConfig.load().saveLocally()
 
         #if os(tvOS)
         // Seed the global the scaled fonts/metrics read (#107). AppState's
@@ -108,6 +115,10 @@ struct PVRApp: App {
                     // notification can arrive after the clear() and re-apply
                     // a stale config from the sync queue.
                     guard client.isConfigured else { return }
+                    // Skip while the server setup sheet is open — an incoming
+                    // config would overwrite the address being typed and reset
+                    // the connect it started.
+                    guard !ServerConfigSyncGate.isSuspended else { return }
                     let newConfig = ServerConfig.load()
                     if newConfig.isConfigured && newConfig != client.config {
                         client.updateConfig(newConfig)

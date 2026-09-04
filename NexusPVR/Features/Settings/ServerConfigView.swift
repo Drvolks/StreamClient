@@ -96,6 +96,10 @@ struct ServerConfigView: View {
             }
             #endif
         }
+        // Hold off iCloud config syncs while this sheet is up so an incoming
+        // config can't replace the address being typed mid-connect.
+        .onAppear { ServerConfigSyncGate.acquire() }
+        .onDisappear { ServerConfigSyncGate.release() }
     }
 
     @ViewBuilder
