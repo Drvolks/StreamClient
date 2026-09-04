@@ -191,6 +191,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
 
 nonisolated extension ServerConfig {
     private static let storageKey = "ServerConfig"
+    private static let unlinkedKey = "ServerConfigUnlinkedAt"
     private static var ubiquitousStore: NSUbiquitousKeyValueStore { NSUbiquitousKeyValueStore.default }
 
     static let appGroupSuite: String = Bundle.main.object(forInfoDictionaryKey: "AppGroupID") as? String ?? ""
@@ -252,6 +253,7 @@ nonisolated extension ServerConfig {
             Self.ubiquitousStore.synchronize()
         }
         saveLocally()
+        UserDefaults.standard.removeObject(forKey: Self.unlinkedKey)
     }
 
     /// Mirrors the config to the local stores without republishing it to iCloud.
@@ -273,6 +275,17 @@ nonisolated extension ServerConfig {
         ubiquitousStore.synchronize()
         UserDefaults.standard.removeObject(forKey: storageKey)
         UserDefaults(suiteName: appGroupSuite)?.removeObject(forKey: storageKey)
+        // Remember that the user unlinked on purpose. The iCloud delete can
+        // take a while to propagate — and another device may still be holding
+        // the old config — so without this the setup screen re-adopts the very
+        // config that was just removed.
+        UserDefaults.standard.set(Date(), forKey: unlinkedKey)
+    }
+
+    /// True when the user unlinked and hasn't saved a new config since. While
+    /// set, a config arriving from iCloud must not be adopted automatically.
+    static var wasExplicitlyUnlinked: Bool {
+        UserDefaults.standard.object(forKey: unlinkedKey) != nil
     }
 
     /// Load config from App Group UserDefaults (for use by extensions)

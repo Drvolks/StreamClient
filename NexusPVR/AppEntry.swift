@@ -115,6 +115,7 @@ struct PVRApp: App {
                     // notification can arrive after the clear() and re-apply
                     // a stale config from the sync queue.
                     guard client.isConfigured else { return }
+                    guard !ServerConfig.wasExplicitlyUnlinked else { return }
                     // Skip while the server setup sheet is open — an incoming
                     // config would overwrite the address being typed and reset
                     // the connect it started.

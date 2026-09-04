@@ -473,11 +473,14 @@ struct ServerConfigView: View {
         #endif
 
         client.updateConfig(config)
+        // Persist before connecting. Saving only on success means a corrected
+        // address is thrown away whenever the connect fails, so a bad host can
+        // never be fixed without a working round trip to it.
+        config.save()
 
         Task {
             do {
                 try await client.authenticate()
-                config.save()
                 isConnecting = false
                 dismiss()
             } catch {

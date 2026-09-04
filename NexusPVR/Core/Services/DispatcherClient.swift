@@ -22,6 +22,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     var useOutputEndpoints = false
     private var authInProgress: Task<Void, Error>?
     private let session: URLSession
+    /// Session for user-initiated connect attempts. Unlike `session` it never
+    /// waits for connectivity, so an unreachable or unresolvable host surfaces a
+    /// real error in seconds instead of parking the Save spinner for minutes.
+    private let connectSession: URLSession
     private let networkEventLogger: any NetworkEventLogging
     /// Maps tvg_id (e.g. "TSN1.ca") → channel ids for EPG lookups.
     /// Multiple live-event channels can share the same dummy EPG source/tvg_id.
@@ -56,6 +60,12 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: configuration)
+
+        let connectConfiguration = URLSessionConfiguration.default
+        connectConfiguration.waitsForConnectivity = false
+        connectConfiguration.timeoutIntervalForRequest = 15
+        connectConfiguration.timeoutIntervalForResource = 30
+        self.connectSession = URLSession(configuration: connectConfiguration)
     }
 
     var baseURL: String {
@@ -212,9 +222,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return parts.joined(separator: " ")
     }
 
-    private func loggedData(for request: URLRequest) async throws -> (Data, URLResponse) {
+    private func loggedData(for request: URLRequest, connecting: Bool = false) async throws -> (Data, URLResponse) {
         let method = request.httpMethod ?? "GET"
         let path = sanitizePath(request.url)
+        let session = connecting ? self.connectSession : self.session
         var lastError: Error?
 
         for attempt in 1...Self.maxAttempts {
@@ -277,8 +288,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         throw lastError!
     }
 
-    private func loggedData(from url: URL) async throws -> (Data, URLResponse) {
-        try await loggedData(for: URLRequest(url: url))
+    private func loggedData(from url: URL, connecting: Bool = false) async throws -> (Data, URLResponse) {
+        try await loggedData(for: URLRequest(url: url), connecting: connecting)
     }
 
     // MARK: - Authentication
@@ -351,7 +362,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
 
             do {
-                let (_, response) = try await loggedData(for: request)
+                let (_, response) = try await loggedData(for: request, connecting: true)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     networkEventLogger.log(NetworkEvent(
                         timestamp: Date(),
@@ -483,7 +494,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         request.httpBody = try JSONEncoder().encode(body)
 
         do {
-            let (data, response) = try await loggedData(for: request)
+            let (data, response) = try await loggedData(for: request, connecting: true)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 networkEventLogger.log(NetworkEvent(
@@ -589,7 +600,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             errorDetail: "Attempting XC fallback authentication"
         ))
 
-        let (_, xcResponse) = try await loggedData(from: xcURL)
+        let (_, xcResponse) = try await loggedData(from: xcURL, connecting: true)
         guard let httpResponse = xcResponse as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             networkEventLogger.log(NetworkEvent(

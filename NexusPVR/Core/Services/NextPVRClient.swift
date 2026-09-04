@@ -17,6 +17,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     private(set) var config: ServerConfig
     private var sid: String?
     private let session: URLSession
+    /// Session for user-initiated connect attempts. Unlike `session` it never
+    /// waits for connectivity, so an unreachable or unresolvable host surfaces a
+    /// real error in seconds instead of parking the Save spinner for minutes.
+    private let connectSession: URLSession
     private let deviceName = Brand.deviceName
     private var authInProgress: Task<Void, Error>?
     private let networkEventLogger: any NetworkEventLogging
@@ -44,6 +48,12 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: configuration)
+
+        let connectConfiguration = URLSessionConfiguration.default
+        connectConfiguration.waitsForConnectivity = false
+        connectConfiguration.timeoutIntervalForRequest = 15
+        connectConfiguration.timeoutIntervalForResource = 30
+        self.connectSession = URLSession(configuration: connectConfiguration)
     }
 
     var baseURL: String {
@@ -194,9 +204,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         return parts.joined(separator: " ")
     }
 
-    private func loggedData(from url: URL) async throws -> (Data, URLResponse) {
+    private func loggedData(from url: URL, connecting: Bool = false) async throws -> (Data, URLResponse) {
         let method = "GET"
         let path = sanitizePath(url)
+        let session = connecting ? self.connectSession : self.session
         var lastError: Error?
 
         for attempt in 1...Self.maxAttempts {
@@ -332,7 +343,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 responseSize: 0,
                 errorDetail: "Preparing session initiation"
             ))
-            let (initiateData, _) = try await loggedData(from: initiateURL)
+            let (initiateData, _) = try await loggedData(from: initiateURL, connecting: true)
             let initiateResponse = try JSONDecoder().decode(SessionInitiateResponse.self, from: initiateData)
 
             guard let tempSid = initiateResponse.sid, let salt = initiateResponse.salt else {
@@ -379,7 +390,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 responseSize: 0,
                 errorDetail: "Submitting login request"
             ))
-            let (loginData, _) = try await loggedData(from: loginURL)
+            let (loginData, _) = try await loggedData(from: loginURL, connecting: true)
             let loginResponse = try JSONDecoder().decode(SessionLoginResponse.self, from: loginData)
 
             if loginResponse.isSuccess {

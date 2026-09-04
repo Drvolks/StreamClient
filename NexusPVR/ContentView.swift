@@ -83,9 +83,12 @@ struct ContentView: View {
             // Give iCloud a moment to sync, then check for config
             try? await Task.sleep(for: .milliseconds(500))
 
-            // Reload config from iCloud if available
+            // Reload config from iCloud if available. `!client.isConfigured` is
+            // also the state right after an unlink, so skip the adoption when
+            // the user unlinked on purpose — otherwise the config they just
+            // removed comes straight back from the sync queue.
             let cloudConfig = ServerConfig.load()
-            if cloudConfig.isConfigured && !client.isConfigured {
+            if cloudConfig.isConfigured && !client.isConfigured && !ServerConfig.wasExplicitlyUnlinked {
                 client.updateConfig(cloudConfig)
             }
 
