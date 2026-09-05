@@ -66,6 +66,14 @@ const SHOW_NOUNS = [
 
 const DURATIONS = [15, 30, 30, 30, 60, 60, 60, 60, 90, 120, 120, 180];
 
+// Output profiles (#161): post-delivery FFmpeg steps a client may request
+// with `?output_profile=<id>` on a live stream URL.
+const OUTPUT_PROFILES = [
+  { id: 1, name: "Media Server (AC3 Audio)", command: "ffmpeg", parameters: "-c:v copy -c:a ac3", is_active: true, locked: true },
+  { id: 3, name: "Apple TV (fMP4 H.264/AAC)", command: "ffmpeg", parameters: "-c:v libx264 -c:a aac -movflags frag_keyframe+empty_moov", is_active: true, locked: false },
+  { id: 7, name: "Retired 480p", command: "ffmpeg", parameters: "-vf scale=-2:480", is_active: false, locked: false },
+];
+
 const CHANNEL_GROUPS = [
   { id: 1, name: "News" },
   { id: 2, name: "Sports" },
@@ -650,6 +658,12 @@ function handleRequest(req, res) {
     return json(res, CHANNEL_GROUPS);
   }
 
+  // Output profiles (#161) — mirrors `core/serializers.py` OutputProfileSerializer.
+  // The inactive one must never be offered or sent by the client.
+  if (path === "/api/core/outputprofiles/") {
+    return json(res, OUTPUT_PROFILES);
+  }
+
   // EPG programs — paginated list of all programs (used by DispatcherClient)
   if (path === "/api/epg/programs/") {
     const allPrograms = [...PROGRAMS, ...EDGE_CASES];
@@ -723,9 +737,18 @@ function handleRequest(req, res) {
     return;
   }
 
-  // Stream (mock)
+  // Stream (mock). Echoes the requested output profile (#161) so a URL built
+  // by the client can be checked against the server's active list.
   if (path.startsWith("/proxy/ts/stream/")) {
-    return json(res, { detail: "Mock server does not provide streams." }, 404);
+    const requestedProfile = url.searchParams.get("output_profile");
+    const profile = requestedProfile
+      ? OUTPUT_PROFILES.find((p) => String(p.id) === requestedProfile && p.is_active) || null
+      : null;
+    return json(
+      res,
+      { detail: "Mock server does not provide streams.", output_profile: profile ? profile.id : null },
+      404
+    );
   }
 
   // Switch the source an active channel is playing
