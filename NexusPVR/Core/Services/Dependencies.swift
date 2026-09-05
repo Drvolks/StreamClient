@@ -27,6 +27,11 @@ enum Dependencies {
         defaultImageCache
     }
 
+    /// App-wide default network path reporter (protocol for testability)
+    static var networkPathReporter: any NetworkPathReporting {
+        NetworkPathMonitor.shared
+    }
+
     /// App-wide default network event logger (protocol for testability)
     static var networkEventLogger: any NetworkEventLogging {
         defaultNetworkEventLog

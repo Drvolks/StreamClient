@@ -27,6 +27,10 @@ nonisolated struct UserPreferences: Codable {
     /// only transcodes when a client asks it to, so an upgrading user sees no
     /// change in bandwidth, quality or CPU load on their server.
     var streamQuality: StreamQuality = .original
+    /// Quality used instead of `streamQuality` while on a metered network
+    /// (cellular, personal hotspot, or Low Data Mode). Nil means "same as
+    /// usual" — the default, so an upgrade changes nothing until asked.
+    var cellularStreamQuality: StreamQuality? = nil
     /// User-selectable tvOS UI font size (#107). Default `.medium`
     /// preserves the pre-feature visual output exactly — existing
     /// users see zero change on first launch after upgrade.
@@ -186,6 +190,7 @@ nonisolated struct UserPreferences: Codable {
         case subtitleBackground
         case deinterlaceMode
         case streamQuality
+        case cellularStreamQuality
         case uiFontSize
         case preferredSubtitleLanguage
         case guideShowGroupsInSidebar
@@ -225,6 +230,7 @@ nonisolated struct UserPreferences: Codable {
         // Prefs written before this setting existed decode to .original, so an
         // upgrade never silently starts transcoding on someone's server.
         streamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .streamQuality) ?? .original
+        cellularStreamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .cellularStreamQuality)
         // Forward- and backward-compat: a blob without `uiFontSize`
         // (any prefs written before #107) decodes to .medium so
         // existing users see no visual change.
@@ -254,6 +260,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(subtitleBackground, forKey: .subtitleBackground)
         try container.encode(deinterlaceMode, forKey: .deinterlaceMode)
         try container.encode(streamQuality, forKey: .streamQuality)
+        try container.encodeIfPresent(cellularStreamQuality, forKey: .cellularStreamQuality)
         try container.encode(uiFontSize, forKey: .uiFontSize)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
         try container.encode(guideShowGroupsInSidebar, forKey: .guideShowGroupsInSidebar)

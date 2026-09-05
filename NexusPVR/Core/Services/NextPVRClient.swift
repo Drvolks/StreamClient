@@ -28,6 +28,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     private let deviceName = Brand.deviceName
     private var authInProgress: Task<Void, Error>?
     private let networkEventLogger: any NetworkEventLogging
+    private let networkPath: any NetworkPathReporting
     /// Channel of the live timeshift stream currently registered with the server,
     /// so it can be released on teardown or channel change.
     private var activeLiveChannelId: Int?
@@ -47,8 +48,22 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     /// shared preferences store.
     var streamQualityOverride: StreamQuality?
 
-    private var requestedStreamQuality: StreamQuality {
-        streamQualityOverride ?? UserPreferences.load().streamQuality
+    /// Picks the quality to request for this stream.
+    ///
+    /// The cellular choice is honoured literally rather than only when it is
+    /// lower: it is an explicit per-network setting, and second-guessing it
+    /// would make the picker mean different things on different networks.
+    ///
+    /// Evaluated once, when the stream opens. Moving between Wi-Fi and cellular
+    /// mid-programme doesn't re-negotiate — that would mean tearing down and
+    /// restarting playback under the user.
+    nonisolated static func effectiveStreamQuality(
+        usual: StreamQuality,
+        cellular: StreamQuality?,
+        onMeteredNetwork: Bool
+    ) -> StreamQuality {
+        guard onMeteredNetwork, let cellular else { return usual }
+        return cellular
     }
 
     /// How long to wait for the server-side buffer to fill before opening the
@@ -63,9 +78,12 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     /// Cadence of the `channel.transcode.status` poll, matching Kodi's.
     private static let transcodeStatusInterval: Duration = .seconds(1)
 
-    init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
+    init(config: ServerConfig? = nil,
+         networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog,
+         networkPath: any NetworkPathReporting = Dependencies.networkPathReporter) {
         self.config = config ?? ServerConfig.load()
         self.networkEventLogger = networkEventLogger
+        self.networkPath = networkPath
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
@@ -741,7 +759,19 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         // one: HLS off `channel.transcode.m3u8` rather than a raw transport
         // stream off `/live`. Falls through to the direct path when the server
         // can't transcode, so a misconfigured or overloaded server still plays.
-        if let profile = requestedStreamQuality.profileName {
+        let prefs = UserPreferences.load()
+        let quality = streamQualityOverride ?? Self.effectiveStreamQuality(
+            usual: prefs.streamQuality,
+            cellular: prefs.cellularStreamQuality,
+            onMeteredNetwork: networkPath.prefersReducedData
+        )
+        // Say so when the metered-network rule changed the quality, so a picture
+        // that looks worse than usual has a visible reason.
+        if streamQualityOverride == nil, quality != prefs.streamQuality {
+            streamQualityNotice = "On a metered network — playing at \(quality.label)."
+        }
+
+        if let profile = quality.profileName {
             if let url = await startTranscodedStream(channelId: channelId, profile: profile, sid: sid) {
                 return url
             }

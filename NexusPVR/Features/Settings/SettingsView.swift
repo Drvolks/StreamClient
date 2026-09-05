@@ -27,6 +27,9 @@ struct SettingsView: View {
     @State private var deinterlaceMode: DeinterlaceMode = UserPreferences.load().deinterlaceMode
     #if !DISPATCHERPVR
     @State private var streamQuality: StreamQuality = UserPreferences.load().streamQuality
+    #if !os(tvOS)
+    @State private var cellularStreamQuality: StreamQuality? = UserPreferences.load().cellularStreamQuality
+    #endif
     #endif
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
@@ -1210,6 +1213,18 @@ struct SettingsView: View {
             Text(streamQualityDescription)
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
+
+            #if !os(tvOS)
+            Picker("On Cellular", selection: $cellularStreamQuality) {
+                Text("Same as usual").tag(StreamQuality?.none)
+                ForEach(StreamQuality.allCases) { quality in
+                    Text(quality.label).tag(StreamQuality?.some(quality))
+                }
+            }
+            Text(cellularStreamQualityDescription)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+            #endif
             #endif
 
             Picker("Deinterlacing", selection: $deinterlaceMode) {
@@ -1285,6 +1300,13 @@ struct SettingsView: View {
             prefs.streamQuality = streamQuality
             prefs.save()
         }
+        #if !os(tvOS)
+        .onChange(of: cellularStreamQuality) { _ in
+            var prefs = UserPreferences.load()
+            prefs.cellularStreamQuality = cellularStreamQuality
+            prefs.save()
+        }
+        #endif
         #endif
         .onChange(of: subtitleMode) { _ in
             var prefs = UserPreferences.load()
@@ -1326,6 +1348,19 @@ struct SettingsView: View {
     }
 
     #if !DISPATCHERPVR
+    #if !os(tvOS)
+    /// Explains the metered-network override. "Metered" rather than "cellular"
+    /// because the rule also covers a personal hotspot and Low Data Mode.
+    private var cellularStreamQualityDescription: String {
+        guard let cellularStreamQuality else {
+            return "Live TV uses the quality above on every network."
+        }
+        return "Live TV switches to \(cellularStreamQuality.label) on cellular, a personal "
+            + "hotspot, or in Low Data Mode. Chosen when playback starts — changing network "
+            + "mid-programme doesn't interrupt the stream."
+    }
+    #endif
+
     /// Explains the selected live TV quality. Like the other player settings
     /// this takes effect on the next stream, since the profile is chosen when
     /// the stream is opened.

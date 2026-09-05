@@ -36,6 +36,11 @@ struct PVRApp: App {
             UserPreferences.demoStore = demoPrefs
         }
 
+        // Start watching the network path so the first stream of the session
+        // already knows whether it's on cellular. NWPathMonitor reports the
+        // current path shortly after start, not on demand.
+        NetworkPathMonitor.shared.start()
+
         // Trigger iCloud sync on startup to pull latest data
         NSUbiquitousKeyValueStore.default.synchronize()
 

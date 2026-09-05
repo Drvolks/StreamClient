@@ -126,6 +126,64 @@ struct StreamQualityTests {
         #expect(NextPVRClient.parseTranscodeStatus(Data("not xml at all".utf8)) == nil)
     }
 
+    // MARK: - Metered-network rule
+
+    @Test("The usual quality is used off a metered network")
+    func usesUsualQualityOnWiFi() {
+        #expect(NextPVRClient.effectiveStreamQuality(
+            usual: .original, cellular: .p360, onMeteredNetwork: false) == .original)
+        #expect(NextPVRClient.effectiveStreamQuality(
+            usual: .p720, cellular: .p144, onMeteredNetwork: false) == .p720)
+    }
+
+    @Test("The cellular quality is used on a metered network")
+    func usesCellularQualityWhenMetered() {
+        #expect(NextPVRClient.effectiveStreamQuality(
+            usual: .original, cellular: .p360, onMeteredNetwork: true) == .p360)
+    }
+
+    @Test("No cellular choice means the network makes no difference")
+    func noCellularChoiceChangesNothing() {
+        // The default. An upgrade must not start silently downgrading streams.
+        #expect(NextPVRClient.effectiveStreamQuality(
+            usual: .p720, cellular: nil, onMeteredNetwork: true) == .p720)
+        #expect(NextPVRClient.effectiveStreamQuality(
+            usual: .original, cellular: nil, onMeteredNetwork: true) == .original)
+    }
+
+    @Test("A cellular choice higher than usual is still honoured")
+    func cellularChoiceIsHonouredLiterally() {
+        // Odd, but it is an explicit per-network setting; quietly ignoring it
+        // would make the picker mean different things on different networks.
+        #expect(NextPVRClient.effectiveStreamQuality(
+            usual: .p240, cellular: .original, onMeteredNetwork: true) == .original)
+    }
+
+    @Test("The cellular quality round-trips and defaults to nil")
+    func cellularQualityPersists() throws {
+        #expect(UserPreferences().cellularStreamQuality == nil)
+
+        var prefs = UserPreferences()
+        prefs.cellularStreamQuality = .p360
+        let decoded = try JSONDecoder().decode(
+            UserPreferences.self, from: try JSONEncoder().encode(prefs))
+        #expect(decoded.cellularStreamQuality == .p360)
+
+        // Clearing it back to "same as usual" must persist as absent, not stick.
+        prefs.cellularStreamQuality = nil
+        let cleared = try JSONDecoder().decode(
+            UserPreferences.self, from: try JSONEncoder().encode(prefs))
+        #expect(cleared.cellularStreamQuality == nil)
+    }
+
+    @Test("Preferences from before the cellular rule decode to nil")
+    func legacyPreferencesHaveNoCellularRule() throws {
+        let json = #"{"keywords":[],"streamQuality":"720"}"#
+        let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+        #expect(prefs.streamQuality == .p720)
+        #expect(prefs.cellularStreamQuality == nil)
+    }
+
     // MARK: - Refusals
 
     @Test("A hardware-encoder failure is read as a refusal, not as progress")
