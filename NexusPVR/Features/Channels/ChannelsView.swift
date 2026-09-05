@@ -76,7 +76,12 @@ struct ChannelsView: View {
             let channelIds = Set(profile.channels)
             result = result.filter { channelIds.contains($0.id) }
         } else if let groupId = appState.guideGroupFilter {
-            result = result.filter { $0.groupId == groupId }
+            result = result.filter { $0.isMember(ofGroup: groupId) }
+        }
+        #else
+        // NextPVR has no channel profiles, but does have groups (#158).
+        if let groupId = appState.guideGroupFilter {
+            result = result.filter { $0.isMember(ofGroup: groupId) }
         }
         #endif
         guard !appState.guideChannelFilter.isEmpty else { return result }
@@ -100,7 +105,7 @@ struct ChannelsView: View {
 
     private var populatedGroups: [ChannelGroup] {
         epgCache.channelGroups.filter { group in
-            epgCache.channels.contains { $0.groupId == group.id }
+            epgCache.channels.contains { $0.isMember(ofGroup: group.id) }
         }
     }
 

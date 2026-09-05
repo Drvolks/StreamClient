@@ -31,9 +31,9 @@ struct SettingsView: View {
     #if os(tvOS)
     @State private var uiFontSize: UIFontSize = UserPreferences.load().uiFontSize
     #endif
-    #if DISPATCHERPVR
     @State private var guideShowGroupsInSidebar: Bool = UserPreferences.load().guideShowGroupsInSidebar
     @State private var guideGroupIds: [Int] = UserPreferences.load().guideGroupIds
+    #if DISPATCHERPVR
     @State private var guideShowProfilesInSidebar: Bool = UserPreferences.load().guideShowProfilesInSidebar
     @State private var guideProfileIds: [Int] = UserPreferences.load().guideProfileIds
     #endif
@@ -80,9 +80,7 @@ struct SettingsView: View {
                 serverSection
                 generalSection
                 playbackSection
-                #if DISPATCHERPVR
                 guideSection
-                #endif
                 #if DEBUG
                 debugStreamSection
                 #endif
@@ -264,11 +262,9 @@ struct SettingsView: View {
                     }
                     .focusSection()
 
-                #if DISPATCHERPVR
                     tvOSGuideSettingsSection
                         .focusSection()
 
-                #endif
 
                 #if DEBUG
                     TVSettingsSection(
@@ -482,7 +478,7 @@ struct SettingsView: View {
     /// info so the Network panel is no longer needed.
     #endif
 
-    #if os(tvOS) && DISPATCHERPVR
+    #if os(tvOS)
     private var tvOSGuideSettingsSection: some View {
         TVSettingsSection(
             title: "Guide",
@@ -512,7 +508,7 @@ struct SettingsView: View {
                         tvOSGuideStatusRow("No channel groups available")
                     } else {
                         let populatedGroups = epgCache.channelGroups.filter { group in
-                            epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                            epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
                         }
                         if populatedGroups.isEmpty {
                             tvOSGuideStatusRow("No channels in any group")
@@ -530,6 +526,8 @@ struct SettingsView: View {
                     }
                 }
 
+                // Channel profiles are a Dispatcharr concept; NextPVR only has groups.
+                #if DISPATCHERPVR
                 Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
                     .font(.tvScaled(size: 24, weight: .semibold))
                     .modifier(TVGuideSidebarToggleForegroundStyle())
@@ -570,6 +568,7 @@ struct SettingsView: View {
                         }
                     }
                 }
+                #endif
             }
         }
     }
@@ -609,6 +608,7 @@ struct SettingsView: View {
         .buttonStyle(TVSettingsRowButtonStyle())
     }
 
+    #if DISPATCHERPVR
     private func tvOSGuideProfileToggleRow(profile: ChannelProfile) -> some View {
         let isSelected = guideProfileIds.contains(profile.id)
 
@@ -632,6 +632,7 @@ struct SettingsView: View {
         }
         .buttonStyle(TVSettingsRowButtonStyle())
     }
+    #endif
     #endif
 
     private var serverSummaryValue: String {
@@ -1289,7 +1290,6 @@ struct SettingsView: View {
         }
     }
 
-    #if DISPATCHERPVR
     private var guideSection: some View {
         Section {
             Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
@@ -1309,7 +1309,7 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.textSecondary)
                 } else {
                     let populatedGroups = epgCache.channelGroups.filter { group in
-                        epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                        epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
                     }
                     if populatedGroups.isEmpty {
                         Text("No channels in any group")
@@ -1346,6 +1346,8 @@ struct SettingsView: View {
                 }
             }
 
+            // Channel profiles are a Dispatcharr concept; NextPVR only has groups.
+            #if DISPATCHERPVR
             Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
                 .onChange(of: guideShowProfilesInSidebar) { newValue in
                     var prefs = UserPreferences.load()
@@ -1399,11 +1401,11 @@ struct SettingsView: View {
                     }
                 }
             }
+            #endif
         } header: {
             Text("Guide")
         }
     }
-    #endif
 
     #if DISPATCHERPVR
     /// iOS / macOS row showing the server's public IP and geo location
@@ -1482,7 +1484,6 @@ struct SettingsView: View {
 }
 
 #if os(tvOS)
-#if DISPATCHERPVR
 private struct TVGuideSidebarToggleForegroundStyle: ViewModifier {
     @Environment(\.isFocused) private var isFocused
 
@@ -1517,7 +1518,6 @@ private struct TVGuideToggleRowContent: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
     }
 }
-#endif
 
 private struct TVSettingsRowButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused

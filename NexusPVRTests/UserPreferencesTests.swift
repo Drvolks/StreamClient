@@ -201,6 +201,51 @@ struct UserPreferencesTests {
         #endif
     }
 
+    // MARK: - Guide group sidebar preferences (#158)
+
+    @Test("Guide group sidebar preferences survive a Codable round-trip")
+    func guideGroupPreferencesRoundTrip() throws {
+        var prefs = UserPreferences()
+        prefs.guideShowGroupsInSidebar = true
+        prefs.guideGroupIds = [
+            ChannelGroup.stableId(forName: "Sports"),
+            ChannelGroup.stableId(forName: "News")
+        ]
+
+        let decoded = try JSONDecoder().decode(
+            UserPreferences.self,
+            from: try JSONEncoder().encode(prefs)
+        )
+
+        #expect(decoded.guideShowGroupsInSidebar)
+        #expect(decoded.guideGroupIds == prefs.guideGroupIds)
+    }
+
+    @Test("Preferences saved before the group feature decode with defaults")
+    func guideGroupPreferencesBackwardCompatible() throws {
+        // A payload from a build that never wrote the group keys.
+        let json = #"{"keywords": ["news"], "seekBackwardSeconds": 10}"#
+        let decoded = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+
+        #expect(decoded.guideShowGroupsInSidebar == false)
+        #expect(decoded.guideGroupIds.isEmpty)
+    }
+
+    @Test("Name-derived group ids round-trip through JSON unchanged")
+    func nameDerivedGroupIdsSurviveEncoding() throws {
+        let ids = ["Sports", "News", "Kids", "Documentary & Lifestyle"]
+            .map(ChannelGroup.stableId(forName:))
+        var prefs = UserPreferences()
+        prefs.guideGroupIds = ids
+
+        let decoded = try JSONDecoder().decode(
+            UserPreferences.self,
+            from: try JSONEncoder().encode(prefs)
+        )
+
+        #expect(decoded.guideGroupIds == ids)
+    }
+
     @Test("resolvePersistence prefers local when both timestamps are distantPast")
     func resolve_tieGoesToLocal() {
         var local = UserPreferences()

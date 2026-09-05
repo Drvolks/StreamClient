@@ -98,6 +98,21 @@ function generateChannels(n) {
   return channels;
 }
 
+// Spread the channels over a handful of named groups, leaving one group empty
+// and one channel in two groups so clients exercise both edge cases.
+function generateChannelGroups(channels) {
+  const names = ["Sports", "News", "Movies", "Kids", "Empty Group"];
+  const groups = names.map((name) => ({ name, channelIds: [] }));
+  channels.forEach((channel, index) => {
+    groups[index % (names.length - 1)].channelIds.push(channel.channelId);
+  });
+  if (channels.length > 1) {
+    // Duplicate membership: the first channel also sits in News.
+    groups[1].channelIds.unshift(channels[0].channelId);
+  }
+  return groups;
+}
+
 function generateShowName(genre, channelName) {
   const adj = pick(SHOW_ADJECTIVES);
   const noun = pick(SHOW_NOUNS);
@@ -397,8 +412,22 @@ function handleRequest(req, res) {
     return json(res, { stat: "fail", error: "Not authenticated" }, 401);
   }
 
-  // -- Channel list --
+  // -- Channel groups (#158) --
+  // NextPVR keys groups by name; membership comes back through
+  // channel.list&group_id=<name>.
+  if (method === "channel.groups") {
+    return json(res, { groups: CHANNEL_GROUPS.map((g) => ({ name: g.name })) });
+  }
+
+  // -- Channel list (optionally narrowed to one group) --
   if (method === "channel.list") {
+    const groupName = url.searchParams.get("group_id");
+    if (groupName) {
+      const group = CHANNEL_GROUPS.find((g) => g.name === groupName);
+      if (!group) return json(res, { channels: [] });
+      const ids = new Set(group.channelIds);
+      return json(res, { channels: CHANNELS.filter((c) => ids.has(c.channelId)) });
+    }
     return json(res, { channels: CHANNELS });
   }
 
@@ -620,6 +649,7 @@ function parseArgs() {
 
 console.log(`Generating ${NUM_CHANNELS} channels...`);
 const CHANNELS = generateChannels(NUM_CHANNELS);
+const CHANNEL_GROUPS = generateChannelGroups(CHANNELS);
 
 console.log(`Generating EPG data...`);
 const PROGRAMS_BY_CHANNEL = generateEPG(CHANNELS);
@@ -633,6 +663,7 @@ const server = http.createServer(handleRequest);
 server.listen(PORT, "::", () => {
   console.log(`\nMock NextPVR server running on http://0.0.0.0:${PORT}`);
   console.log(`  Channels:    ${CHANNELS.length}`);
+  console.log(`  Groups:      ${CHANNEL_GROUPS.length}`);
   console.log(`  Programs:    ${totalPrograms}`);
   console.log(`  Recordings:  ${RECORDINGS.length}`);
   console.log(`  Auth:        any PIN accepted`);

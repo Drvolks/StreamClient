@@ -190,6 +190,121 @@ struct EPGCacheTests {
         #expect(cache.channels(inGroup: 99).isEmpty)
     }
 
+    // MARK: - Name-based channel groups (#158)
+
+    @Test("channels(inGroup:) matches multi-group membership")
+    func channelsInGroupMatchesGroupIds() {
+        let cache = EPGCache()
+        cache.visibleChannels = [
+            Channel(id: 1, name: "A", number: 1, groupIds: [30, 40]),
+            Channel(id: 2, name: "B", number: 2, groupIds: [40]),
+            Channel(id: 3, name: "C", number: 3)
+        ]
+        #expect(cache.channels(inGroup: 30).map(\.id) == [1])
+        #expect(cache.channels(inGroup: 40).map(\.id) == [1, 2])
+        #expect(cache.channels(inGroup: 50).isEmpty)
+        #expect(cache.channels(inGroup: nil).count == 3)
+    }
+
+    #if !DISPATCHERPVR
+    private func makeUngroupedChannels() -> [Channel] {
+        [
+            Channel(id: 1, name: "Sports One", number: 1),
+            Channel(id: 2, name: "News One", number: 2),
+            Channel(id: 3, name: "Movie One", number: 3)
+        ]
+    }
+
+    private func populate(_ cache: EPGCache, with channels: [Channel]) {
+        cache.channels = channels
+        cache.visibleChannels = channels
+        cache.applyChannelGroups(.empty)
+    }
+
+    @Test("applyChannelGroups publishes groups and stamps membership")
+    func applyChannelGroupsStampsMembership() {
+        let sports = ChannelGroup(name: "Sports")
+        let news = ChannelGroup(name: "News")
+        let cache = EPGCache()
+        populate(cache, with: makeUngroupedChannels())
+
+        cache.applyChannelGroups(
+            ChannelGroupCatalog(
+                groups: [sports, news],
+                channelIdsByGroupId: [sports.id: [1, 2], news.id: [2]]
+            )
+        )
+
+        #expect(cache.channelGroups.map(\.name) == ["Sports", "News"])
+        #expect(cache.channels(inGroup: sports.id).map(\.id) == [1, 2])
+        #expect(cache.channels(inGroup: news.id).map(\.id) == [2])
+        #expect(cache.channelMap[2]?.groupIds == [sports.id, news.id])
+    }
+
+    @Test("applyChannelGroups keeps the unfiltered channel catalogue intact")
+    func applyChannelGroupsKeepsAllChannels() {
+        let sports = ChannelGroup(name: "Sports")
+        let cache = EPGCache()
+        populate(cache, with: makeUngroupedChannels())
+
+        cache.applyChannelGroups(
+            ChannelGroupCatalog(groups: [sports], channelIdsByGroupId: [sports.id: [1]])
+        )
+
+        #expect(cache.channels.count == 3)
+        #expect(cache.visibleChannels.count == 3)
+        #expect(cache.channels(inGroup: nil).count == 3)
+    }
+
+    @Test("An empty catalogue leaves the all-channel view working")
+    func emptyCatalogueFallsBackToAllChannels() {
+        let cache = EPGCache()
+        populate(cache, with: makeUngroupedChannels())
+
+        cache.applyChannelGroups(.empty)
+
+        #expect(cache.channelGroups.isEmpty)
+        #expect(cache.channels(inGroup: nil).count == 3)
+        #expect(cache.channels.allSatisfy { $0.groupIds.isEmpty })
+    }
+
+    @Test("Re-applying groups replaces memberships removed server-side")
+    func reapplyingGroupsDropsStaleMembership() {
+        let sports = ChannelGroup(name: "Sports")
+        let news = ChannelGroup(name: "News")
+        let cache = EPGCache()
+        populate(cache, with: makeUngroupedChannels())
+
+        cache.applyChannelGroups(
+            ChannelGroupCatalog(groups: [sports, news], channelIdsByGroupId: [sports.id: [1, 2], news.id: [2]])
+        )
+        // A refresh finds channel 2 moved out of Sports and News deleted.
+        cache.applyChannelGroups(
+            ChannelGroupCatalog(groups: [sports], channelIdsByGroupId: [sports.id: [1]])
+        )
+
+        #expect(cache.channelGroups.map(\.name) == ["Sports"])
+        #expect(cache.channels(inGroup: sports.id).map(\.id) == [1])
+        #expect(cache.channels(inGroup: news.id).isEmpty)
+        #expect(cache.channelMap[2]?.groupIds.isEmpty == true)
+    }
+
+    @Test("Groups reported with no channels stay listed but match nothing")
+    func emptyGroupMatchesNoChannels() {
+        let empty = ChannelGroup(name: "Empty")
+        let cache = EPGCache()
+        populate(cache, with: makeUngroupedChannels())
+
+        cache.applyChannelGroups(
+            ChannelGroupCatalog(groups: [empty], channelIdsByGroupId: [empty.id: []])
+        )
+
+        #expect(cache.channelGroups.count == 1)
+        #expect(cache.channels(inGroup: empty.id).isEmpty)
+    }
+
+    #endif
+
     // MARK: - Program Access
 
     @Test("earliestProgramDate finds the oldest EPG entry across channels")

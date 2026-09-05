@@ -113,6 +113,16 @@ struct DemoDataProvider {
         ChannelGroup(id: 5, name: "Family"),
     ]
 
+    /// Groups plus membership, for backends that report the two separately
+    /// (NextPVR, #158). Derived from the demo channels' `groupId`.
+    static let channelGroupCatalog = ChannelGroupCatalog(
+        groups: channelGroups,
+        channelIdsByGroupId: Dictionary(
+            grouping: channels.filter { $0.groupId != nil },
+            by: { $0.groupId! }
+        ).mapValues { $0.map(\.id) }
+    )
+
     // MARK: - Channel Icons
 
     static func channelIconURL(channelId: Int) -> URL? {

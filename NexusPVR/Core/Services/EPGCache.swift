@@ -112,6 +112,8 @@ final class EPGCache: ObservableObject {
 
             #if DISPATCHERPVR
             enrichWithCatchupInfo(using: client)
+            #else
+            enrichWithChannelGroups(using: client)
             #endif
 
             // Two-phase EPG load:
@@ -262,6 +264,8 @@ final class EPGCache: ObservableObject {
 
             #if DISPATCHERPVR
             enrichWithCatchupInfo(using: client)
+            #else
+            enrichWithChannelGroups(using: client)
             #endif
 
             startBackgroundFullLoad(using: client, channels: sorted, totalStart: totalStart)
@@ -341,6 +345,36 @@ final class EPGCache: ObservableObject {
         guideSidebarChannels = apply(guideSidebarChannels)
         channelMap = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
+    #else
+    /// Loads NextPVR's channel groups and stamps membership onto the cached
+    /// channels (#158).
+    ///
+    /// Discovery costs one request for the group list plus one per group, so it
+    /// runs in the background after the grid has painted rather than delaying
+    /// first paint; the sidebar, settings picker and filters pick the groups up
+    /// reactively. Runs on every load *and* refresh so server-side group edits
+    /// appear without restarting the app.
+    private func enrichWithChannelGroups(using client: PVRClient) {
+        Task { [weak self] in
+            guard let self else { return }
+            let catalog = (try? await client.getChannelGroupCatalog()) ?? .empty
+            self.applyChannelGroups(catalog)
+        }
+    }
+
+    /// Replaces the cached group metadata. An empty catalogue clears it, which
+    /// is what a server with no (or no longer any) custom groups should show —
+    /// the all-channel lists themselves are untouched.
+    func applyChannelGroups(_ catalog: ChannelGroupCatalog) {
+        channelGroups = catalog.groups
+        func apply(_ list: [Channel]) -> [Channel] {
+            list.map { $0.withGroupIds(catalog.membership[$0.id] ?? []) }
+        }
+        channels = apply(channels)
+        visibleChannels = apply(visibleChannels)
+        guideSidebarChannels = apply(guideSidebarChannels)
+        channelMap = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
     #endif
 
     /// Prefetch yesterday + tomorrow EPG in background
@@ -369,7 +403,7 @@ final class EPGCache: ObservableObject {
 
     func channels(inGroup groupId: Int?) -> [Channel] {
         guard let groupId else { return visibleChannels }
-        return visibleChannels.filter { $0.groupId == groupId }
+        return visibleChannels.filter { $0.isMember(ofGroup: groupId) }
     }
 
     func filteredChannels(matching search: String) -> [Channel] {

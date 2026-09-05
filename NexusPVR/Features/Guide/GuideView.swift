@@ -61,7 +61,7 @@ struct GuideView: View {
 
     private var hasPopulatedGroups: Bool {
         epgCache.channelGroups.contains { group in
-            epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+            epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
         }
     }
     #endif
@@ -153,7 +153,6 @@ struct GuideView: View {
             .onChange(of: appState.guideProfileFilter) {
                 Task { viewModel.selectedProfileId = appState.guideProfileFilter }
             }
-            #if DISPATCHERPVR
             .onChange(of: viewModel.selectedGroupId) { _, groupId in
                 if groupId != nil {
                     viewModel.selectedProfileId = nil
@@ -161,6 +160,7 @@ struct GuideView: View {
                 }
                 appState.guideGroupFilter = groupId
             }
+            #if DISPATCHERPVR
             .onChange(of: viewModel.selectedProfileId) { _, profileId in
                 Task {
                     await epgCache.reloadData(using: client, profileId: profileId)
@@ -507,7 +507,7 @@ struct GuideView: View {
                 }
             }
             let populatedGroups = epgCache.channelGroups.filter { group in
-                epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
             }
             if !populatedGroups.isEmpty {
                 filterRow(label: "Group", items: populatedGroups.map { (id: $0.id, name: $0.name) },
@@ -1030,7 +1030,7 @@ struct GuideView: View {
         switch headerDrawerKind {
         case .group:
             let populatedGroups = epgCache.channelGroups.filter { group in
-                epgCache.guideSidebarChannels.contains { $0.groupId == group.id }
+                epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
             }
             return [TVGuideDrawerItem(id: "group-all", label: "All Groups", value: nil)] +
                    populatedGroups.map { TVGuideDrawerItem(id: "group-\($0.id)", label: $0.name, value: $0.id) }
