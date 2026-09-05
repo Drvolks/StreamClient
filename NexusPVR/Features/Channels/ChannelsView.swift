@@ -37,15 +37,14 @@ struct ChannelsView: View {
     /// the pressed card in here, the press did not move focus — the card has
     /// no neighbor to its left, i.e. it sits in the leftmost column.
     @State private var lastKnownFocusedChannelId: Int?
-    #if DISPATCHERPVR
     @State private var headerDrawerKind: ChannelsDrawerKind?
     @FocusState private var focusedDrawerItemId: String?
     #endif
-    #endif
 
-    #if os(tvOS) && DISPATCHERPVR
+    #if os(tvOS)
     /// Which header filter is currently expanded as a drawer, matching the
-    /// guide view's group/profile drawer UX.
+    /// guide view's group/profile drawer UX. `.profile` is only ever opened in
+    /// the Dispatcharr build, which is the only backend with channel profiles.
     private enum ChannelsDrawerKind { case group, profile }
     #endif
 
@@ -76,7 +75,12 @@ struct ChannelsView: View {
             let channelIds = Set(profile.channels)
             result = result.filter { channelIds.contains($0.id) }
         } else if let groupId = appState.guideGroupFilter {
-            result = result.filter { $0.groupId == groupId }
+            result = result.filter { $0.isMember(ofGroup: groupId) }
+        }
+        #else
+        // NextPVR has no channel profiles, but does have groups (#158).
+        if let groupId = appState.guideGroupFilter {
+            result = result.filter { $0.isMember(ofGroup: groupId) }
         }
         #endif
         guard !appState.guideChannelFilter.isEmpty else { return result }
@@ -87,7 +91,6 @@ struct ChannelsView: View {
         }
     }
 
-    #if DISPATCHERPVR
     private var hasFilterData: Bool {
         !epgCache.channelProfiles.isEmpty || !populatedGroups.isEmpty
     }
@@ -100,7 +103,7 @@ struct ChannelsView: View {
 
     private var populatedGroups: [ChannelGroup] {
         epgCache.channelGroups.filter { group in
-            epgCache.channels.contains { $0.groupId == group.id }
+            epgCache.channels.contains { $0.isMember(ofGroup: group.id) }
         }
     }
 
@@ -112,6 +115,7 @@ struct ChannelsView: View {
         return "All Groups"
     }
 
+    #if DISPATCHERPVR
     private var selectedProfileLabel: String {
         if let profileId = appState.guideProfileFilter,
            let profile = epgCache.channelProfiles.first(where: { $0.id == profileId }) {
@@ -137,7 +141,6 @@ struct ChannelsView: View {
             }
             .background(.ultraThinMaterial)
             .onMoveCommand { direction in
-                #if DISPATCHERPVR
                 if headerDrawerKind != nil {
                     // Up/down navigates the drawer list (handled by the focus
                     // engine); left/right collapses it, like the guide view.
@@ -146,7 +149,6 @@ struct ChannelsView: View {
                     }
                     return
                 }
-                #endif
                 // Matches the guide: left only hands focus to the sidebar from
                 // the leftmost column — everywhere else the focus engine moves
                 // to the adjacent card (#111). Focus has already been updated
@@ -166,12 +168,10 @@ struct ChannelsView: View {
                 lastKnownFocusedChannelId = nil
             }
             .onExitCommand {
-                #if DISPATCHERPVR
                 if headerDrawerKind != nil {
                     closeDrawer()
                     return
                 }
-                #endif
                 requestSidebarFocus()
             }
             .task {
@@ -205,7 +205,6 @@ struct ChannelsView: View {
             content
             .navigationTitle("Channels")
             .accessibilityIdentifier("channels-view")
-            #if DISPATCHERPVR
             .toolbar {
                 if hasFilterData {
                     ToolbarItem(placement: .automatic) {
@@ -213,7 +212,6 @@ struct ChannelsView: View {
                     }
                 }
             }
-            #endif
             .searchable(text: $appState.guideChannelFilter, prompt: "Search channels")
             .sidebarMenuToolbar()
             .alert("Error", isPresented: .constant(streamError != nil)) {
@@ -357,11 +355,7 @@ struct ChannelsView: View {
     /// outer focusable `Button` that swallows the inner button's focus — making
     /// the filter impossible to reset on tvOS.
     private var emptyStateHasFocusableButton: Bool {
-        #if DISPATCHERPVR
-        return hasActiveFilters
-        #else
-        return false
-        #endif
+        hasActiveFilters
     }
 
     @ViewBuilder
@@ -388,7 +382,6 @@ struct ChannelsView: View {
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
             }
-            #if DISPATCHERPVR
             if hasActiveFilters {
                 Button("Clear Filters") {
                     appState.guideChannelFilter = ""
@@ -398,7 +391,6 @@ struct ChannelsView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
             }
-            #endif
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -411,11 +403,7 @@ struct ChannelsView: View {
     }
 
     private var emptyTitle: String {
-        #if DISPATCHERPVR
-        return hasActiveFilters ? "No channels match filters" : "No channels available"
-        #else
-        return appState.guideChannelFilter.isEmpty ? "No channels available" : "No matches"
-        #endif
+        hasActiveFilters ? "No channels match filters" : "No channels available"
     }
 
     private var emptyContent: some View {
@@ -429,12 +417,10 @@ struct ChannelsView: View {
         emptyView
         #else
         VStack(spacing: 0) {
-            #if DISPATCHERPVR
             if showFilters && hasFilterData {
                 filterPanel
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            #endif
             emptyView
         }
         #endif
@@ -456,12 +442,10 @@ struct ChannelsView: View {
         }
         #else
         VStack(spacing: 0) {
-            #if DISPATCHERPVR
             if showFilters && hasFilterData {
                 filterPanel
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            #endif
             ScrollView {
                 cardsGrid
             }
@@ -542,25 +526,25 @@ struct ChannelsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Theme.spacingLG) {
                 tvOSSearchField
-                #if DISPATCHERPVR
                 if hasFilterData {
                     Rectangle()
                         .fill(Theme.surfaceHighlight)
                         .frame(width: 1, height: 30)
-                    tvOSDispatcharrField(
+                    tvOSFilterField(
                         icon: "folder.fill",
                         title: "Group",
                         value: selectedGroupLabel,
                         kind: .group
                     )
-                    tvOSDispatcharrField(
+                    #if DISPATCHERPVR
+                    tvOSFilterField(
                         icon: "person.fill",
                         title: "Profile",
                         value: selectedProfileLabel,
                         kind: .profile
                     )
+                    #endif
                 }
-                #endif
 
                 tvOSRefreshButton
 
@@ -578,12 +562,10 @@ struct ChannelsView: View {
                     .stroke(Theme.surfaceHighlight.opacity(0.5), lineWidth: 1)
             )
 
-            #if DISPATCHERPVR
             if headerDrawerKind != nil {
                 tvOSHeaderDrawer
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            #endif
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
@@ -644,8 +626,7 @@ struct ChannelsView: View {
         )
     }
 
-    #if DISPATCHERPVR
-    private func tvOSDispatcharrField(icon: String, title: String, value: String, kind: ChannelsDrawerKind) -> some View {
+    private func tvOSFilterField(icon: String, title: String, value: String, kind: ChannelsDrawerKind) -> some View {
         Button {
             if headerDrawerKind == kind {
                 closeDrawer()
@@ -714,8 +695,12 @@ struct ChannelsView: View {
             return [(id: "group-all", label: "All Groups", value: nil)] +
                    populatedGroups.map { (id: "group-\($0.id)", label: $0.name, value: $0.id) }
         case .profile:
+            #if DISPATCHERPVR
             return [(id: "profile-all", label: "All Profiles", value: nil)] +
                    epgCache.channelProfiles.map { (id: "profile-\($0.id)", label: $0.name, value: $0.id) }
+            #else
+            return []
+            #endif
         case .none:
             return []
         }
@@ -765,9 +750,7 @@ struct ChannelsView: View {
         closeDrawer()
     }
     #endif
-    #endif
 
-    #if DISPATCHERPVR
     private var filterToggleButton: some View {
         Button {
             withAnimation(.easeInOut(duration: Theme.animationDuration)) {
@@ -787,6 +770,7 @@ struct ChannelsView: View {
 
     private var filterPanel: some View {
         VStack(alignment: .leading, spacing: 4) {
+            #if DISPATCHERPVR
             if !epgCache.channelProfiles.isEmpty {
                 filterRow(
                     label: "Profile",
@@ -800,6 +784,7 @@ struct ChannelsView: View {
                     }
                 }
             }
+            #endif
 
             if !populatedGroups.isEmpty {
                 filterRow(
@@ -860,7 +845,6 @@ struct ChannelsView: View {
         }
         .buttonStyle(.plain)
     }
-    #endif
 
     #if os(macOS)
     /// macOS nav bar, mirroring the guide's `macOSGuideNavBar`: a capsule search
@@ -913,7 +897,6 @@ struct ChannelsView: View {
                 .accessibilityLabel("Refresh channels")
                 .accessibilityIdentifier("channels-refresh-button")
 
-                #if DISPATCHERPVR
                 if hasFilterData {
                     Button {
                         withAnimation(.easeInOut(duration: Theme.animationDuration)) {
@@ -933,17 +916,14 @@ struct ChannelsView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(showFilters ? "Hide filters" : "Show filters")
                 }
-                #endif
             }
             .padding(.horizontal, Theme.spacingMD)
             .padding(.vertical, Theme.spacingSM)
 
-            #if DISPATCHERPVR
             if showFilters && hasFilterData {
                 filterPanel
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            #endif
         }
     }
     #endif
@@ -1109,8 +1089,8 @@ private struct ChannelGridCardFocusWrapper<Content: View>: View {
 }
 
 /// tvOS `ButtonStyle` for the pill-shaped fields in the filter bar (search and
-/// the Dispatcharr group/profile chips). Mirrors the guide's `tvOSSearchField`
-/// / `tvOSDispatcharrField` look: white fill + dark text + scale when focused.
+/// the group/profile chips). Mirrors the guide's `tvOSSearchField` /
+/// `tvOSDispatcharrField` look: white fill + dark text + scale when focused.
 struct TVPillFieldButtonStyle: ButtonStyle {
     var unfocusedForeground: Color
 
@@ -1149,7 +1129,6 @@ private struct TVPillFieldFocusWrapper<Content: View>: View {
     }
 }
 
-#if DISPATCHERPVR
 /// tvOS `ButtonStyle` for rows in the group/profile drawer. Highlighted
 /// (focused) row shows a filled checkmark + accent border, matching the guide
 /// view's `tvOSHeaderDrawer` rows.
@@ -1190,7 +1169,6 @@ private struct ChannelsDrawerItemFocusWrapper<Content: View>: View {
         .animation(.easeInOut(duration: 0.12), value: isFocused)
     }
 }
-#endif
 
 /// Zero-size `UITextField` that only ever drives the on-screen keyboard for the
 /// search field. `canBecomeFocused` is `false` so the focus engine never lands

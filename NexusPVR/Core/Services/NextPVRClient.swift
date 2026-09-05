@@ -551,6 +551,79 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         return response.channels ?? []
     }
 
+    /// The server's custom channel groups and the channels in each (#158).
+    ///
+    /// NextPVR keys groups by name: `channel.groups` lists them and
+    /// `channel.list&group_id=<name>` returns only that group's channels, so
+    /// membership costs one request per group. Those run concurrently, and a
+    /// group whose request fails is reported as empty rather than failing the
+    /// whole catalogue.
+    ///
+    /// Never throws for an unsupported or group-less server — it returns
+    /// `ChannelGroupCatalog.empty`, so the plain `channel.list` catalogue keeps
+    /// working as the complete channel list.
+    func getChannelGroupCatalog() async throws -> ChannelGroupCatalog {
+        guard !config.isDemoMode else { return DemoDataProvider.channelGroupCatalog }
+
+        let names: [String]
+        do {
+            let response: ChannelGroupListResponse = try await request("channel.groups")
+            names = response.groupNames
+        } catch {
+            // Older builds — and servers with the method disabled — answer with
+            // an error or an unparseable body. Groups are optional, so degrade
+            // to "no groups" instead of breaking the channel load.
+            print("[NextPVR] channel.groups unavailable: \(error.localizedDescription)")
+            return .empty
+        }
+
+        let groups = names.map { ChannelGroup(name: $0) }
+        guard !groups.isEmpty else { return .empty }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let channelIdsByGroupId = await channelIdsPerGroup(groups)
+        print("[NextPVR] Channel groups: \(groups.count) in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000))ms")
+        return ChannelGroupCatalog(groups: groups, channelIdsByGroupId: channelIdsByGroupId)
+    }
+
+    /// Resolves each group's channel ids, capping how many `channel.list`
+    /// requests are in flight at once the same way the EPG fetch does.
+    private func channelIdsPerGroup(_ groups: [ChannelGroup]) async -> [Int: [Int]] {
+        let concurrency = 5
+        var result: [Int: [Int]] = [:]
+        result.reserveCapacity(groups.count)
+
+        var index = 0
+        await withTaskGroup(of: (Int, [Int]).self) { taskGroup in
+            func addTask(for group: ChannelGroup) {
+                taskGroup.addTask { [self] in
+                    let channels = (try? await self.channels(inGroupNamed: group.name)) ?? []
+                    return (group.id, channels.map(\.id))
+                }
+            }
+
+            while index < groups.count && index < concurrency {
+                addTask(for: groups[index])
+                index += 1
+            }
+            for await (groupId, channelIds) in taskGroup {
+                result[groupId] = channelIds
+                if index < groups.count {
+                    addTask(for: groups[index])
+                    index += 1
+                }
+            }
+        }
+        return result
+    }
+
+    /// `channel.list` narrowed to one group. The group name is the id NextPVR
+    /// expects; `URLComponents` percent-encodes it.
+    private func channels(inGroupNamed name: String) async throws -> [Channel] {
+        let response: ChannelListResponse = try await request("channel.list", params: ["group_id": name])
+        return response.channels ?? []
+    }
+
     // MARK: - EPG / Listings
 
     func getListings(channelId: Int) async throws -> [Program] {

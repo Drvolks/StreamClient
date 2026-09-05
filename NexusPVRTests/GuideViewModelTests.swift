@@ -348,6 +348,77 @@ struct GuideViewModelTests {
         #expect(vm.channels.count == 1)
     }
 
+    // MARK: - Group filtering (#158)
+
+    @Test("Selecting a group narrows the guide to that group's channels")
+    func groupFilterNarrowsChannels() {
+        let sports = ChannelGroup(name: "Sports")
+        let news = ChannelGroup(name: "News")
+        let cache = EPGCache()
+        cache.visibleChannels = [
+            Channel(id: 1, name: "Sports One", number: 1, groupIds: [sports.id]),
+            Channel(id: 2, name: "Both", number: 2, groupIds: [sports.id, news.id]),
+            Channel(id: 3, name: "News One", number: 3, groupIds: [news.id])
+        ]
+        let vm = GuideViewModel()
+        vm.epgCache = cache
+
+        vm.selectedGroupId = sports.id
+        #expect(vm.hasActiveFilters)
+        #expect(vm.channels.map(\.id) == [1, 2])
+
+        vm.selectedGroupId = news.id
+        #expect(vm.channels.map(\.id) == [2, 3])
+    }
+
+    @Test("Clearing the group filter restores every channel")
+    func clearingGroupFilterRestoresAllChannels() {
+        let sports = ChannelGroup(name: "Sports")
+        let cache = EPGCache()
+        cache.visibleChannels = [
+            Channel(id: 1, name: "Sports One", number: 1, groupIds: [sports.id]),
+            Channel(id: 2, name: "Ungrouped", number: 2)
+        ]
+        let vm = GuideViewModel()
+        vm.epgCache = cache
+
+        vm.selectedGroupId = sports.id
+        #expect(vm.channels.count == 1)
+
+        vm.selectedGroupId = nil
+        #expect(vm.hasActiveFilters == false)
+        #expect(vm.channels.count == 2)
+    }
+
+    @Test("A group with no channels shows an empty guide rather than everything")
+    func emptyGroupShowsNoChannels() {
+        let empty = ChannelGroup(name: "Empty")
+        let cache = EPGCache()
+        cache.visibleChannels = [Channel(id: 1, name: "A", number: 1)]
+        let vm = GuideViewModel()
+        vm.epgCache = cache
+
+        vm.selectedGroupId = empty.id
+        #expect(vm.channels.isEmpty)
+    }
+
+    @Test("Channel search applies on top of the group filter")
+    func searchCombinesWithGroupFilter() {
+        let sports = ChannelGroup(name: "Sports")
+        let cache = EPGCache()
+        cache.visibleChannels = [
+            Channel(id: 1, name: "Hockey", number: 1, groupIds: [sports.id]),
+            Channel(id: 2, name: "Soccer", number: 2, groupIds: [sports.id]),
+            Channel(id: 3, name: "Hockey Classics", number: 3)
+        ]
+        let vm = GuideViewModel()
+        vm.epgCache = cache
+        vm.selectedGroupId = sports.id
+        vm.channelSearchText = "hockey"
+
+        #expect(vm.channels.map(\.id) == [1])
+    }
+
     // MARK: - updateKeywordMatches
 
     @Test("updateKeywordMatches clears the set when keywords are empty")

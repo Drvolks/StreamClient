@@ -173,7 +173,7 @@ final class GuideViewModel: ObservableObject {
         } else {
             result = cache.channels(inProfile: nil)
             if let groupId = selectedGroupId {
-                result = result.filter { $0.groupId == groupId }
+                result = result.filter { $0.isMember(ofGroup: groupId) }
             }
         }
         if !channelSearchText.isEmpty {
