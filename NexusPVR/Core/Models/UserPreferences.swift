@@ -22,6 +22,15 @@ nonisolated struct UserPreferences: Codable {
     /// so interlaced broadcasts (DVB 1080i50 / 576i50, ATSC 1080i60) play
     /// without combing while progressive channels are left untouched.
     var deinterlaceMode: DeinterlaceMode = .auto
+    /// Server-side transcoding profile requested for live TV. Defaults to
+    /// `.original`, which keeps the existing direct-stream behaviour: NextPVR
+    /// only transcodes when a client asks it to, so an upgrading user sees no
+    /// change in bandwidth, quality or CPU load on their server.
+    var streamQuality: StreamQuality = .original
+    /// Quality used instead of `streamQuality` while on a metered network
+    /// (cellular, personal hotspot, or Low Data Mode). Nil means "same as
+    /// usual" — the default, so an upgrade changes nothing until asked.
+    var cellularStreamQuality: StreamQuality? = nil
     /// User-selectable tvOS UI font size (#107). Default `.medium`
     /// preserves the pre-feature visual output exactly — existing
     /// users see zero change on first launch after upgrade.
@@ -66,6 +75,32 @@ nonisolated struct UserPreferences: Codable {
     var theme: AppTheme {
         get { AppTheme(rawValue: themeRawValue) ?? .system }
         set { themeRawValue = newValue.rawValue }
+    }
+
+    /// Live TV stream quality. `.original` streams the tuner's transport
+    /// stream untouched (what the app has always done); every other case asks
+    /// NextPVR to transcode via `channel.transcode.initiate`, trading server
+    /// CPU for bandwidth.
+    ///
+    /// The raw values are the resolutions Kodi's `pvr.nextpvr` addon offers,
+    /// in the same order, because those are the profile names NextPVR servers
+    /// ship with — see `instance-settings.xml` in that addon.
+    ///
+    /// Nested here for the same reason as `DeinterlaceMode` — the tvOS Top
+    /// Shelf extension shares `UserPreferences.swift` but not its sibling
+    /// Core/Models files.
+    nonisolated enum StreamQuality: String, CaseIterable, Identifiable, Codable {
+        case original = "Original"
+        case p1080 = "1080"
+        case p720 = "720"
+        case p576 = "576"
+        case p504 = "504"
+        case p480 = "480"
+        case p360 = "360"
+        case p240 = "240"
+        case p144 = "144"
+
+        var id: String { rawValue }
     }
 
     /// User-selectable deinterlacing mode (#142). Nested here for the same
@@ -154,6 +189,8 @@ nonisolated struct UserPreferences: Codable {
         case subtitleSize
         case subtitleBackground
         case deinterlaceMode
+        case streamQuality
+        case cellularStreamQuality
         case uiFontSize
         case preferredSubtitleLanguage
         case guideShowGroupsInSidebar
@@ -190,6 +227,10 @@ nonisolated struct UserPreferences: Codable {
         // Prefs written before #142 have no `deinterlaceMode`; they decode to
         // .auto, which is the recommended default for broadcast streams.
         deinterlaceMode = try container.decodeIfPresent(DeinterlaceMode.self, forKey: .deinterlaceMode) ?? .auto
+        // Prefs written before this setting existed decode to .original, so an
+        // upgrade never silently starts transcoding on someone's server.
+        streamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .streamQuality) ?? .original
+        cellularStreamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .cellularStreamQuality)
         // Forward- and backward-compat: a blob without `uiFontSize`
         // (any prefs written before #107) decodes to .medium so
         // existing users see no visual change.
@@ -218,6 +259,8 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(subtitleSize, forKey: .subtitleSize)
         try container.encode(subtitleBackground, forKey: .subtitleBackground)
         try container.encode(deinterlaceMode, forKey: .deinterlaceMode)
+        try container.encode(streamQuality, forKey: .streamQuality)
+        try container.encodeIfPresent(cellularStreamQuality, forKey: .cellularStreamQuality)
         try container.encode(uiFontSize, forKey: .uiFontSize)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
         try container.encode(guideShowGroupsInSidebar, forKey: .guideShowGroupsInSidebar)

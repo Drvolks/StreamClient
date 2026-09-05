@@ -13,6 +13,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isConnecting = false
     @Published private(set) var lastError: NextPVRError?
+    /// Set when a requested transcode couldn't be started and playback fell back
+    /// to the original stream, so the player can say so once rather than leaving
+    /// the user to wonder why their quality setting did nothing.
+    @Published private(set) var streamQualityNotice: String?
 
     private(set) var config: ServerConfig
     private var sid: String?
@@ -24,6 +28,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     private let deviceName = Brand.deviceName
     private var authInProgress: Task<Void, Error>?
     private let networkEventLogger: any NetworkEventLogging
+    private let networkPath: any NetworkPathReporting
     /// Channel of the live timeshift stream currently registered with the server,
     /// so it can be released on teardown or channel change.
     private var activeLiveChannelId: Int?
@@ -33,16 +38,52 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     private var lastStreamInfoAt: Date = .distantPast
     /// Base `/live` URL of the active timeshift stream, used to build seek URLs.
     private var activeLiveStreamURL: URL?
+    /// Channel of the server-side transcode currently running for this session,
+    /// so it can be stopped on teardown or channel change. Mutually exclusive
+    /// with `activeLiveChannelId`: a stream is either direct or transcoded.
+    private var activeTranscodeChannelId: Int?
+
+    /// Live TV stream quality, read from user preferences when a stream starts.
+    /// Overridable so tests can drive the transcode path without writing to the
+    /// shared preferences store.
+    var streamQualityOverride: StreamQuality?
+
+    /// Picks the quality to request for this stream.
+    ///
+    /// The cellular choice is honoured literally rather than only when it is
+    /// lower: it is an explicit per-network setting, and second-guessing it
+    /// would make the picker mean different things on different networks.
+    ///
+    /// Evaluated once, when the stream opens. Moving between Wi-Fi and cellular
+    /// mid-programme doesn't re-negotiate — that would mean tearing down and
+    /// restarting playback under the user.
+    nonisolated static func effectiveStreamQuality(
+        usual: StreamQuality,
+        cellular: StreamQuality?,
+        onMeteredNetwork: Bool
+    ) -> StreamQuality {
+        guard onMeteredNetwork, let cellular else { return usual }
+        return cellular
+    }
 
     /// How long to wait for the server-side buffer to fill before opening the
     /// stream anyway.
     private static let liveStreamReadyTimeout: TimeInterval = 5
     /// Buffer-state polling cadence, matching Kodi's `LeaseWorker`.
     private static let streamInfoInterval: TimeInterval = 10
+    /// How long to wait for the server to spin up a transcode before giving up
+    /// and falling back to the direct stream. Starting ffmpeg and filling the
+    /// first HLS segments is slower than opening a tuner, so this is generous.
+    private static let transcodeReadyTimeout: TimeInterval = 30
+    /// Cadence of the `channel.transcode.status` poll, matching Kodi's.
+    private static let transcodeStatusInterval: Duration = .seconds(1)
 
-    init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
+    init(config: ServerConfig? = nil,
+         networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog,
+         networkPath: any NetworkPathReporting = Dependencies.networkPathReporter) {
         self.config = config ?? ServerConfig.load()
         self.networkEventLogger = networkEventLogger
+        self.networkPath = networkPath
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
@@ -704,6 +745,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     /// demuxer cache. Kodi makes the same split in `OpenLiveStream`; `client` being the
     /// SID rather than a device name is what its timeshift path sends.
     func liveStreamURL(channelId: Int) async throws -> URL {
+        streamQualityNotice = nil
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
 
         // Release any previous stream before rotating the SID, otherwise the old
@@ -712,6 +754,33 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
         try await refreshSessionForStreaming()
         guard let sid else { throw NextPVRError.sessionExpired }
+
+        // A transcoded stream is a different protocol, not a parameter on this
+        // one: HLS off `channel.transcode.m3u8` rather than a raw transport
+        // stream off `/live`. Falls through to the direct path when the server
+        // can't transcode, so a misconfigured or overloaded server still plays.
+        let prefs = UserPreferences.load()
+        let quality = streamQualityOverride ?? Self.effectiveStreamQuality(
+            usual: prefs.streamQuality,
+            cellular: prefs.cellularStreamQuality,
+            onMeteredNetwork: networkPath.prefersReducedData
+        )
+        // Say so when the metered-network rule changed the quality, so a picture
+        // that looks worse than usual has a visible reason.
+        if streamQualityOverride == nil, quality != prefs.streamQuality {
+            streamQualityNotice = "On a metered network — playing at \(quality.label)."
+        }
+
+        if let profile = quality.profileName {
+            if let url = await startTranscodedStream(channelId: channelId, profile: profile, sid: sid) {
+                return url
+            }
+            // Every reason for landing here is logged in detail by
+            // `startTranscodedStream`; this is the one-line version the player
+            // shows, so a dropped quality setting is never silent.
+            streamQualityNotice = "The server couldn't transcode to \(profile) — "
+                + "playing at original quality."
+        }
 
         // Degrade to the realtime shape if the server won't start a timeshift
         // stream (older NextPVR, no free tuner). Playback still works; it just
@@ -779,23 +848,30 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         return true
     }
 
-    /// True while a timeshift handle is open on the server. Guards the foreground
-    /// re-authentication, which would otherwise rotate the SID that owns it.
-    var hasActiveLiveStream: Bool { activeLiveChannelId != nil }
+    /// True while a timeshift handle or a transcode is open on the server. Guards
+    /// the foreground re-authentication, which would otherwise rotate the SID that
+    /// owns it — the transcode playlist URL carries the SID too, so re-auth would
+    /// break a transcoded stream just as surely as a direct one.
+    var hasActiveLiveStream: Bool { activeLiveChannelId != nil || activeTranscodeChannelId != nil }
 
     /// Releases the server-side timeshift buffer so the tuner is freed immediately
     /// rather than after the 15s renewal timeout. Best-effort: teardown must not
     /// throw or block.
     func stopLiveStream() async {
-        guard !config.isDemoMode, activeLiveChannelId != nil else { return }
+        guard !config.isDemoMode else { return }
+        if activeTranscodeChannelId != nil {
+            await stopTranscodedStream()
+        }
+        guard activeLiveChannelId != nil else { return }
         activeLiveChannelId = nil
         activeLiveStreamURL = nil
-        try? await streamAction("channel.stream.stop")
+        _ = try? await streamAction("channel.stream.stop")
     }
 
     /// Issues one of the `channel.stream.*` methods. These live under `/service`
     /// (not `/services/service` like every other method here) and answer raw XML.
-    private func streamAction(_ method: String, params: [String: String] = [:]) async throws {
+    @discardableResult
+    private func streamAction(_ method: String, params: [String: String] = [:]) async throws -> Data {
         guard let sid else { throw NextPVRError.sessionExpired }
 
         var components = URLComponents(string: "\(baseURL)/service")!
@@ -811,10 +887,162 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             throw NextPVRError.invalidResponse
         }
 
-        let (_, response) = try await loggedData(from: url)
+        let (data, response) = try await loggedData(from: url)
         if let status = (response as? HTTPURLResponse)?.statusCode, !(200...299).contains(status) {
             throw NextPVRError.apiError("\(method) failed with HTTP \(status)")
         }
+        return data
+    }
+
+    // MARK: - Transcoded streaming
+
+    /// Asks the server to transcode a channel and returns the HLS playlist URL
+    /// once it is playable, or nil if it never becomes playable.
+    ///
+    /// NextPVR only transcodes when a client asks: `channel.transcode.initiate`
+    /// starts ffmpeg with a named server-side profile (`720p`, `480p`, …),
+    /// `channel.transcode.status` counts to 100 while it fills the first
+    /// segments, and the stream is then served as HLS from
+    /// `channel.transcode.m3u8`. This is Kodi's `Transcoded` streaming method.
+    ///
+    /// Returning nil is not an error — the caller falls back to the direct
+    /// stream, which is worse for bandwidth but always works.
+    private func startTranscodedStream(channelId: Int, profile: String, sid: String) async -> URL? {
+        do {
+            let response = try await streamAction("channel.transcode.initiate", params: [
+                "force": "true",
+                "channel_id": String(channelId),
+                "profile": profile
+            ])
+            // NextPVR rejects an undefined profile with `<rsp stat="fail">` at
+            // HTTP 200, so the status code alone doesn't say the transcode
+            // started, and `loggedData` records no body for a 200. Log the
+            // answer either way — a silent fallback is indistinguishable from
+            // the feature not working at all.
+            if let failure = Self.transcodeFailure(response) {
+                logTranscode("initiate refused profile '\(profile)': \(failure). "
+                    + "Falling back to the direct stream.", isSuccess: false)
+                return nil
+            }
+            logTranscode("initiate accepted profile '\(profile)' for channel \(channelId)",
+                         isSuccess: true)
+        } catch {
+            logTranscode("initiate failed: \(error.localizedDescription). "
+                + "Falling back to the direct stream.", isSuccess: false)
+            return nil
+        }
+
+        // Claim the session now: the transcode has to be stopped even if it
+        // never becomes playable, or it holds the tuner until the server times out.
+        activeTranscodeChannelId = channelId
+
+        var lastPercentage = -1
+        let deadline = Date().addingTimeInterval(Self.transcodeReadyTimeout)
+        while Date() < deadline {
+            do {
+                let data = try await streamAction("channel.transcode.status")
+                // A transcode whose ffmpeg died reports `stat="fail"` here too,
+                // with no <percentage> — stop rather than waiting out the timeout.
+                if let failure = Self.transcodeFailure(data) {
+                    logTranscode("transcode failed after starting: \(failure). "
+                        + "Falling back to the direct stream.", isSuccess: false)
+                    break
+                }
+                guard let progress = Self.parseTranscodeStatus(data) else {
+                    logTranscode("status was unparseable: "
+                        + "\((String(data: Data(data.prefix(256)), encoding: .utf8) ?? "<unreadable>").trimmingCharacters(in: .whitespacesAndNewlines))",
+                        isSuccess: false)
+                    try? await Task.sleep(for: Self.transcodeStatusInterval)
+                    continue
+                }
+                if progress.percentage != lastPercentage {
+                    lastPercentage = progress.percentage
+                    logTranscode("status \(progress.percentage)%\(progress.isFinal ? " (final)" : "")",
+                                 isSuccess: true)
+                }
+                if progress.isReady {
+                    var components = URLComponents(string: "\(baseURL)/service")
+                    components?.queryItems = [
+                        URLQueryItem(name: "method", value: "channel.transcode.m3u8"),
+                        URLQueryItem(name: "sid", value: sid)
+                    ]
+                    if let url = components?.url {
+                        logTranscode("ready — playing \(profile) HLS stream", isSuccess: true)
+                        return url
+                    }
+                    break
+                }
+                if progress.hasFailed {
+                    logTranscode("stalled at \(progress.percentage)% — the server stopped making "
+                        + "progress. It may be unable to transcode \(profile) in real time, or the "
+                        + "transcoder is not configured. Falling back to the direct stream.",
+                        isSuccess: false)
+                    break
+                }
+            } catch {
+                logTranscode("status request failed: \(error.localizedDescription)", isSuccess: false)
+            }
+            try? await Task.sleep(for: Self.transcodeStatusInterval)
+        }
+
+        if lastPercentage < 100 {
+            logTranscode("gave up after \(Int(Self.transcodeReadyTimeout))s at \(lastPercentage)%. "
+                + "Falling back to the direct stream.", isSuccess: false)
+        }
+        await stopTranscodedStream()
+        return nil
+    }
+
+    /// Records a step of the transcode negotiation in the in-app event log
+    /// (Settings > Event Log) as well as the console. These steps decide whether
+    /// the user's chosen quality is honoured or silently dropped, so they have to
+    /// be visible without a debugger attached.
+    private func logTranscode(_ message: String, isSuccess: Bool) {
+        print("[NextPVR] transcode: \(message)")
+        networkEventLogger.log(NetworkEvent(
+            timestamp: Date(),
+            method: "TRANSCODE",
+            path: "/service?method=channel.transcode.*",
+            statusCode: nil,
+            isSuccess: isSuccess,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: message
+        ))
+    }
+
+    /// Releases the server-side transcode so ffmpeg exits and the tuner is freed
+    /// immediately. Best-effort: teardown must not throw or block.
+    private func stopTranscodedStream() async {
+        guard activeTranscodeChannelId != nil else { return }
+        activeTranscodeChannelId = nil
+        _ = try? await streamAction("channel.transcode.stop")
+    }
+
+    /// Parses the document returned by `channel.transcode.status`. Like the other
+    /// `/service` stream methods it answers raw XML, so it can't go through
+    /// `request(_:params:)`.
+    /// Reads a refusal out of any `channel.transcode.*` response, returning the
+    /// server's own wording, or nil when the response is not a refusal.
+    ///
+    /// NextPVR reports these at HTTP 200: it accepts the request, spawns ffmpeg,
+    /// and only then discovers the encode cannot run — a missing streaming
+    /// profile, or a hardware encoder it can't open. Reading the body is the
+    /// only way to tell a started transcode from a dead one.
+    nonisolated static func transcodeFailure(_ data: Data) -> String? {
+        let parser = TranscodeStatusXMLParser()
+        guard parser.parse(data), parser.stat == "fail" else { return nil }
+        let message = parser.errorMessage ?? "no message"
+        guard let code = parser.errorCode else { return message }
+        return "\(message) (err \(code))"
+    }
+
+    nonisolated static func parseTranscodeStatus(_ data: Data) -> TranscodeProgress? {
+        let parser = TranscodeStatusXMLParser()
+        guard parser.parse(data), let percentage = parser.percentage else {
+            return nil
+        }
+        return TranscodeProgress(percentage: percentage, isFinal: parser.isFinal ?? false)
     }
 
     func recordingStreamURL(recordingId: Int) async throws -> URL {
@@ -842,6 +1070,11 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     @discardableResult
     func renewLiveStream() async throws -> LiveStreamInfo? {
         guard !config.isDemoMode else { return nil }
+        // A transcoded stream renews itself: the player's playlist and segment
+        // requests are what keep it alive, and there is no timeshift buffer to
+        // report on. Kodi's `TranscodedBuffer` skips both calls for the same
+        // reason — sending them here would just 404 every tick.
+        guard activeTranscodeChannelId == nil else { return nil }
         // Nothing to renew when the stream fell back to realtime — the server would
         // just 404, once every keepalive tick.
         guard activeLiveChannelId != nil || isStartingLiveStream else { return nil }
@@ -902,6 +1135,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             streamLength: length,
             isComplete: parser.isComplete ?? false
         )
+    }
+
+    func clearStreamQualityNotice() {
+        streamQualityNotice = nil
     }
 
     func streamAuthHeaders() -> [String: String] {

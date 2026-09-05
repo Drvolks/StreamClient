@@ -6,7 +6,7 @@ StreamClient is a native Apple streaming client for PVR/DVR servers. Supports iO
 
 ### Variants
 - **StreamClient - For NextPVR** (scheme: `NextPVR`) — targets NextPVR server
-- **StreamClient** (scheme: `DispatcharrPVR`) — targets Dispatcharr server (Django REST API)
+- **StreamClient** (scheme: `Dispatcharr`) — targets Dispatcharr server (Django REST API)
 
 ## Tech Stack
 
@@ -159,21 +159,34 @@ Server config stored separately in `ServerConfig` (Core/Models/Session.swift).
 ## XcodeBuildMCP Integration
 **IMPORTANT**: This project uses XcodeBuildMCP for all Xcode operations.
 ## Build Commands
-- **Build**: Use `mcp__xcodebuildmcp__build_sim_name_proj` for simulator builds
-- **Test**: Use `mcp__xcodebuildmcp__test_sim_name_proj` for running tests
-- **Clean**: Use `mcp__xcodebuildmcp__clean` before major rebuilds
-- **Logs**: Use `mcp__xcodebuildmcp__capture_logs` to debug runtime issues
+
+Call `mcp__XcodeBuildMCP__session_show_defaults` before the first build or
+test of a session — the project/scheme/simulator usually come from session
+defaults, so the build and test tools then take no arguments at all. Use
+`session_set_defaults` with a named profile to check another scheme or
+platform (e.g. the Dispatcharr variant, or tvOS), and switch back with
+`session_use_defaults_profile`.
+
+- **Build**: `mcp__XcodeBuildMCP__build_sim` for simulator builds
+- **Test**: `mcp__XcodeBuildMCP__test_sim`; pass `-only-testing:` via
+  `extraArgs` to run one suite instead of the whole target
+- **Clean**: `mcp__XcodeBuildMCP__clean` before major rebuilds
+- **Logs**: log capture, device, macOS and UI-automation tools are not
+  enabled by default — see https://xcodebuildmcp.com/docs/configuration
 
 ## Build Instructions
 
-The project has two schemes:
+The project has two app schemes:
 - **NextPVR** — StreamClient - For NextPVR
 - **Dispatcharr** — StreamClient
+
+(`NexusPVR TopShelf` and `DispatcherPVR TopShelf` are the tvOS Top Shelf
+extensions, built as part of their app scheme.)
 
 ### Running the App
 
 1. Open `NexusPVR.xcodeproj` in Xcode
-2. Select scheme (NextPVR for StreamClient - For NextPVR, or DispatcharrPVR for StreamClient)
+2. Select scheme (NextPVR for StreamClient - For NextPVR, or Dispatcharr for StreamClient)
 3. Select target (iOS, tvOS, or macOS)
 4. Build and run (Cmd+R)
 
@@ -181,7 +194,9 @@ Note: MPV framework must be properly linked for video playback.
 
 ## Dependencies
 
-- **XcodeGen**: Used to generate .xcodeproj from project.yml (if applicable)
+- **Xcode project**: `NexusPVR.xcodeproj` is checked in and uses synchronized
+  folder groups, so a new Swift file placed in an existing source folder is
+  picked up automatically — no need to edit `project.pbxproj`.
 - **libmpv**: Video playback framework (compiled for each platform)
 - **Swift Package Manager**: Any additional packages via SPM
 

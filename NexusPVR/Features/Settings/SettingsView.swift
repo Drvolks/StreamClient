@@ -25,6 +25,12 @@ struct SettingsView: View {
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
     @State private var deinterlaceMode: DeinterlaceMode = UserPreferences.load().deinterlaceMode
+    #if !DISPATCHERPVR
+    @State private var streamQuality: StreamQuality = UserPreferences.load().streamQuality
+    #if !os(tvOS)
+    @State private var cellularStreamQuality: StreamQuality? = UserPreferences.load().cellularStreamQuality
+    #endif
+    #endif
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
     @State private var theme: AppTheme = UserPreferences.load().theme
@@ -63,6 +69,9 @@ struct SettingsView: View {
         case subtitleSize
         case subtitleBackground
         case deinterlace
+        #if !DISPATCHERPVR
+        case streamQuality
+        #endif
         case renderer
         case landingTab
         case hideRecordings
@@ -222,6 +231,16 @@ struct SettingsView: View {
                             ) {
                                 activeTVPopup = .audioOutput
                             }
+                            #if !DISPATCHERPVR
+                            tvSettingsRow(
+                                title: "Live TV Quality",
+                                value: streamQuality.label,
+                                icon: streamQuality.icon,
+                                detail: streamQualityDescription
+                            ) {
+                                activeTVPopup = .streamQuality
+                            }
+                            #endif
                             tvSettingsRow(
                                 title: "Deinterlacing",
                                 value: deinterlaceMode.label,
@@ -779,6 +798,10 @@ struct SettingsView: View {
             return "Audio Output"
         case .deinterlace:
             return "Deinterlacing"
+        #if !DISPATCHERPVR
+        case .streamQuality:
+            return "Live TV Quality"
+        #endif
         case .subtitleMode:
             return "Subtitles"
         case .subtitleSize:
@@ -871,6 +894,22 @@ struct SettingsView: View {
                     prefs.save()
                 }
             }
+        #if !DISPATCHERPVR
+        case .streamQuality:
+            return StreamQuality.allCases.map { quality in
+                TVPopupOption(
+                    id: "settings-popup-stream-quality-\(quality.rawValue)",
+                    title: quality.label,
+                    isCurrent: streamQuality == quality,
+                    isDestructive: false
+                ) {
+                    streamQuality = quality
+                    var prefs = UserPreferences.load()
+                    prefs.streamQuality = quality
+                    prefs.save()
+                }
+            }
+        #endif
         case .subtitleMode:
             return [
                 TVPopupOption(id: "settings-popup-subtitle-manual", title: "Manual", isCurrent: subtitleMode == .manual, isDestructive: false) {
@@ -1165,6 +1204,29 @@ struct SettingsView: View {
                 Text("Stereo").tag("stereo")
             }
 
+            #if !DISPATCHERPVR
+            Picker("Live TV Quality", selection: $streamQuality) {
+                ForEach(StreamQuality.allCases) { quality in
+                    Text(quality.label).tag(quality)
+                }
+            }
+            Text(streamQualityDescription)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+
+            #if !os(tvOS)
+            Picker("On Cellular", selection: $cellularStreamQuality) {
+                Text("Same as usual").tag(StreamQuality?.none)
+                ForEach(StreamQuality.allCases) { quality in
+                    Text(quality.label).tag(StreamQuality?.some(quality))
+                }
+            }
+            Text(cellularStreamQualityDescription)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+            #endif
+            #endif
+
             Picker("Deinterlacing", selection: $deinterlaceMode) {
                 ForEach(DeinterlaceMode.allCases) { mode in
                     Text(mode.label).tag(mode)
@@ -1232,6 +1294,20 @@ struct SettingsView: View {
             prefs.deinterlaceMode = deinterlaceMode
             prefs.save()
         }
+        #if !DISPATCHERPVR
+        .onChange(of: streamQuality) { _ in
+            var prefs = UserPreferences.load()
+            prefs.streamQuality = streamQuality
+            prefs.save()
+        }
+        #if !os(tvOS)
+        .onChange(of: cellularStreamQuality) { _ in
+            var prefs = UserPreferences.load()
+            prefs.cellularStreamQuality = cellularStreamQuality
+            prefs.save()
+        }
+        #endif
+        #endif
         .onChange(of: subtitleMode) { _ in
             var prefs = UserPreferences.load()
             prefs.subtitleMode = subtitleMode
@@ -1270,6 +1346,28 @@ struct SettingsView: View {
             return "Automatically select the last used subtitle language when available."
         }
     }
+
+    #if !DISPATCHERPVR
+    #if !os(tvOS)
+    /// Explains the metered-network override. "Metered" rather than "cellular"
+    /// because the rule also covers a personal hotspot and Low Data Mode.
+    private var cellularStreamQualityDescription: String {
+        guard let cellularStreamQuality else {
+            return "Live TV uses the quality above on every network."
+        }
+        return "Live TV switches to \(cellularStreamQuality.label) on cellular, a personal "
+            + "hotspot, or in Low Data Mode. Chosen when playback starts — changing network "
+            + "mid-programme doesn't interrupt the stream."
+    }
+    #endif
+
+    /// Explains the selected live TV quality. Like the other player settings
+    /// this takes effect on the next stream, since the profile is chosen when
+    /// the stream is opened.
+    private var streamQualityDescription: String {
+        streamQuality.summary + " Applies to the next channel you play."
+    }
+    #endif
 
     /// Explains the selected deinterlacing mode (#142). Changing the mode
     /// takes effect the next time playback starts, since mpv is configured
