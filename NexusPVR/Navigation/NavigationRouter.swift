@@ -423,14 +423,7 @@ struct IOSNavigation: View {
                 guard !Task.isCancelled else { return }
                 channelMatchCount = channels
                 programMatchCount = programs
-                #if DISPATCHERPVR
-                let query = newValue.lowercased()
-                let groupsWithChannels = epgCache.channelGroups.filter { group in
-                    group.name.lowercased().contains(query) &&
-                    epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                }
-                matchingGroups = groupsWithChannels
-                #endif
+                matchingGroups = epgCache.channelGroups(matching: newValue)
                 lastSearchedText = newValue
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showSearchDropdown = true
@@ -1117,7 +1110,6 @@ struct IOSNavigation: View {
             }
             .disabled(channelMatchCount == 0)
 
-            #if DISPATCHERPVR
             if !matchingGroups.isEmpty {
                 Divider().overlay(Theme.surfaceHighlight)
 
@@ -1148,7 +1140,6 @@ struct IOSNavigation: View {
                     }
                 }
             }
-            #endif
 
             Divider().overlay(Theme.surfaceHighlight)
 
@@ -2055,14 +2046,7 @@ struct MacOSNavigation: View {
                 guard !Task.isCancelled else { return }
                 channelMatchCount = channels
                 programMatchCount = programs
-                #if DISPATCHERPVR
-                let query = newValue.lowercased()
-                let groupsWithChannels = epgCache.channelGroups.filter { group in
-                    group.name.lowercased().contains(query) &&
-                    epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                }
-                matchingGroups = groupsWithChannels
-                #endif
+                matchingGroups = epgCache.channelGroups(matching: newValue)
                 lastSearchedText = newValue
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showSearchDropdown = true
@@ -2621,7 +2605,6 @@ struct MacOSNavigation: View {
             .buttonStyle(.plain)
             .disabled(channelMatchCount == 0)
 
-            #if DISPATCHERPVR
             if !matchingGroups.isEmpty {
                 Divider().overlay(Theme.surfaceHighlight)
 
@@ -2652,7 +2635,6 @@ struct MacOSNavigation: View {
                     .buttonStyle(.plain)
                 }
             }
-            #endif
 
             Divider().overlay(Theme.surfaceHighlight)
 

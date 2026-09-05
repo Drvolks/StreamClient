@@ -406,6 +406,31 @@ final class EPGCache: ObservableObject {
         return visibleChannels.filter { $0.isMember(ofGroup: groupId) }
     }
 
+    /// Non-empty channel groups whose name matches `search`, for the sidebar
+    /// search dropdown. Empty groups are excluded — selecting one would show a
+    /// blank guide — and an empty query matches nothing rather than everything.
+    ///
+    /// Matched against `guideSidebarChannels` rather than `visibleChannels` so
+    /// a Dispatcharr profile reload, which narrows the visible list
+    /// server-side, can't make groups disappear from search.
+    func channelGroups(matching search: String) -> [ChannelGroup] {
+        Self.channelGroups(channelGroups, matching: search, in: guideSidebarChannels)
+    }
+
+    /// Pure form of `channelGroups(matching:)`.
+    nonisolated static func channelGroups(
+        _ groups: [ChannelGroup],
+        matching search: String,
+        in channels: [Channel]
+    ) -> [ChannelGroup] {
+        guard !search.isEmpty else { return [] }
+        let query = search.lowercased()
+        return groups.filter { group in
+            group.name.lowercased().contains(query) &&
+            channels.contains { $0.isMember(ofGroup: group.id) }
+        }
+    }
+
     func filteredChannels(matching search: String) -> [Channel] {
         guard !search.isEmpty else { return visibleChannels }
         let query = search.lowercased()

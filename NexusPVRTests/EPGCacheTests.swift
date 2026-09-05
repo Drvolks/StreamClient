@@ -206,6 +206,65 @@ struct EPGCacheTests {
         #expect(cache.channels(inGroup: nil).count == 3)
     }
 
+    // MARK: - Group search (sidebar dropdown, #158)
+
+    private var searchGroups: [ChannelGroup] {
+        [ChannelGroup(name: "Sports"), ChannelGroup(name: "Sports Extra"), ChannelGroup(name: "News"), ChannelGroup(name: "Empty")]
+    }
+
+    private var searchChannels: [Channel] {
+        [
+            Channel(id: 1, name: "A", number: 1, groupIds: [ChannelGroup.stableId(forName: "Sports")]),
+            Channel(id: 2, name: "B", number: 2, groupIds: [ChannelGroup.stableId(forName: "Sports Extra")]),
+            Channel(id: 3, name: "C", number: 3, groupIds: [ChannelGroup.stableId(forName: "News")])
+        ]
+    }
+
+    @Test("Group search matches every group whose name contains the query")
+    func groupSearchMatchesByName() {
+        let matches = EPGCache.channelGroups(searchGroups, matching: "sport", in: searchChannels)
+        #expect(matches.map(\.name) == ["Sports", "Sports Extra"])
+    }
+
+    @Test("Group search is case-insensitive")
+    func groupSearchIgnoresCase() {
+        let matches = EPGCache.channelGroups(searchGroups, matching: "NEWS", in: searchChannels)
+        #expect(matches.map(\.name) == ["News"])
+    }
+
+    @Test("Group search hides groups with no channels")
+    func groupSearchHidesEmptyGroups() {
+        let matches = EPGCache.channelGroups(searchGroups, matching: "empty", in: searchChannels)
+        #expect(matches.isEmpty)
+    }
+
+    @Test("An empty query matches no groups rather than all of them")
+    func groupSearchEmptyQuery() {
+        #expect(EPGCache.channelGroups(searchGroups, matching: "", in: searchChannels).isEmpty)
+    }
+
+    @Test("Group search finds nothing when the server reported no groups")
+    func groupSearchWithoutGroups() {
+        #expect(EPGCache.channelGroups([], matching: "sport", in: searchChannels).isEmpty)
+    }
+
+    @Test("Group search counts Dispatcharr's single-groupId membership too")
+    func groupSearchMatchesLegacyGroupId() {
+        let group = ChannelGroup(id: 10, name: "Movies")
+        let channels = [Channel(id: 1, name: "A", number: 1, groupId: 10)]
+        #expect(EPGCache.channelGroups([group], matching: "mov", in: channels).map(\.id) == [10])
+    }
+
+    @Test("Group search on the cache reads the unfiltered sidebar snapshot")
+    func groupSearchUsesSidebarSnapshot() {
+        let cache = EPGCache()
+        // guideSidebarChannels is only populated by a load, so an untouched
+        // cache must not surface groups it cannot back with channels.
+        cache.channelGroups = searchGroups
+        cache.visibleChannels = searchChannels
+        #expect(cache.channelGroups(matching: "sport").isEmpty)
+    }
+
     #if !DISPATCHERPVR
     private func makeUngroupedChannels() -> [Channel] {
         [
