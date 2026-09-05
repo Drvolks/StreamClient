@@ -639,6 +639,12 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             var selected: Int32 = 0
             mpv_get_property(mpv, "track-list/\(i)/selected", MPV_FORMAT_FLAG, &selected)
 
+            var visualImpaired: Int32 = 0
+            mpv_get_property(mpv, "track-list/\(i)/visual-impaired", MPV_FORMAT_FLAG, &visualImpaired)
+
+            var hearingImpaired: Int32 = 0
+            mpv_get_property(mpv, "track-list/\(i)/hearing-impaired", MPV_FORMAT_FLAG, &hearingImpaired)
+
             tracks.append(MPVTrack(
                 id: Int(trackId),
                 type: trackType,
@@ -647,7 +653,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 codec: codec,
                 channels: channels,
                 bitrate: bitrate > 0 ? Int(bitrate) : nil,
-                isSelected: selected != 0
+                isSelected: selected != 0,
+                isVisualImpaired: visualImpaired != 0,
+                isHearingImpaired: hearingImpaired != 0
             ))
         }
         return tracks
@@ -664,6 +672,19 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             self?.isChangingTrack = false
         }
+    }
+
+    /// mpv's auto-selection ignores the visual/hearing-impaired flags, so a
+    /// DVB audio-description stream listed first in the PMT wins by track id.
+    /// Move to the regular mix when one exists (issue: Harry Potter commentary).
+    private func avoidAccessibilityAudioTrackIfNeeded() {
+        guard let mpv = mpv else { return }
+        let tracks = getTrackList()
+        guard let targetId = MPVTrack.regularAudioTrackToSelect(in: tracks) else { return }
+        let selected = tracks.first { $0.type == "audio" && $0.isSelected }
+        print("MPV: Auto-selected audio track \(selected?.id ?? -1) is an accessibility track, switching to \(targetId)")
+        var value = Int64(targetId)
+        mpv_set_property(mpv, "aid", MPV_FORMAT_INT64, &value)
     }
 
     func getSubtitleText() -> String? {
@@ -1262,6 +1283,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         case MPV_EVENT_FILE_LOADED:
             print("MPV: File loaded successfully")
+            avoidAccessibilityAudioTrackIfNeeded()
 
         case MPV_EVENT_PLAYBACK_RESTART:
             print("MPV: Playback started/restarted")
