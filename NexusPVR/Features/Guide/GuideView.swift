@@ -54,17 +54,19 @@ struct GuideView: View {
     private let channelWidth: CGFloat = Theme.channelColumnWidth
     private let rowHeight: CGFloat = Theme.cellHeight
 
-    #if DISPATCHERPVR
     private var hasFilterData: Bool {
         !epgCache.channelProfiles.isEmpty || hasPopulatedGroups
     }
 
     private var hasPopulatedGroups: Bool {
-        epgCache.channelGroups.contains { group in
-            epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-        }
+        epgCache.hasPopulatedChannelGroups
     }
-    #endif
+
+    /// Groups the filter surfaces offer — empty groups are hidden, since
+    /// picking one would leave the guide blank.
+    private var populatedGroups: [ChannelGroup] {
+        epgCache.populatedChannelGroups
+    }
 
     var body: some View {
         // The modifier chain is split across small generic helpers so the Swift
@@ -249,7 +251,7 @@ struct GuideView: View {
                 .offset(y: -50)
         }
         #endif
-        #if os(iOS) && DISPATCHERPVR
+        #if os(iOS)
         .overlay(alignment: .top) {
             if viewModel.showFilters && hasFilterData {
                 filterPanel
@@ -437,7 +439,6 @@ struct GuideView: View {
                 .accessibilityIdentifier("guide-refresh-button")
                 .padding(.trailing, Theme.spacingSM)
 
-                #if DISPATCHERPVR
                 if hasFilterData {
                     Button {
                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -457,17 +458,14 @@ struct GuideView: View {
                     .buttonStyle(.plain)
                     .padding(.trailing, Theme.spacingSM)
                 }
-                #endif
             }
             .padding(.horizontal, Theme.spacingMD)
             .padding(.vertical, Theme.spacingSM)
 
-            #if DISPATCHERPVR
             if viewModel.showFilters && hasFilterData {
                 filterPanel
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-            #endif
         }
     }
     #endif
@@ -481,7 +479,6 @@ struct GuideView: View {
         #else
         let base: CGFloat = 0
         #endif
-        #if DISPATCHERPVR
         var extra: CGFloat = 0
         if viewModel.showFilters && hasFilterData {
             // Add space for each filter row shown
@@ -490,25 +487,20 @@ struct GuideView: View {
             if hasPopulatedGroups { extra += 36 }
         }
         return base + extra
-        #else
-        return base
-        #endif
     }
     #endif
 
-    #if DISPATCHERPVR
     @ViewBuilder
     private var filterPanel: some View {
         VStack(alignment: .leading, spacing: 4) {
+            #if DISPATCHERPVR
             if !epgCache.channelProfiles.isEmpty {
                 filterRow(label: "Profile", items: epgCache.channelProfiles.map { (id: $0.id, name: $0.name) },
                           selectedId: viewModel.selectedProfileId) { id in
                     viewModel.selectedProfileId = id
                 }
             }
-            let populatedGroups = epgCache.channelGroups.filter { group in
-                epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-            }
+            #endif
             if !populatedGroups.isEmpty {
                 filterRow(label: "Group", items: populatedGroups.map { (id: $0.id, name: $0.name) },
                           selectedId: viewModel.selectedGroupId) { id in
@@ -556,7 +548,6 @@ struct GuideView: View {
         }
         .buttonStyle(.plain)
     }
-    #endif
 
     private var loadingView: some View {
         VStack(spacing: Theme.spacingMD) {
@@ -993,8 +984,8 @@ struct GuideView: View {
         case previousDay
         case nextDay
         case search
-        #if DISPATCHERPVR
         case group
+        #if DISPATCHERPVR
         case profile
         #endif
         case refresh
@@ -1002,14 +993,16 @@ struct GuideView: View {
 
     private var tvHeaderItems: [TVGuideHeaderItem] {
         var items: [TVGuideHeaderItem] = [.previousDay, .nextDay, .search]
+        if hasPopulatedGroups { items.append(.group) }
         #if DISPATCHERPVR
-        items.append(contentsOf: [.group, .profile])
+        items.append(.profile)
         #endif
         items.append(.refresh)
         return items
     }
 
-    #if DISPATCHERPVR
+    /// `.profile` is only ever opened in the Dispatcharr build — channel
+    /// profiles have no NextPVR equivalent.
     private enum TVGuideDrawerKind {
         case group
         case profile
@@ -1029,31 +1022,27 @@ struct GuideView: View {
     private var currentDrawerItems: [TVGuideDrawerItem] {
         switch headerDrawerKind {
         case .group:
-            let populatedGroups = epgCache.channelGroups.filter { group in
-                epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-            }
             return [TVGuideDrawerItem(id: "group-all", label: "All Groups", value: nil)] +
                    populatedGroups.map { TVGuideDrawerItem(id: "group-\($0.id)", label: $0.name, value: $0.id) }
         case .profile:
+            #if DISPATCHERPVR
             return [TVGuideDrawerItem(id: "profile-all", label: "All Profiles", value: nil)] +
                    epgCache.channelProfiles.map { TVGuideDrawerItem(id: "profile-\($0.id)", label: $0.name, value: $0.id) }
+            #else
+            return []
+            #endif
         case .none:
             return []
         }
     }
-    #endif
 
     private var tvOSGuideContent: some View {
         GeometryReader { geometry in
             let gridWidth = geometry.size.width - channelWidth
             let pxPerMinute = gridWidth / visibleMinutes
             let filterRowHeight: CGFloat = 70
-            #if DISPATCHERPVR
             let drawerContentHeight = 60 + CGFloat(currentDrawerItems.count) * 52
             let drawerHeight: CGFloat = isHeaderDrawerOpen ? min(320, max(170, drawerContentHeight)) : 0
-            #else
-            let drawerHeight: CGFloat = 0
-            #endif
 
             // Grid — manual offset driven by scrollTopRow (keep-in-view scrolling)
             let totalRows = viewModel.channels.count
@@ -1072,13 +1061,11 @@ struct GuideView: View {
                     focusedItem: focusedHeaderItem
                 )
                 .frame(height: filterRowHeight)
-                #if DISPATCHERPVR
                 if isHeaderDrawerOpen {
                     tvOSHeaderDrawer
                         .frame(height: drawerHeight)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                #endif
 
                 // Channel rows
                 VStack(spacing: 0) {
@@ -1151,9 +1138,7 @@ struct GuideView: View {
                 scrollTopRow = 0
             }
             endTVSearchEditing()
-            #if DISPATCHERPVR
             closeHeaderDrawer()
-            #endif
         }
     }
 
@@ -1361,14 +1346,16 @@ struct GuideView: View {
             // Search / active filter
             tvOSSearchField(isFocused: isFocused && focusedItem == .search)
 
+            if hasPopulatedGroups {
+                tvOSFilterField(
+                    icon: "folder.fill",
+                    title: "Group",
+                    value: selectedGroupLabel,
+                    isFocused: isFocused && focusedItem == .group
+                )
+            }
             #if DISPATCHERPVR
-            tvOSDispatcharrField(
-                icon: "folder.fill",
-                title: "Group",
-                value: selectedGroupLabel,
-                isFocused: isFocused && focusedItem == .group
-            )
-            tvOSDispatcharrField(
+            tvOSFilterField(
                 icon: "person.fill",
                 title: "Profile",
                 value: selectedProfileLabel,
@@ -1409,6 +1396,7 @@ struct GuideView: View {
         return "All Groups"
     }
 
+    #if DISPATCHERPVR
     private var selectedProfileLabel: String {
         if let profileId = viewModel.selectedProfileId,
            let profile = epgCache.channelProfiles.first(where: { $0.id == profileId }) {
@@ -1416,6 +1404,7 @@ struct GuideView: View {
         }
         return "All Profiles"
     }
+    #endif
 
     private func tvOSSearchField(isFocused: Bool) -> some View {
         let isActive = isFocused || isTVSearchFieldFocused
@@ -1467,7 +1456,7 @@ struct GuideView: View {
         }
     }
 
-    private func tvOSDispatcharrField(
+    private func tvOSFilterField(
         icon: String,
         title: String,
         value: String,
@@ -1498,7 +1487,6 @@ struct GuideView: View {
         .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 
-    #if DISPATCHERPVR
     private var tvOSHeaderDrawer: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(headerDrawerKind == .group ? "Select Group" : "Select Profile")
@@ -1546,7 +1534,6 @@ struct GuideView: View {
         .padding(.horizontal, 8)
         .padding(.bottom, 6)
     }
-    #endif
 
     private func tvOSHeaderField(
         imageName: String,
@@ -1580,7 +1567,6 @@ struct GuideView: View {
         focusedColumn = 0
     }
 
-    #if DISPATCHERPVR
     private func openHeaderDrawer(_ kind: TVGuideDrawerKind) {
         headerDrawerKind = kind
         let selectedValue: Int? = (kind == .group) ? viewModel.selectedGroupId : viewModel.selectedProfileId
@@ -1621,17 +1607,12 @@ struct GuideView: View {
             break
         }
     }
-    #endif
-
-
 
     private func handleTVNavigation(_ direction: MoveCommandDirection) {
-        #if DISPATCHERPVR
         if isHeaderDrawerOpen {
             handleHeaderDrawerNavigation(direction)
             return
         }
-        #endif
 
         if isTVSearchFieldFocused {
             endTVSearchEditing()
@@ -1731,22 +1712,28 @@ struct GuideView: View {
     }
 
     private func moveHeaderFocusLeft() {
-        guard let currentIndex = tvHeaderItems.firstIndex(of: focusedHeaderItem) else { return }
-        focusedHeaderItem = tvHeaderItems[max(0, currentIndex - 1)]
+        let items = tvHeaderItems
+        guard let currentIndex = items.firstIndex(of: focusedHeaderItem) else {
+            focusedHeaderItem = items[0]
+            return
+        }
+        focusedHeaderItem = items[max(0, currentIndex - 1)]
     }
 
     private func moveHeaderFocusRight() {
-        guard let currentIndex = tvHeaderItems.firstIndex(of: focusedHeaderItem) else { return }
-        focusedHeaderItem = tvHeaderItems[min(tvHeaderItems.count - 1, currentIndex + 1)]
+        let items = tvHeaderItems
+        guard let currentIndex = items.firstIndex(of: focusedHeaderItem) else {
+            focusedHeaderItem = items[0]
+            return
+        }
+        focusedHeaderItem = items[min(items.count - 1, currentIndex + 1)]
     }
 
     private func handleTVSelect() {
-        #if DISPATCHERPVR
         if isHeaderDrawerOpen {
             applyDrawerSelection()
             return
         }
-        #endif
         if isTVSearchFieldFocused {
             endTVSearchEditing()
             clampFocusedRowToChannels()
@@ -1771,10 +1758,11 @@ struct GuideView: View {
             Task { await viewModel.navigateToDate(using: client) }
         case .search:
             beginTVSearchEditing()
-        #if DISPATCHERPVR
         case .group:
+            guard hasPopulatedGroups else { return }
             endTVSearchEditing()
             openHeaderDrawer(.group)
+        #if DISPATCHERPVR
         case .profile:
             endTVSearchEditing()
             openHeaderDrawer(.profile)

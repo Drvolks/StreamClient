@@ -507,9 +507,7 @@ struct SettingsView: View {
                     if epgCache.channelGroups.isEmpty {
                         tvOSGuideStatusRow("No channel groups available")
                     } else {
-                        let populatedGroups = epgCache.channelGroups.filter { group in
-                            epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                        }
+                        let populatedGroups = epgCache.populatedChannelGroups
                         if populatedGroups.isEmpty {
                             tvOSGuideStatusRow("No channels in any group")
                         } else {
@@ -1308,9 +1306,7 @@ struct SettingsView: View {
                     Text("No channel groups available")
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    let populatedGroups = epgCache.channelGroups.filter { group in
-                        epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                    }
+                    let populatedGroups = epgCache.populatedChannelGroups
                     if populatedGroups.isEmpty {
                         Text("No channels in any group")
                             .foregroundStyle(Theme.textSecondary)

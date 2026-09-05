@@ -504,10 +504,9 @@ struct IOSNavigation: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.accent)
             }
+            #endif
 
-            if !epgCache.channelProfiles.isEmpty || epgCache.channelGroups.contains(where: { group in
-                epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-            }) {
+            if !epgCache.channelProfiles.isEmpty || epgCache.hasPopulatedChannelGroups {
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         guideViewModel.showFilters.toggle()
@@ -520,7 +519,6 @@ struct IOSNavigation: View {
                         .foregroundStyle(guideViewModel.hasActiveFilters ? Theme.accent : Theme.textPrimary)
                 }
             }
-            #endif
         }
     }
 
@@ -627,9 +625,7 @@ struct IOSNavigation: View {
                             // Group sub-items (#158: NextPVR has groups too)
                             let prefs = UserPreferences.load()
                             if prefs.guideShowGroupsInSidebar {
-                                let populatedGroups = epgCache.channelGroups.filter { group in
-                                    epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                                }
+                                let populatedGroups = epgCache.populatedChannelGroups
                                 ForEach(populatedGroups.filter { prefs.guideGroupIds.isEmpty || prefs.guideGroupIds.contains($0.id) }) { group in
                                     sidebarGuideGroupSubRow(group: group)
                                 }
@@ -672,9 +668,7 @@ struct IOSNavigation: View {
                             // Group sub-items (#158: NextPVR has groups too)
                             let prefs = UserPreferences.load()
                             if prefs.guideShowGroupsInSidebar {
-                                let populatedGroups = epgCache.channelGroups.filter { group in
-                                    epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                                }
+                                let populatedGroups = epgCache.populatedChannelGroups
                                 ForEach(populatedGroups.filter { prefs.guideGroupIds.isEmpty || prefs.guideGroupIds.contains($0.id) }) { group in
                                     sidebarChannelGroupSubRow(group: group)
                                 }
@@ -1458,9 +1452,7 @@ struct TVOSNavigation: View {
                                     }
 
                                     if guideSidebarPreferences.guideShowGroupsInSidebar {
-                                        let populatedGroups = epgCache.channelGroups.filter { group in
-                                            epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                                        }
+                                        let populatedGroups = epgCache.populatedChannelGroups
                                         ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
                                             tvOSSidebarSubRow(
                                                 label: group.name,
@@ -1524,9 +1516,7 @@ struct TVOSNavigation: View {
                                     }
 
                                     if guideSidebarPreferences.guideShowGroupsInSidebar {
-                                        let populatedGroups = epgCache.channelGroups.filter { group in
-                                            epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                                        }
+                                        let populatedGroups = epgCache.populatedChannelGroups
                                         ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
                                             tvOSSidebarSubRow(
                                                 label: group.name,
@@ -2126,9 +2116,7 @@ struct MacOSNavigation: View {
                             macSidebarGuideAllRow()
 
                             if guideSidebarPreferences.guideShowGroupsInSidebar {
-                                let populatedGroups = epgCache.channelGroups.filter { group in
-                                    epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                                }
+                                let populatedGroups = epgCache.populatedChannelGroups
                                 ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
                                     macSidebarGuideGroupSubRow(group: group)
                                 }
@@ -2161,9 +2149,7 @@ struct MacOSNavigation: View {
                             macSidebarChannelAllRow()
 
                             if guideSidebarPreferences.guideShowGroupsInSidebar {
-                                let populatedGroups = epgCache.channelGroups.filter { group in
-                                    epgCache.guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
-                                }
+                                let populatedGroups = epgCache.populatedChannelGroups
                                 ForEach(populatedGroups.filter { guideSidebarPreferences.guideGroupIds.isEmpty || guideSidebarPreferences.guideGroupIds.contains($0.id) }) { group in
                                     macSidebarChannelGroupSubRow(group: group)
                                 }

@@ -406,6 +406,36 @@ final class EPGCache: ObservableObject {
         return visibleChannels.filter { $0.isMember(ofGroup: groupId) }
     }
 
+    /// Channel groups that hold at least one channel. Every group-picking
+    /// surface (sidebar sub-rows, guide/channels filter panels and tvOS
+    /// drawers, the settings picker) hides empty groups, since selecting one
+    /// would leave the screen blank.
+    ///
+    /// Read from `guideSidebarChannels` rather than `visibleChannels` so a
+    /// Dispatcharr profile reload, which narrows the visible list server-side,
+    /// can't make groups disappear from the pickers.
+    var populatedChannelGroups: [ChannelGroup] {
+        Self.channelGroups(channelGroups, populatedIn: guideSidebarChannels)
+    }
+
+    /// True when at least one group holds a channel — the cheap check the
+    /// filter affordances use to decide whether to show themselves.
+    var hasPopulatedChannelGroups: Bool {
+        channelGroups.contains { group in
+            guideSidebarChannels.contains { $0.isMember(ofGroup: group.id) }
+        }
+    }
+
+    /// Pure form of `populatedChannelGroups`.
+    nonisolated static func channelGroups(
+        _ groups: [ChannelGroup],
+        populatedIn channels: [Channel]
+    ) -> [ChannelGroup] {
+        groups.filter { group in
+            channels.contains { $0.isMember(ofGroup: group.id) }
+        }
+    }
+
     /// Non-empty channel groups whose name matches `search`, for the sidebar
     /// search dropdown. Empty groups are excluded — selecting one would show a
     /// blank guide — and an empty query matches nothing rather than everything.
@@ -425,10 +455,8 @@ final class EPGCache: ObservableObject {
     ) -> [ChannelGroup] {
         guard !search.isEmpty else { return [] }
         let query = search.lowercased()
-        return groups.filter { group in
-            group.name.lowercased().contains(query) &&
-            channels.contains { $0.isMember(ofGroup: group.id) }
-        }
+        return channelGroups(groups, populatedIn: channels)
+            .filter { $0.name.lowercased().contains(query) }
     }
 
     func filteredChannels(matching search: String) -> [Channel] {

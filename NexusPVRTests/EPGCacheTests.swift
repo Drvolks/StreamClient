@@ -220,6 +220,32 @@ struct EPGCacheTests {
         ]
     }
 
+    @Test("Populated groups exclude groups with no channels")
+    func populatedGroupsExcludesEmpty() {
+        let groups = EPGCache.channelGroups(searchGroups, populatedIn: searchChannels)
+        #expect(groups.map(\.name) == ["Sports", "Sports Extra", "News"])
+    }
+
+    @Test("Populated groups preserve the server's order")
+    func populatedGroupsKeepOrder() {
+        let reversed: [ChannelGroup] = searchGroups.reversed()
+        let groups = EPGCache.channelGroups(reversed, populatedIn: searchChannels)
+        #expect(groups.map(\.name) == ["News", "Sports Extra", "Sports"])
+    }
+
+    @Test("Populated groups are empty when no channel has any membership")
+    func populatedGroupsWithoutMembership() {
+        let channels = [Channel(id: 1, name: "A", number: 1)]
+        #expect(EPGCache.channelGroups(searchGroups, populatedIn: channels).isEmpty)
+    }
+
+    @Test("Populated groups count Dispatcharr's single-groupId membership")
+    func populatedGroupsMatchLegacyGroupId() {
+        let group = ChannelGroup(id: 10, name: "Movies")
+        let channels = [Channel(id: 1, name: "A", number: 1, groupId: 10)]
+        #expect(EPGCache.channelGroups([group], populatedIn: channels).map(\.id) == [10])
+    }
+
     @Test("Group search matches every group whose name contains the query")
     func groupSearchMatchesByName() {
         let matches = EPGCache.channelGroups(searchGroups, matching: "sport", in: searchChannels)
