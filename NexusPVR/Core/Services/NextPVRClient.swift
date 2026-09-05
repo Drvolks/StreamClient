@@ -873,16 +873,21 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                 "channel_id": String(channelId),
                 "profile": profile
             ])
-            // NextPVR answers 200 with `<rsp stat="fail">` for an unknown
-            // profile, so the HTTP status alone doesn't say the transcode started.
-            if let body = String(data: response, encoding: .utf8), body.contains("stat=\"fail\"") {
-                print("[NextPVR] channel.transcode.initiate rejected profile \(profile); "
-                    + "falling back to the direct stream. Check the server's streaming profiles.")
+            // NextPVR rejects an undefined profile with `<rsp stat="fail">` at
+            // HTTP 200, so the status code alone doesn't say the transcode
+            // started, and `loggedData` records no body for a 200. Log the
+            // answer either way — a silent fallback is indistinguishable from
+            // the feature not working at all.
+            if let failure = Self.transcodeFailure(response) {
+                logTranscode("initiate refused profile '\(profile)': \(failure). "
+                    + "Falling back to the direct stream.", isSuccess: false)
                 return nil
             }
+            logTranscode("initiate accepted profile '\(profile)' for channel \(channelId)",
+                         isSuccess: true)
         } catch {
-            print("[NextPVR] channel.transcode.initiate failed, falling back to the direct "
-                + "stream: \(error.localizedDescription)")
+            logTranscode("initiate failed: \(error.localizedDescription). "
+                + "Falling back to the direct stream.", isSuccess: false)
             return nil
         }
 
@@ -890,9 +895,30 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         // never becomes playable, or it holds the tuner until the server times out.
         activeTranscodeChannelId = channelId
 
+        var lastPercentage = -1
         let deadline = Date().addingTimeInterval(Self.transcodeReadyTimeout)
         while Date() < deadline {
-            if let progress = try? await fetchTranscodeStatus() {
+            do {
+                let data = try await streamAction("channel.transcode.status")
+                // A transcode whose ffmpeg died reports `stat="fail"` here too,
+                // with no <percentage> — stop rather than waiting out the timeout.
+                if let failure = Self.transcodeFailure(data) {
+                    logTranscode("transcode failed after starting: \(failure). "
+                        + "Falling back to the direct stream.", isSuccess: false)
+                    break
+                }
+                guard let progress = Self.parseTranscodeStatus(data) else {
+                    logTranscode("status was unparseable: "
+                        + "\((String(data: Data(data.prefix(256)), encoding: .utf8) ?? "<unreadable>").trimmingCharacters(in: .whitespacesAndNewlines))",
+                        isSuccess: false)
+                    try? await Task.sleep(for: Self.transcodeStatusInterval)
+                    continue
+                }
+                if progress.percentage != lastPercentage {
+                    lastPercentage = progress.percentage
+                    logTranscode("status \(progress.percentage)%\(progress.isFinal ? " (final)" : "")",
+                                 isSuccess: true)
+                }
                 if progress.isReady {
                     var components = URLComponents(string: "\(baseURL)/service")
                     components?.queryItems = [
@@ -900,21 +926,48 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
                         URLQueryItem(name: "sid", value: sid)
                     ]
                     if let url = components?.url {
+                        logTranscode("ready — playing \(profile) HLS stream", isSuccess: true)
                         return url
                     }
                     break
                 }
                 if progress.hasFailed {
-                    print("[NextPVR] transcode stalled at \(progress.percentage)%, falling back "
-                        + "to the direct stream. The server may be too slow for \(profile).")
+                    logTranscode("stalled at \(progress.percentage)% — the server stopped making "
+                        + "progress. It may be unable to transcode \(profile) in real time, or the "
+                        + "transcoder is not configured. Falling back to the direct stream.",
+                        isSuccess: false)
                     break
                 }
+            } catch {
+                logTranscode("status request failed: \(error.localizedDescription)", isSuccess: false)
             }
             try? await Task.sleep(for: Self.transcodeStatusInterval)
         }
 
+        if lastPercentage < 100 {
+            logTranscode("gave up after \(Int(Self.transcodeReadyTimeout))s at \(lastPercentage)%. "
+                + "Falling back to the direct stream.", isSuccess: false)
+        }
         await stopTranscodedStream()
         return nil
+    }
+
+    /// Records a step of the transcode negotiation in the in-app event log
+    /// (Settings > Event Log) as well as the console. These steps decide whether
+    /// the user's chosen quality is honoured or silently dropped, so they have to
+    /// be visible without a debugger attached.
+    private func logTranscode(_ message: String, isSuccess: Bool) {
+        print("[NextPVR] transcode: \(message)")
+        networkEventLogger.log(NetworkEvent(
+            timestamp: Date(),
+            method: "TRANSCODE",
+            path: "/service?method=channel.transcode.*",
+            statusCode: nil,
+            isSuccess: isSuccess,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: message
+        ))
     }
 
     /// Releases the server-side transcode so ffmpeg exits and the tuner is freed
@@ -925,14 +978,24 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         _ = try? await streamAction("channel.transcode.stop")
     }
 
-    /// Polls the startup progress of the running transcode.
-    private func fetchTranscodeStatus() async throws -> TranscodeProgress? {
-        Self.parseTranscodeStatus(try await streamAction("channel.transcode.status"))
-    }
-
     /// Parses the document returned by `channel.transcode.status`. Like the other
     /// `/service` stream methods it answers raw XML, so it can't go through
     /// `request(_:params:)`.
+    /// Reads a refusal out of any `channel.transcode.*` response, returning the
+    /// server's own wording, or nil when the response is not a refusal.
+    ///
+    /// NextPVR reports these at HTTP 200: it accepts the request, spawns ffmpeg,
+    /// and only then discovers the encode cannot run — a missing streaming
+    /// profile, or a hardware encoder it can't open. Reading the body is the
+    /// only way to tell a started transcode from a dead one.
+    nonisolated static func transcodeFailure(_ data: Data) -> String? {
+        let parser = TranscodeStatusXMLParser()
+        guard parser.parse(data), parser.stat == "fail" else { return nil }
+        let message = parser.errorMessage ?? "no message"
+        guard let code = parser.errorCode else { return message }
+        return "\(message) (err \(code))"
+    }
+
     nonisolated static func parseTranscodeStatus(_ data: Data) -> TranscodeProgress? {
         let parser = TranscodeStatusXMLParser()
         guard parser.parse(data), let percentage = parser.percentage else {

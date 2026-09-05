@@ -126,6 +126,43 @@ struct StreamQualityTests {
         #expect(NextPVRClient.parseTranscodeStatus(Data("not xml at all".utf8)) == nil)
     }
 
+    // MARK: - Refusals
+
+    @Test("A hardware-encoder failure is read as a refusal, not as progress")
+    func detectsEncoderFailure() {
+        // Verbatim from a NextPVR server whose VAAPI render node was
+        // unreadable: ffmpeg exited immediately and the server reported this
+        // at HTTP 200. Treating it as anything but a failure leaves the user
+        // watching the full-bitrate stream with no indication why.
+        let xml = """
+        <rsp stat="fail">
+          <err code="11" msg="Failed to start requested stream" />
+        </rsp>
+        """
+        let failure = NextPVRClient.transcodeFailure(Data(xml.utf8))
+        #expect(failure == "Failed to start requested stream (err 11)")
+        // It carries no <percentage>, so it must not read as progress either.
+        #expect(NextPVRClient.parseTranscodeStatus(Data(xml.utf8)) == nil)
+    }
+
+    @Test("An accepted transcode is not reported as a refusal")
+    func acceptedTranscodeIsNotAFailure() {
+        #expect(NextPVRClient.transcodeFailure(Data(#"<rsp stat="ok"/>"#.utf8)) == nil)
+        let status = #"<rsp stat="ok"><percentage>100</percentage><final>true</final></rsp>"#
+        #expect(NextPVRClient.transcodeFailure(Data(status.utf8)) == nil)
+    }
+
+    @Test("A refusal without a code still yields the server's message")
+    func refusalWithoutCode() {
+        #expect(NextPVRClient.transcodeFailure(Data(#"<rsp stat="fail"><err msg="Unknown profile"/></rsp>"#.utf8))
+                == "Unknown profile")
+    }
+
+    @Test("Malformed XML is not mistaken for a refusal")
+    func malformedIsNotARefusal() {
+        #expect(NextPVRClient.transcodeFailure(Data("not xml".utf8)) == nil)
+    }
+
     // MARK: - Demo mode
 
     @MainActor

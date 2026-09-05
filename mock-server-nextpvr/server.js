@@ -6,7 +6,7 @@
  * format so the NexusPVR client can connect without modification.
  *
  * Usage:
- *   node server.js [--channels 1000] [--port 8866]
+ *   node server.js [--channels 1000] [--port 8866] [--transcode-encoder-failure]
  *
  * Then configure the app to connect to http://<your-ip>:8866
  * with any PIN (default accepts all).
@@ -350,6 +350,9 @@ const TRANSCODE_PROFILES = [
 ];
 // How long the mock takes to reach 100% readiness.
 const TRANSCODE_STARTUP_MS = 2000;
+// --transcode-encoder-failure makes every transcode fail the way a broken
+// hardware encoder does, so the client's fallback can be exercised.
+const TRANSCODE_ENCODER_FAILURE = args.transcodeEncoderFailure || false;
 
 function createSession() {
   const sid = crypto.randomUUID().replace(/-/g, "").substring(0, 32);
@@ -471,6 +474,17 @@ function handleRequest(req, res) {
       // profile the admin has not defined — the client must read the body.
       if (!TRANSCODE_PROFILES.includes(profile)) {
         return xml(res, `<rsp stat="fail"><err code="2" msg="Unknown profile"/></rsp>`);
+      }
+      // With --transcode-encoder-failure, accept the request and then report
+      // the encoder dying, the way a real server does when its hardware
+      // encoder can't be opened: ffmpeg is spawned, exits immediately, and the
+      // failure comes back at HTTP 200. Observed on a NextPVR box whose VAAPI
+      // render node was unreadable inside its container.
+      if (TRANSCODE_ENCODER_FAILURE) {
+        return xml(
+          res,
+          `<rsp stat="fail">\n  <err code="11" msg="Failed to start requested stream" />\n</rsp>`
+        );
       }
       session.transcode = { channelId, profile, startedMs: Date.now() };
       return xml(res, `<rsp stat="ok"/>`);
@@ -683,6 +697,8 @@ function parseArgs() {
       result.channels = parseInt(argv[++i], 10);
     } else if (argv[i] === "--port" && argv[i + 1]) {
       result.port = parseInt(argv[++i], 10);
+    } else if (argv[i] === "--transcode-encoder-failure") {
+      result.transcodeEncoderFailure = true;
     } else if (argv[i] === "--days-before" && argv[i + 1]) {
       result.daysBefore = parseInt(argv[++i], 10);
     } else if (argv[i] === "--days-after" && argv[i + 1]) {

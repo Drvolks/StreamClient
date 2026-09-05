@@ -8,7 +8,8 @@
 
 import Foundation
 
-/// Extracts progress from a `channel.transcode.status` response:
+/// Extracts progress from a `channel.transcode.status` response, and the
+/// `stat`/`<err>` fields common to every `channel.transcode.*` answer:
 ///
 /// ```xml
 /// <rsp stat="ok">
@@ -22,9 +23,18 @@ import Foundation
 /// server has stopped making progress, so a `final` document short of 100 is
 /// a failed transcode, not a slow one — the same reading Kodi's
 /// `TranscodedBuffer::TranscodeStatus` applies.
+/// A refusal arrives as `<rsp stat="fail"><err code="11" msg="..."/></rsp>` at
+/// HTTP 200 — NextPVR accepts the request, spawns ffmpeg, and reports the
+/// failure only once ffmpeg exits — so the status code alone never says whether
+/// a transcode started.
 nonisolated final class TranscodeStatusXMLParser: NSObject, XMLParserDelegate {
     private(set) var percentage: Int?
     private(set) var isFinal: Bool?
+    /// The `stat` attribute of the root `<rsp>` element, when present.
+    private(set) var stat: String?
+    /// The `msg` attribute of an `<err>` element, when the server refused.
+    private(set) var errorMessage: String?
+    private(set) var errorCode: String?
 
     private var currentText = ""
 
@@ -41,6 +51,15 @@ nonisolated final class TranscodeStatusXMLParser: NSObject, XMLParserDelegate {
                 namespaceURI: String?,
                 qualifiedName qName: String?,
                 attributes attributeDict: [String: String]) {
+        switch elementName {
+        case "rsp":
+            stat = attributeDict["stat"]
+        case "err":
+            errorMessage = attributeDict["msg"]
+            errorCode = attributeDict["code"]
+        default:
+            break
+        }
         currentText = ""
     }
 
