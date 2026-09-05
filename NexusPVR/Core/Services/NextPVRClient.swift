@@ -13,6 +13,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isConnecting = false
     @Published private(set) var lastError: NextPVRError?
+    /// Set when a requested transcode couldn't be started and playback fell back
+    /// to the original stream, so the player can say so once rather than leaving
+    /// the user to wonder why their quality setting did nothing.
+    @Published private(set) var streamQualityNotice: String?
 
     private(set) var config: ServerConfig
     private var sid: String?
@@ -723,6 +727,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     /// demuxer cache. Kodi makes the same split in `OpenLiveStream`; `client` being the
     /// SID rather than a device name is what its timeshift path sends.
     func liveStreamURL(channelId: Int) async throws -> URL {
+        streamQualityNotice = nil
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
 
         // Release any previous stream before rotating the SID, otherwise the old
@@ -736,9 +741,15 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         // one: HLS off `channel.transcode.m3u8` rather than a raw transport
         // stream off `/live`. Falls through to the direct path when the server
         // can't transcode, so a misconfigured or overloaded server still plays.
-        if let profile = requestedStreamQuality.profileName,
-           let url = await startTranscodedStream(channelId: channelId, profile: profile, sid: sid) {
-            return url
+        if let profile = requestedStreamQuality.profileName {
+            if let url = await startTranscodedStream(channelId: channelId, profile: profile, sid: sid) {
+                return url
+            }
+            // Every reason for landing here is logged in detail by
+            // `startTranscodedStream`; this is the one-line version the player
+            // shows, so a dropped quality setting is never silent.
+            streamQualityNotice = "The server couldn't transcode to \(profile) — "
+                + "playing at original quality."
         }
 
         // Degrade to the realtime shape if the server won't start a timeshift
@@ -1094,6 +1105,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
             streamLength: length,
             isComplete: parser.isComplete ?? false
         )
+    }
+
+    func clearStreamQualityNotice() {
+        streamQualityNotice = nil
     }
 
     func streamAuthHeaders() -> [String: String] {

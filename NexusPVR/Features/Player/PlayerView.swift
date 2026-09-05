@@ -54,6 +54,11 @@ struct PlayerView: View {
     @State private var hideControlsTask: Task<Void, Never>?
     @State private var isPlaying = true
     @State private var errorMessage: String?
+    /// Copy of the client's stream-quality fallback notice, held locally so it
+    /// can be dismissed and auto-hidden without clearing the client's state
+    /// before the banner has been seen.
+    @State private var qualityNotice: String?
+    @State private var qualityNoticeTask: Task<Void, Never>?
     @State private var currentPosition: Double = 0
     @State private var duration: Double = 0
     @State private var isSeeking = false
@@ -538,6 +543,31 @@ struct PlayerView: View {
                 }
             }
 
+            // Stream-quality fallback notice. Informational, not an error: the
+            // stream is playing, just not at the requested quality, so it sits
+            // apart from the red error overlay and clears itself.
+            if let notice = qualityNotice {
+                VStack {
+                    HStack(spacing: Theme.spacingSM) {
+                        Image(systemName: "exclamationmark.circle")
+                        Text(notice)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.white)
+                    .padding(Theme.spacingSM)
+                    .background(Color.black.opacity(0.75))
+                    .cornerRadius(Theme.cornerRadiusSM)
+                    .padding(Theme.spacingMD)
+                    #if !os(tvOS)
+                    .onTapGesture { dismissQualityNotice() }
+                    #endif
+                    Spacer()
+                }
+                .transition(.opacity)
+                .allowsHitTesting(true)
+            }
+
             #if os(macOS)
             // Hidden buttons for keyboard shortcuts
             // Hidden buttons for keyboard shortcuts — must have non-zero frame to receive events
@@ -584,6 +614,7 @@ struct PlayerView: View {
         }
         #endif
         .onAppear {
+            adoptQualityNotice()
             scheduleHideControls()
             #if os(macOS)
             updatePowerAssertion()
@@ -597,6 +628,7 @@ struct PlayerView: View {
             #endif
         }
         .onDisappear {
+            qualityNoticeTask?.cancel()
             #if os(tvOS)
             clearDisplayCriteria()
             #endif
@@ -702,6 +734,9 @@ struct PlayerView: View {
             // PlayerPowerAssertion.
             updatePowerAssertion()
             #endif
+        }
+        .onChange(of: client.streamQualityNotice) { _ in
+            adoptQualityNotice()
         }
         .task(id: isPlayerReady) {
             guard isPlayerReady else { return }
@@ -914,6 +949,32 @@ struct PlayerView: View {
     /// playback, freeing the server-side slot immediately instead of
     /// waiting out the 10-minute idle TTL. Reads the view's own
     /// `catchupSessionId` rather than `appState`'s, since `appState.stopPlayback()`
+    /// Takes the client's fallback notice, shows it, and clears it from the
+    /// client so a later channel change reports its own outcome. Auto-hides:
+    /// the stream is playing fine, so the banner shouldn't sit over the video.
+    private func adoptQualityNotice() {
+        guard let notice = client.streamQualityNotice else { return }
+        client.clearStreamQualityNotice()
+        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+            qualityNotice = notice
+        }
+        qualityNoticeTask?.cancel()
+        qualityNoticeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+                qualityNotice = nil
+            }
+        }
+    }
+
+    private func dismissQualityNotice() {
+        qualityNoticeTask?.cancel()
+        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+            qualityNotice = nil
+        }
+    }
+
     /// (called just before this in `.onDisappear`) already clears the
     /// published copy.
     private func endCatchupSessionIfNeeded() {

@@ -46,6 +46,12 @@ protocol PVRClientProtocol: ObservableObject {
     /// URL replaying the live buffer from `byteOffset`, or nil when the backend
     /// has no seekable server-side buffer.
     func liveStreamSeekURL(byteOffset: Int64) -> URL?
+    /// Set when the last `liveStreamURL(channelId:)` could not honour the user's
+    /// chosen stream quality and fell back to the original stream. The player
+    /// shows this once so the fallback isn't silent; nil when nothing to report.
+    var streamQualityNotice: String? { get }
+    /// Clears the notice once the player has shown it.
+    func clearStreamQualityNotice()
     func recordingStreamURL(recordingId: Int) async throws -> URL
     func streamAuthHeaders() -> [String: String]
     func channelIconURL(channelId: Int) throws -> URL?
@@ -69,4 +75,8 @@ extension PVRClientProtocol {
     var hasActiveLiveStream: Bool { false }
 
     func liveStreamSeekURL(byteOffset: Int64) -> URL? { nil }
+
+    var streamQualityNotice: String? { nil }
+
+    func clearStreamQualityNotice() {}
 }

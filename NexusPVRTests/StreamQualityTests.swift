@@ -175,5 +175,20 @@ struct StreamQualityTests {
         let url = try await client.liveStreamURL(channelId: try #require(channels.first).id)
         #expect(!url.absoluteString.contains("transcode"))
         #expect(!client.hasActiveLiveStream)
+        // Nothing was attempted, so nothing to warn about — the player must not
+        // show a fallback banner over a stream that is playing as asked.
+        #expect(client.streamQualityNotice == nil)
+    }
+
+    @MainActor
+    @Test("The fallback notice is cleared when a new stream starts")
+    func noticeIsClearedPerStream() async throws {
+        let client = NextPVRClient(config: ServerConfig(host: "demo", pin: "", useHTTPS: false))
+        try await client.authenticate()
+        let channels = try await client.getChannels()
+        _ = try await client.liveStreamURL(channelId: try #require(channels.first).id)
+        #expect(client.streamQualityNotice == nil)
+        client.clearStreamQualityNotice()
+        #expect(client.streamQualityNotice == nil)
     }
 }
