@@ -51,6 +51,15 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     /// Dispatcharr 0.24.0 stopped sending `m3u_profile_name` in /proxy/ts/status,
     /// so we resolve names client-side from the M3U accounts endpoint.
     private var m3uProfileNameCache: [Int: String] = [:]
+    /// Active Output Profiles reported by `/api/core/outputprofiles/` (#161).
+    /// Nil until a fetch succeeds, so "the endpoint isn't available" can be
+    /// told apart from "the server has no profiles". Published so the Settings
+    /// picker refreshes when the list arrives.
+    @Published private(set) var outputProfiles: [DispatcharrOutputProfile]?
+    /// Set when the last `liveStreamURL(channelId:)` could not honour the
+    /// user's chosen output profile and fell back to the original stream. The
+    /// player shows it once (see `PVRClientProtocol`); nil when nothing to say.
+    @Published private(set) var streamQualityNotice: String?
 
     init(config: ServerConfig? = nil, networkEventLogger: some NetworkEventLogging = Dependencies.networkEventLog) {
         self.config = config ?? ServerConfig.load()
@@ -86,6 +95,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         epgDataIdToChannelIds = [:]
         channelIdToUUID = [:]
         uuidToChannelId = [:]
+        outputProfiles = nil
+        streamQualityNotice = nil
         isAuthenticated = false
     }
 
@@ -1601,8 +1612,34 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     // MARK: - Streaming URLs
 
     func liveStreamURL(channelId: Int) async throws -> URL {
+        streamQualityNotice = nil
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
 
+        let baseStreamURL = try baseLiveStreamURL(channelId: channelId)
+
+        // Output Profile (#161): validated against the server's active list on
+        // every play so a deleted or deactivated profile degrades to the
+        // original stream with a visible reason instead of a silent no-op.
+        let resolution = await resolveOutputProfile(selectedId: UserPreferences.load().outputProfileId)
+        if let notice = resolution.notice {
+            streamQualityNotice = notice
+            networkEventLogger.log(NetworkEvent(
+                timestamp: Date(),
+                method: "GET",
+                path: "/proxy/ts/stream (output profile fallback)",
+                statusCode: nil,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: notice
+            ))
+        }
+        return DispatcharrOutputProfile.applying(profileId: resolution.profileId, to: baseStreamURL)
+    }
+
+    /// The live URL before any output-profile query is applied — the exact
+    /// URLs the app used before #161.
+    private func baseLiveStreamURL(channelId: Int) throws -> URL {
         if useOutputEndpoints {
             // XC credentials: use /live/{user}/{pass}/{id}
             if !config.password.isEmpty && !config.username.isEmpty && config.apiKey.isEmpty {
@@ -1632,6 +1669,53 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         }
 
         return url
+    }
+
+    // MARK: - Output Profiles (#161)
+
+    /// Fetches the server's Output Profiles, keeping only active ones, and
+    /// caches them. Throws when the endpoint can't be read (older Dispatcharr,
+    /// or an account without API access) so callers can distinguish that from
+    /// an empty list.
+    @discardableResult
+    func getOutputProfiles() async throws -> [DispatcharrOutputProfile] {
+        guard !config.isDemoMode || config.isMockServer else {
+            outputProfiles = []
+            return []
+        }
+        // Streamer-level XC accounts have no REST token to call the API with.
+        if useOutputEndpoints && accessToken == nil {
+            throw PVRClientError.apiError("Output profiles need API access")
+        }
+        guard let url = URL(string: "\(baseURL)/api/core/outputprofiles/") else {
+            throw PVRClientError.invalidResponse
+        }
+        let all: [DispatcharrOutputProfile] = try await fetchAllPages(url)
+        let active = all.filter(\.isActive)
+        outputProfiles = active
+        return active
+    }
+
+    /// Ensures the profile cache is populated, fetching if needed. Failures are
+    /// swallowed: the picker then shows only Original, and playback falls back.
+    func ensureOutputProfilesLoaded() async {
+        guard outputProfiles == nil else { return }
+        _ = try? await getOutputProfiles()
+    }
+
+    /// Matches the saved choice against the server's active profiles,
+    /// refreshing the cache when the saved id isn't in it (a profile created
+    /// since the last fetch should work without a relaunch).
+    private func resolveOutputProfile(selectedId: Int?) async -> DispatcharrOutputProfile.Resolution {
+        guard let selectedId else { return .original }
+        if outputProfiles?.contains(where: { $0.id == selectedId }) != true {
+            _ = try? await getOutputProfiles()
+        }
+        return DispatcharrOutputProfile.resolve(selectedId: selectedId, available: outputProfiles)
+    }
+
+    func clearStreamQualityNotice() {
+        streamQualityNotice = nil
     }
 
     func recordingStreamURL(recordingId: Int) async throws -> URL {

@@ -42,6 +42,8 @@ struct SettingsView: View {
     #if DISPATCHERPVR
     @State private var guideShowProfilesInSidebar: Bool = UserPreferences.load().guideShowProfilesInSidebar
     @State private var guideProfileIds: [Int] = UserPreferences.load().guideProfileIds
+    /// Selected Dispatcharr Output Profile id (#161); nil is Original.
+    @State private var outputProfileId: Int? = UserPreferences.load().outputProfileId
     #endif
     @ObservedObject private var eventLog: NetworkEventLog
 
@@ -71,6 +73,8 @@ struct SettingsView: View {
         case deinterlace
         #if !DISPATCHERPVR
         case streamQuality
+        #else
+        case outputProfile
         #endif
         case renderer
         case landingTab
@@ -116,6 +120,11 @@ struct SettingsView: View {
             #endif
         }
         .accessibilityIdentifier("settings-view")
+        #if DISPATCHERPVR
+        .task {
+            await client.ensureOutputProfilesLoaded()
+        }
+        #endif
         #if os(tvOS)
         .background(.ultraThinMaterial)
         #else
@@ -237,6 +246,15 @@ struct SettingsView: View {
                                 detail: streamQualityDescription
                             ) {
                                 activeTVPopup = .streamQuality
+                            }
+                            #else
+                            tvSettingsRow(
+                                title: "Live TV Output Profile",
+                                value: outputProfileLabel,
+                                icon: "waveform.path.ecg.rectangle",
+                                detail: outputProfileDescription
+                            ) {
+                                activeTVPopup = .outputProfile
                             }
                             #endif
                             tvSettingsRow(
@@ -800,6 +818,9 @@ struct SettingsView: View {
         #if !DISPATCHERPVR
         case .streamQuality:
             return "Live TV Quality"
+        #else
+        case .outputProfile:
+            return "Live TV Output Profile"
         #endif
         case .subtitleMode:
             return "Subtitles"
@@ -906,6 +927,18 @@ struct SettingsView: View {
                     var prefs = UserPreferences.load()
                     prefs.streamQuality = quality
                     prefs.save()
+                }
+            }
+        #else
+        case .outputProfile:
+            return outputProfileChoices.map { choice in
+                TVPopupOption(
+                    id: "settings-popup-output-profile-\(choice.id.map(String.init) ?? "original")",
+                    title: choice.label,
+                    isCurrent: outputProfileId == choice.id,
+                    isDestructive: false
+                ) {
+                    saveOutputProfile(choice.id)
                 }
             }
         #endif
@@ -1224,6 +1257,15 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
             #endif
+            #else
+            Picker("Live TV Output Profile", selection: $outputProfileId) {
+                ForEach(outputProfileChoices) { choice in
+                    Text(choice.label).tag(choice.id)
+                }
+            }
+            Text(outputProfileDescription)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
             #endif
 
             Picker("Deinterlacing", selection: $deinterlaceMode) {
@@ -1306,6 +1348,10 @@ struct SettingsView: View {
             prefs.save()
         }
         #endif
+        #else
+        .onChange(of: outputProfileId) { _ in
+            saveOutputProfile(outputProfileId)
+        }
         #endif
         .onChange(of: subtitleMode) { _ in
             var prefs = UserPreferences.load()
@@ -1365,6 +1411,61 @@ struct SettingsView: View {
     /// the stream is opened.
     private var streamQualityDescription: String {
         streamQuality.summary + " Applies to the next channel you play."
+    }
+    #endif
+
+    #if DISPATCHERPVR
+    /// One row of the Output Profile picker (#161). `id` nil is Original.
+    private struct OutputProfileChoice: Identifiable {
+        let id: Int?
+        let label: String
+    }
+
+    /// Original plus every active profile the server reports. When the saved
+    /// id isn't among them (deleted server-side, or the list couldn't be read)
+    /// it's kept as an explicit "unavailable" row so the picker never shows a
+    /// blank selection and the user can see what will fall back.
+    private var outputProfileChoices: [OutputProfileChoice] {
+        var choices = [OutputProfileChoice(id: nil, label: "Original")]
+        let profiles = client.outputProfiles ?? []
+        choices += profiles.map { OutputProfileChoice(id: $0.id, label: $0.name) }
+        if let outputProfileId, !profiles.contains(where: { $0.id == outputProfileId }) {
+            choices.append(OutputProfileChoice(id: outputProfileId, label: "Profile #\(outputProfileId) (unavailable)"))
+        }
+        return choices
+    }
+
+    private var outputProfileLabel: String {
+        outputProfileChoices.first(where: { $0.id == outputProfileId })?.label ?? "Original"
+    }
+
+    /// Explains the selected output profile. Like the other player settings
+    /// this takes effect on the next stream, since the URL is built when the
+    /// stream is opened.
+    private var outputProfileDescription: String {
+        guard let outputProfileId else {
+            return "Streams live TV exactly as Dispatcharr delivers it, with no extra "
+                + "server-side processing. Applies to the next channel you play."
+        }
+        if client.outputProfiles?.contains(where: { $0.id == outputProfileId }) == true {
+            return "Dispatcharr runs this profile's FFmpeg step on live TV before sending it "
+                + "to this device, trading server CPU for a client-friendly stream. "
+                + "Applies to the next channel you play."
+        }
+        if client.outputProfiles == nil {
+            return "This server didn't return its output profiles — it may be an older "
+                + "Dispatcharr, or this account may lack API access. Live TV plays the "
+                + "original stream until a profile can be verified."
+        }
+        return "This profile is no longer active on the server. Live TV plays the "
+            + "original stream until you pick another."
+    }
+
+    private func saveOutputProfile(_ id: Int?) {
+        outputProfileId = id
+        var prefs = UserPreferences.load()
+        prefs.outputProfileId = id
+        prefs.save()
     }
     #endif
 

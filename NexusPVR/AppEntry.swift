@@ -219,14 +219,12 @@ struct PVRApp: App {
                     let channels = try await client.getChannels()
                     let channel = channels.first(where: { $0.id == id })
                     let channelName = channel?.name ?? "Channel \(id)"
-                    // Prefer direct stream URL from channel data (same as ProgramDetailView)
-                    let streamURL: URL
-                    if let directURL = channel?.streamURL, let url = URL(string: directURL) {
-                        streamURL = url
-                    } else {
-                        streamURL = try await appState.preparingStream {
-                            try await client.liveStreamURL(channelId: id)
-                        }
+                    // Always go through `client.liveStreamURL(channelId:)` rather
+                    // than the raw `channel.streamURL`: the client is what applies
+                    // the stream quality / output profile the user picked (#161),
+                    // and every other live entry point already does the same.
+                    let streamURL = try await appState.preparingStream {
+                        try await client.liveStreamURL(channelId: id)
                     }
                     appState.playStream(url: streamURL, title: channelName, channelId: id, channelName: channelName)
                 } catch {

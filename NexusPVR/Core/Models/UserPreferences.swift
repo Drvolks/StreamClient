@@ -31,6 +31,13 @@ nonisolated struct UserPreferences: Codable {
     /// (cellular, personal hotspot, or Low Data Mode). Nil means "same as
     /// usual" — the default, so an upgrade changes nothing until asked.
     var cellularStreamQuality: StreamQuality? = nil
+    /// Dispatcharr Output Profile requested on live TV URLs (#161). Nil is
+    /// Original / pass-through — the default, which leaves every live URL
+    /// exactly as before. Unused by the NextPVR variant, which has its own
+    /// server-side transcoding via `streamQuality`. Stored as the server's
+    /// profile id, so the choice is validated against the connected server's
+    /// active profiles at play time rather than trusted blindly.
+    var outputProfileId: Int? = nil
     /// User-selectable tvOS UI font size (#107). Default `.medium`
     /// preserves the pre-feature visual output exactly — existing
     /// users see zero change on first launch after upgrade.
@@ -191,6 +198,7 @@ nonisolated struct UserPreferences: Codable {
         case deinterlaceMode
         case streamQuality
         case cellularStreamQuality
+        case outputProfileId
         case uiFontSize
         case preferredSubtitleLanguage
         case guideShowGroupsInSidebar
@@ -231,6 +239,8 @@ nonisolated struct UserPreferences: Codable {
         // upgrade never silently starts transcoding on someone's server.
         streamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .streamQuality) ?? .original
         cellularStreamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .cellularStreamQuality)
+        // Prefs written before #161 have no `outputProfileId`: Original.
+        outputProfileId = try container.decodeIfPresent(Int.self, forKey: .outputProfileId)
         // Forward- and backward-compat: a blob without `uiFontSize`
         // (any prefs written before #107) decodes to .medium so
         // existing users see no visual change.
@@ -261,6 +271,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(deinterlaceMode, forKey: .deinterlaceMode)
         try container.encode(streamQuality, forKey: .streamQuality)
         try container.encodeIfPresent(cellularStreamQuality, forKey: .cellularStreamQuality)
+        try container.encodeIfPresent(outputProfileId, forKey: .outputProfileId)
         try container.encode(uiFontSize, forKey: .uiFontSize)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)
         try container.encode(guideShowGroupsInSidebar, forKey: .guideShowGroupsInSidebar)
