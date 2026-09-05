@@ -1227,30 +1227,7 @@ struct TVOSNavigation: View {
         }
         .animation(.easeInOut(duration: 0.25), value: sidebarEnabled)
         .background(.ultraThinMaterial)
-        .onExitCommand {
-            if appState.selectedTab == .settings {
-                if appState.tvosSettingsHasPopup {
-                    appState.tvosSettingsDismissPopupRequest += 1
-                    return
-                }
-                if appState.tvosSettingsShowingEventLog {
-                    appState.tvosSettingsDismissEventLogRequest += 1
-                    return
-                }
-                focusSidebar()
-                return
-            }
-            #if DISPATCHERPVR
-            if appState.selectedTab == .stats {
-                focusSidebar()
-                return
-            }
-            #endif
-            if appState.tvosBlocksSidebarExitCommand {
-                return
-            }
-            focusSidebar()
-        }
+        .onExitCommand(perform: rootExitHandler)
         .onAppear {
             focusedItem = preferredSidebarFocusItem()
             appState.topicKeywords = UserPreferences.load().keywords
@@ -1292,6 +1269,36 @@ struct TVOSNavigation: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .restoreFromPiP)) { _ in
             appState.isShowingPlayer = true
+        }
+    }
+
+    private var rootExitAction: TVRootExitAction {
+        TVRootExitAction.resolve(
+            selectedTab: appState.selectedTab,
+            sidebarHasFocus: focusedItem != nil,
+            settingsHasPopup: appState.tvosSettingsHasPopup,
+            settingsShowingEventLog: appState.tvosSettingsShowingEventLog,
+            blocksSidebarExit: appState.tvosBlocksSidebarExitCommand
+        )
+    }
+
+    /// A `nil` handler leaves the Back press unhandled so tvOS returns to
+    /// the app launcher when the sidebar already has focus (#155).
+    private var rootExitHandler: (() -> Void)? {
+        if rootExitAction == .exitToSystem { return nil }
+        return { handleRootExitCommand() }
+    }
+
+    private func handleRootExitCommand() {
+        switch rootExitAction {
+        case .dismissSettingsPopup:
+            appState.tvosSettingsDismissPopupRequest += 1
+        case .dismissEventLog:
+            appState.tvosSettingsDismissEventLogRequest += 1
+        case .focusSidebar:
+            focusSidebar()
+        case .ignore, .exitToSystem:
+            break
         }
     }
 
