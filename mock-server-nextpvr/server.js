@@ -335,6 +335,21 @@ function hslToRgb(h, s, l) {
 
 const sessions = new Map();
 const LIVE_STREAM_TTL_MS = 15000;
+// Streaming profiles the mock "server admin" has defined. A profile outside
+// this list is rejected, so the client's fallback to the direct stream gets
+// exercised instead of only its happy path.
+const TRANSCODE_PROFILES = [
+  "1080p",
+  "720p",
+  "576p",
+  "504p",
+  "480p",
+  "360p",
+  "240p",
+  "144p",
+];
+// How long the mock takes to reach 100% readiness.
+const TRANSCODE_STARTUP_MS = 2000;
 
 function createSession() {
   const sid = crypto.randomUUID().replace(/-/g, "").substring(0, 32);
@@ -423,7 +438,7 @@ function handleRequest(req, res) {
   // how the wrong client shape gets caught here instead of on a user's server.
   if (
     method &&
-    (method.startsWith("channel.stream.") || method === "channel.transcode.lease")
+    (method.startsWith("channel.stream.") || method.startsWith("channel.transcode."))
   ) {
     if (url.pathname !== "/service") {
       return json(res, { stat: "fail", error: "Not found" }, 404);
@@ -440,6 +455,69 @@ function handleRequest(req, res) {
     ) {
       console.log("Live stream expired without renewal");
       delete session.liveStream;
+    }
+
+    // -- Server-side transcoding --
+    // NextPVR only transcodes when a client asks. initiate starts ffmpeg with a
+    // named profile, status counts to 100 while the first HLS segments fill, and
+    // m3u8 then serves the playlist. Mirrors Kodi's TranscodedBuffer flow.
+    if (method === "channel.transcode.initiate") {
+      const channelId = parseInt(url.searchParams.get("channel_id") || "0", 10);
+      const profile = url.searchParams.get("profile") || "";
+      if (!channelId) {
+        return xml(res, `<rsp stat="fail"><err code="1"/></rsp>`, 400);
+      }
+      // An unknown profile fails at 200, which is how a real server rejects a
+      // profile the admin has not defined — the client must read the body.
+      if (!TRANSCODE_PROFILES.includes(profile)) {
+        return xml(res, `<rsp stat="fail"><err code="2" msg="Unknown profile"/></rsp>`);
+      }
+      session.transcode = { channelId, profile, startedMs: Date.now() };
+      return xml(res, `<rsp stat="ok"/>`);
+    }
+
+    if (method === "channel.transcode.status") {
+      if (!session.transcode) {
+        return json(res, { stat: "fail", error: "No active transcode" }, 404);
+      }
+      // Ramp to 100 over TRANSCODE_STARTUP_MS so the client's readiness poll is
+      // exercised rather than short-circuited on the first tick.
+      const elapsed = Date.now() - session.transcode.startedMs;
+      const percentage = Math.min(
+        100,
+        Math.round((elapsed / TRANSCODE_STARTUP_MS) * 100)
+      );
+      return xml(
+        res,
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+          `<rsp stat="ok">\n` +
+          `  <percentage>${percentage}</percentage>\n` +
+          `  <final>${percentage >= 100}</final>\n` +
+          `</rsp>\n`
+      );
+    }
+
+    if (method === "channel.transcode.stop") {
+      delete session.transcode;
+      return xml(res, `<rsp stat="ok"/>`);
+    }
+
+    if (method === "channel.transcode.m3u8") {
+      if (!session.transcode) {
+        return json(res, { stat: "fail", error: "No active transcode" }, 404);
+      }
+      // Shape only — like /live, this mock serves no actual media, so the
+      // playlist references a segment that isn't there.
+      const body =
+        `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n` +
+        `#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10.0,\n` +
+        `/live?transcode=${session.transcode.profile}&segment=0\n`;
+      res.writeHead(200, {
+        "Content-Type": "application/x-mpegURL",
+        "Content-Length": Buffer.byteLength(body),
+      });
+      res.end(body);
+      return;
     }
 
     if (method === "channel.transcode.lease") {
