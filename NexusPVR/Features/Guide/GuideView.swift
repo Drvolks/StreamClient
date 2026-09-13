@@ -190,14 +190,22 @@ struct GuideView: View {
 
     private func handleScenePhaseChange() {
         guard scenePhase == .active else { return }
-        Task { await refreshRecordings() }
         #if os(tvOS)
+        // Re-fetch a stale EPG under the same rules as the Channels page
+        // (#166); the full refresh reloads recordings too.
+        if epgCache.shouldRefreshOnActivation(using: client) {
+            Task { await refreshGuide() }
+        } else {
+            Task { await refreshRecordings() }
+        }
         // Resync the guide start time so the visible window matches
         // the ViewModel's timelineStart (which uses current time),
         // unless returning to the catch-up program the user chose.
         if !preservesGuidePositionAfterCatchup {
             resyncGuideStartToNow()
         }
+        #else
+        Task { await refreshRecordings() }
         #endif
     }
 
