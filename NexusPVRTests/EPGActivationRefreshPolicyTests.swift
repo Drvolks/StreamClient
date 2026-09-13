@@ -12,23 +12,28 @@ import Foundation
 @MainActor
 struct EPGActivationRefreshPolicyTests {
 
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
     private func shouldRefresh(
         isConfigured: Bool = true,
         hasLoaded: Bool = true,
         isLoading: Bool = false,
         isRefreshing: Bool = false,
-        hasActiveLiveStream: Bool = false
+        hasActiveLiveStream: Bool = false,
+        refreshedSecondsAgo: TimeInterval? = 3600
     ) -> Bool {
         EPGActivationRefreshPolicy.shouldRefresh(
             isConfigured: isConfigured,
             hasLoaded: hasLoaded,
             isLoading: isLoading,
             isRefreshing: isRefreshing,
-            hasActiveLiveStream: hasActiveLiveStream
+            hasActiveLiveStream: hasActiveLiveStream,
+            lastRefreshDate: refreshedSecondsAgo.map { now.addingTimeInterval(-$0) },
+            now: now
         )
     }
 
-    @Test("Activation refreshes a loaded, idle cache")
+    @Test("Activation refreshes a loaded, idle, stale cache")
     func refreshesLoadedIdleCache() {
         #expect(shouldRefresh())
     }
@@ -54,15 +59,35 @@ struct EPGActivationRefreshPolicyTests {
         #expect(!shouldRefresh(isConfigured: false))
     }
 
-    @Test("A fresh cache is not eligible for an activation refresh")
-    func freshCacheIsNotEligible() {
+    @Test("Activation soon after a fetch does not download the EPG again")
+    func skipsRecentlyRefreshedData() {
+        #expect(!shouldRefresh(refreshedSecondsAgo: 30))
+        #expect(!shouldRefresh(refreshedSecondsAgo: EPGActivationRefreshPolicy.minimumInterval - 1))
+    }
+
+    @Test("Activation refreshes once the minimum interval has elapsed")
+    func refreshesAtMinimumInterval() {
+        #expect(shouldRefresh(refreshedSecondsAgo: EPGActivationRefreshPolicy.minimumInterval))
+    }
+
+    @Test("Activation retries when no fetch has succeeded yet")
+    func retriesWithoutSuccessfulFetch() {
+        #expect(shouldRefresh(refreshedSecondsAgo: nil))
+    }
+
+    @Test("An unloaded cache is not eligible for an activation refresh")
+    func unloadedCacheIsNotEligible() {
         let cache = EPGCache()
-        #expect(!EPGActivationRefreshPolicy.shouldRefresh(
-            isConfigured: true,
-            hasLoaded: cache.hasLoaded,
-            isLoading: cache.isLoading,
-            isRefreshing: cache.isRefreshing,
-            hasActiveLiveStream: false
+        #expect(cache.lastRefreshDate == nil)
+        #expect(!cache.shouldRefreshOnActivation(
+            using: PVRClient(config: ServerConfig(host: "pvr.local", pin: "1234", useHTTPS: false))
         ))
+    }
+
+    @Test("invalidate forgets the last refresh date")
+    func invalidateClearsLastRefreshDate() {
+        let cache = EPGCache()
+        cache.invalidate()
+        #expect(cache.lastRefreshDate == nil)
     }
 }

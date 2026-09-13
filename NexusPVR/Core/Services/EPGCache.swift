@@ -28,6 +28,10 @@ final class EPGCache: ObservableObject {
     /// True while a user-initiated refresh is in flight (see `refresh(using:profileId:)`).
     /// Unlike `isLoading`, the existing data stays on screen while this is true.
     @Published private(set) var isRefreshing = false
+    /// When channels + the fast EPG window were last fetched successfully, by
+    /// either `loadData` or `refresh`. Scene activation uses it to skip
+    /// refreshing data that is still fresh (see `EPGActivationRefreshPolicy`).
+    private(set) var lastRefreshDate: Date?
     @Published private(set) var error: String?
     /// Start time of the oldest program currently present in the cache. Date
     /// navigation uses its day as a hard lower bound.
@@ -108,6 +112,7 @@ final class EPGCache: ObservableObject {
 
             hasLoaded = true
             isLoading = false
+            lastRefreshDate = Date()
             print("[EPGCache] Grid ready (\(visibleChannels.count) channels): \(ms(since: totalStart))ms")
 
             #if DISPATCHERPVR
@@ -260,6 +265,7 @@ final class EPGCache: ObservableObject {
             }
             error = nil
             hasLoaded = true
+            lastRefreshDate = Date()
             print("[EPGCache] Refresh: \(sorted.count) channels in \(ms(since: totalStart))ms")
 
             #if DISPATCHERPVR
@@ -637,6 +643,21 @@ final class EPGCache: ObservableObject {
         isFullyLoaded = false
         isLoadInProgress = false
         error = nil
+        lastRefreshDate = nil
+    }
+
+    /// Whether returning to the foreground should call `refresh` — the one
+    /// check the Guide and Channels pages share (#166).
+    func shouldRefreshOnActivation(using client: PVRClient, now: Date = Date()) -> Bool {
+        EPGActivationRefreshPolicy.shouldRefresh(
+            isConfigured: client.isConfigured,
+            hasLoaded: hasLoaded,
+            isLoading: isLoading,
+            isRefreshing: isRefreshing,
+            hasActiveLiveStream: client.hasActiveLiveStream,
+            lastRefreshDate: lastRefreshDate,
+            now: now
+        )
     }
 
     // MARK: - Date Bounds

@@ -183,6 +183,13 @@ struct ChannelsView: View {
                 guard newPhase == .active else { return }
                 refreshChannelsOnActivation()
             }
+            .onChange(of: appState.isShowingPlayer) { _, isShowing in
+                // Same as the guide: the full-screen player keeps scenePhase
+                // active, so catch up on the clock and REC badges on dismissal.
+                guard !isShowing else { return }
+                now = Date()
+                Task { await loadRecordings() }
+            }
             .onChange(of: firstVisibleChannelId) { _, id in
                 guard let focusedChannelId else {
                     self.focusedChannelId = id
@@ -293,18 +300,17 @@ struct ChannelsView: View {
 
     #if os(tvOS)
     /// Returning to the app after a while leaves the cards on stale programs
-    /// (#166). Reuses the manual refresh path; `refresh` replaces the data in
-    /// place, so focus and the active filters are untouched.
+    /// (#166). Mirrors the guide's activation handling: re-fetch the EPG through
+    /// the manual refresh path when `EPGActivationRefreshPolicy` allows it,
+    /// otherwise just reload recordings. `refresh` replaces the data in place,
+    /// so focus and the active filters are untouched.
     private func refreshChannelsOnActivation() {
         now = Date()
-        guard EPGActivationRefreshPolicy.shouldRefresh(
-            isConfigured: client.isConfigured,
-            hasLoaded: epgCache.hasLoaded,
-            isLoading: epgCache.isLoading,
-            isRefreshing: epgCache.isRefreshing,
-            hasActiveLiveStream: client.hasActiveLiveStream
-        ) else { return }
-        Task { await refreshChannels() }
+        if epgCache.shouldRefreshOnActivation(using: client) {
+            Task { await refreshChannels() }
+        } else {
+            Task { await loadRecordings() }
+        }
     }
     #endif
 
