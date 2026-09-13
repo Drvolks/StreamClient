@@ -1151,6 +1151,10 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.textPrimary)
             }
 
+            #if !os(tvOS)
+            CustomHostSettingsRows()
+            #endif
+
             #if DISPATCHERPVR
             environmentServerRow
             #endif

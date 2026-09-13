@@ -14,6 +14,10 @@ nonisolated protocol NetworkPathReporting: AnyObject, Sendable {
     /// True when the active path is metered or the user has asked for less data:
     /// cellular, a personal hotspot, or Low Data Mode.
     var prefersReducedData: Bool { get }
+    /// True when the active path is cellular or a personal hotspot. Unlike
+    /// `prefersReducedData` this ignores Low Data Mode, which says nothing about
+    /// whether the device is away from the home network.
+    var isExpensive: Bool { get }
 }
 
 /// Watches the default network path.
@@ -33,12 +37,19 @@ nonisolated final class NetworkPathMonitor: NetworkPathReporting, @unchecked Sen
     private let queue = DispatchQueue(label: "NetworkPathMonitor")
     private let lock = NSLock()
     private var _prefersReducedData = false
+    private var _isExpensive = false
     private var started = false
 
     var prefersReducedData: Bool {
         lock.lock()
         defer { lock.unlock() }
         return _prefersReducedData
+    }
+
+    var isExpensive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _isExpensive
     }
 
     /// Begins watching. Safe to call more than once.
@@ -53,6 +64,7 @@ nonisolated final class NetworkPathMonitor: NetworkPathReporting, @unchecked Sen
             let reduced = path.isExpensive || path.isConstrained
             self.lock.lock()
             self._prefersReducedData = reduced
+            self._isExpensive = path.isExpensive
             self.lock.unlock()
         }
         monitor.start(queue: queue)

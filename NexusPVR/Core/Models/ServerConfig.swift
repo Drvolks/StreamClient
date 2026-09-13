@@ -15,6 +15,11 @@ nonisolated struct ServerConfig: Codable, Equatable {
     var password: String
     var apiKey: String
     var useHTTPS: Bool
+    /// Optional second address for the same server, typically its public URL
+    /// (#165). Empty when unset. Applied according to `customHostMode` on iOS and
+    /// macOS; tvOS ignores it.
+    var customHost: String = ""
+    var customHostMode: CustomHostMode = .cellularOnly
 
     var effectivePort: Int {
         port ?? (useHTTPS ? 443 : 80)
@@ -108,6 +113,96 @@ nonisolated struct ServerConfig: Codable, Equatable {
         return "\(scheme)://\(encodedHost):\(finalPort)\(encodedPath)"
     }
 
+    /// True when a custom host has been entered.
+    var hasCustomHost: Bool {
+        !customHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Base URL of the custom host, parsed the same way as `host`. Nil when unset.
+    var customHostBaseURL: String? {
+        guard hasCustomHost else { return nil }
+        return ServerConfig(host: customHost, pin: "", useHTTPS: useHTTPS).baseURL
+    }
+
+    /// Whether requests should go through the custom host right now.
+    ///
+    /// - Parameter onExpensiveNetwork: the current path is cellular or a personal
+    ///   hotspot (`NetworkPathReporting.isExpensive`).
+    func usesCustomHost(onExpensiveNetwork: Bool) -> Bool {
+        #if os(tvOS)
+        return false
+        #else
+        guard hasCustomHost else { return false }
+        switch customHostMode {
+        case .always: return true
+        case .cellularOnly: return onExpensiveNetwork
+        }
+        #endif
+    }
+
+    /// The base URL every request and playback URL is built from: the custom
+    /// host when `usesCustomHost(onExpensiveNetwork:)` holds, else `baseURL`.
+    func activeBaseURL(onExpensiveNetwork: Bool) -> String {
+        guard usesCustomHost(onExpensiveNetwork: onExpensiveNetwork),
+              let custom = customHostBaseURL else { return baseURL }
+        return custom
+    }
+
+    /// This config without the custom host settings: which server and
+    /// credentials it points at. Code that resets the session or reloads data
+    /// when "the server changed" must compare this, not the whole config —
+    /// editing the custom host only reroutes requests.
+    var serverIdentity: ServerConfig {
+        var identity = self
+        identity.customHost = ""
+        identity.customHostMode = .cellularOnly
+        return identity
+    }
+
+    /// True when both configs point at the same server with the same
+    /// credentials, differing at most in the custom host settings. Such a change
+    /// only reroutes requests, so the session can be kept.
+    func hasSameServer(as other: ServerConfig) -> Bool {
+        serverIdentity == other.serverIdentity
+    }
+
+    /// Validates a custom host typed in Settings. Returns nil when it's usable —
+    /// empty (clears the custom host) or an address with a hostname and an
+    /// http/https scheme, if one was typed — otherwise a message for the user.
+    static func customHostValidationError(_ input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.contains(" ") {
+            return "The custom host can't contain spaces."
+        }
+        let lower = trimmed.lowercased()
+        var authority = trimmed
+        if lower.hasPrefix("https://") {
+            authority = String(trimmed.dropFirst("https://".count))
+        } else if lower.hasPrefix("http://") {
+            authority = String(trimmed.dropFirst("http://".count))
+        } else if lower.contains("://") {
+            return "The custom host must start with http:// or https://."
+        }
+        // Hostname = everything before the first "/" and the optional ":port".
+        if let slash = authority.firstIndex(of: "/") {
+            authority = String(authority[..<slash])
+        }
+        var hostname = authority
+        if let colon = authority.firstIndex(of: ":") {
+            hostname = String(authority[..<colon])
+            let port = authority[authority.index(after: colon)...]
+            guard let portNumber = Int(port), (1...65535).contains(portNumber) else {
+                return "The custom host's port must be a number between 1 and 65535."
+            }
+        }
+        let resolved = ServerConfig(host: trimmed, pin: "", useHTTPS: false).baseURL
+        guard !hostname.isEmpty, URL(string: resolved)?.host != nil else {
+            return "Enter a valid address, e.g. https://pvr.example.com."
+        }
+        return nil
+    }
+
     /// Display string for the server address (e.g. "192.168.1.100" or "192.168.1.100:8866")
     var displayAddress: String {
         if let port {
@@ -164,6 +259,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
     // Coding keys with defaults for backward compatibility
     enum CodingKeys: String, CodingKey {
         case host, port, pin, username, password, apiKey, useHTTPS
+        case customHost, customHostMode
     }
 
     init(host: String, port: Int? = nil, pin: String, username: String = "", password: String = "", apiKey: String = "", useHTTPS: Bool) {
@@ -186,6 +282,10 @@ nonisolated struct ServerConfig: Codable, Equatable {
         password = try container.decodeIfPresent(String.self, forKey: .password) ?? ""
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         useHTTPS = try container.decode(Bool.self, forKey: .useHTTPS)
+        customHost = try container.decodeIfPresent(String.self, forKey: .customHost) ?? ""
+        // An unknown mode (written by a newer build) falls back to the default
+        // rather than failing the whole config decode.
+        customHostMode = (try? container.decodeIfPresent(CustomHostMode.self, forKey: .customHostMode)) ?? .cellularOnly
     }
 }
 

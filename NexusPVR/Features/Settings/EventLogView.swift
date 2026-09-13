@@ -160,6 +160,13 @@ struct EventLogView: View {
                         .font(.caption)
                 }
             }
+            if let host = event.host {
+                Text(host)
+                    .foregroundStyle(Theme.textTertiary)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .accessibilityLabel("Host \(host)")
+            }
             if let detail = event.errorDetail {
                 Text(detail)
                     .foregroundStyle(event.isSuccess ? Theme.textSecondary : Theme.error)

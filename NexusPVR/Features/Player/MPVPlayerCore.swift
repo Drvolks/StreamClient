@@ -735,7 +735,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             isSuccess: true,
             durationMs: 0,
             responseSize: 0,
-            errorDetail: nil
+            errorDetail: nil,
+            host: NetworkEvent.hostLabel(for: currentURL)
         ))
     }
 
@@ -1219,7 +1220,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                         isSuccess: false,
                         durationMs: 0,
                         responseSize: 0,
-                        errorDetail: logText
+                        errorDetail: logText,
+                        host: NetworkEvent.hostLabel(for: currentURL)
                     ))
                 }
 
@@ -1262,7 +1264,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                         isSuccess: false,
                         durationMs: 0,
                         responseSize: 0,
-                        errorDetail: logText
+                        errorDetail: logText,
+                        host: NetworkEvent.hostLabel(for: currentURL)
                     ))
                 }
 
@@ -1347,7 +1350,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                         isSuccess: false,
                         durationMs: 0,
                         responseSize: 0,
-                        errorDetail: detail
+                        errorDetail: detail,
+                        host: NetworkEvent.hostLabel(for: currentURL)
                     ))
 
                     // Show error on screen
@@ -1419,7 +1423,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 isSuccess: true,
                 durationMs: 0,
                 responseSize: 0,
-                errorDetail: "Master playlist fallback applied"
+                errorDetail: "Master playlist fallback applied",
+                host: NetworkEvent.hostLabel(for: mediaURL)
             ))
 
             self.loadURL(mediaURL, isFallbackAttempt: true)

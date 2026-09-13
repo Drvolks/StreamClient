@@ -18,6 +18,17 @@ struct NetworkEvent: Identifiable, Sendable {
     let durationMs: Int
     let responseSize: Int
     let errorDetail: String?
+    /// Host the request or stream went to, with a non-default port when one
+    /// was used (e.g. "pvr.example.com" or "192.168.1.50:8866"). Tells the
+    /// server address and the custom host apart in the log (#165).
+    var host: String? = nil
+
+    /// "host" or "host:port" for `url`; nil when it has no host.
+    nonisolated static func hostLabel(for url: URL?) -> String? {
+        guard let url, let host = url.host, !host.isEmpty else { return nil }
+        if let port = url.port { return "\(host):\(port)" }
+        return host
+    }
 }
 
 /// Protocol for logging network events — allows test doubles and alternative implementations.
@@ -65,7 +76,8 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
         let time = timeFormatter.string(from: event.timestamp)
         let status = event.statusCode.map { " → \($0)" } ?? (event.isSuccess ? "" : " → ERR")
         let duration = event.durationMs > 0 ? " (\(event.durationMs)ms)" : ""
-        var line = "\(time) \(event.method) \(event.path)\(status)\(duration)"
+        let host = event.host.map { " [\($0)]" } ?? ""
+        var line = "\(time) \(event.method)\(host) \(event.path)\(status)\(duration)"
         if let detail = event.errorDetail {
             line += "\n  \(detail)"
         }
