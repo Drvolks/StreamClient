@@ -18,6 +18,7 @@ struct ChannelsView: View {
     @EnvironmentObject private var epgCache: EPGCache
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
+    @Environment(\.scenePhase) private var scenePhase
     #endif
 
     @State private var streamError: String?
@@ -178,6 +179,10 @@ struct ChannelsView: View {
                 focusedChannelId = firstVisibleChannelId
                 await tickCurrentTime()
             }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                refreshChannelsOnActivation()
+            }
             .onChange(of: firstVisibleChannelId) { _, id in
                 guard let focusedChannelId else {
                     self.focusedChannelId = id
@@ -285,6 +290,23 @@ struct ChannelsView: View {
         await loadRecordings()
         now = Date()
     }
+
+    #if os(tvOS)
+    /// Returning to the app after a while leaves the cards on stale programs
+    /// (#166). Reuses the manual refresh path; `refresh` replaces the data in
+    /// place, so focus and the active filters are untouched.
+    private func refreshChannelsOnActivation() {
+        now = Date()
+        guard EPGActivationRefreshPolicy.shouldRefresh(
+            isConfigured: client.isConfigured,
+            hasLoaded: epgCache.hasLoaded,
+            isLoading: epgCache.isLoading,
+            isRefreshing: epgCache.isRefreshing,
+            hasActiveLiveStream: client.hasActiveLiveStream
+        ) else { return }
+        Task { await refreshChannels() }
+    }
+    #endif
 
     /// Loads scheduled/in-progress recordings so channel cards can show the
     /// NEW/REC badges for the current program.
