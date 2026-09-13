@@ -156,6 +156,7 @@ Stored in `UserPreferences` struct (Core/Models/UserPreferences.swift), synced v
 Also defines `PlayerStats` struct for MPV playback statistics.
 
 Server config stored separately in `ServerConfig` (Core/Models/Session.swift).
+- `customHost` / `customHostMode` - Optional second address for the same server (#165), iOS/macOS only (tvOS ignores it). Edited in Settings without unlinking (`CustomHostSettingsRows`). Clients resolve `baseURL` per request via `config.activeBaseURL(onExpensiveNetwork: networkPath.isExpensive)` — `.cellularOnly` uses it on cellular/personal hotspot, `.always` everywhere. `updateCustomHost(_:mode:)` changes it without dropping the session.
 
 ## XcodeBuildMCP Integration
 **IMPORTANT**: This project uses XcodeBuildMCP for all Xcode operations.

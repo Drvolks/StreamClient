@@ -127,8 +127,14 @@ struct PVRApp: App {
                     guard !ServerConfigSyncGate.isSuspended else { return }
                     let newConfig = ServerConfig.load()
                     if newConfig.isConfigured && newConfig != client.config {
-                        client.updateConfig(newConfig)
-                        epgCache.invalidate()
+                        if newConfig.hasSameServer(as: client.config) {
+                            // Only the custom host changed on another device:
+                            // reroute without dropping the session or the EPG.
+                            client.updateCustomHost(newConfig.customHost, mode: newConfig.customHostMode)
+                        } else {
+                            client.updateConfig(newConfig)
+                            epgCache.invalidate()
+                        }
                     }
                 }
                 .onOpenURL { url in
@@ -167,7 +173,7 @@ struct PVRApp: App {
         foregroundAuthTask = Task {
             await authenticateConfiguredClientOnForeground(expectedConfig: expectedConfig)
             await MainActor.run {
-                if client.config == expectedConfig {
+                if client.config.hasSameServer(as: expectedConfig) {
                     foregroundAuthTask = nil
                 }
             }
@@ -178,7 +184,7 @@ struct PVRApp: App {
         let retryDelays: [Double] = [0.75, 1.5, 3.0]
 
         for attempt in 1...retryDelays.count {
-            guard !Task.isCancelled, client.config == expectedConfig,
+            guard !Task.isCancelled, client.config.hasSameServer(as: expectedConfig),
                   ForegroundAuthPolicy.shouldReauthenticate(
                     isConfigured: client.isConfigured,
                     hasActiveLiveStream: client.hasActiveLiveStream

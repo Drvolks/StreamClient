@@ -125,9 +125,12 @@ struct ContentView: View {
         } message: { message in
             Text(message)
         }
-        .onChange(of: client.config) { _ in
+        .onChange(of: client.config.serverIdentity) { _ in
             // Server config changed (e.g. user updated credentials after a 401).
-            // Drop the stale EPG and kick off a fresh bootstrap.
+            // Drop the stale EPG and kick off a fresh bootstrap. Keyed on the
+            // server identity: a custom host edit only reroutes requests, and
+            // restarting here cancelled the in-flight load, leaving the guide
+            // empty until relaunch (#165).
             guard client.isConfigured else { return }
             epgCache.invalidate()
             startupTask?.cancel()
@@ -164,7 +167,7 @@ struct ContentView: View {
     private func queueConfiguredStartupIfNeeded() {
         guard client.isConfigured else { return }
 
-        let config = client.config
+        let config = client.config.serverIdentity
         let taskIsAlreadyRunning = startupTask != nil && startupTaskConfig == config
         let startupIsAlreadyComplete = startupTaskConfig == config && client.isAuthenticated && (epgCache.hasLoaded || epgCache.isLoading)
 
@@ -182,13 +185,13 @@ struct ContentView: View {
     }
 
     private func bootstrapConfiguredClient(expectedConfig: ServerConfig) async {
-        guard client.isConfigured, client.config == expectedConfig else { return }
+        guard client.isConfigured, client.config.hasSameServer(as: expectedConfig) else { return }
 
         if !client.isAuthenticated {
             await authenticateConfiguredClientWithRetry(expectedConfig: expectedConfig)
         }
 
-        guard client.isConfigured, client.config == expectedConfig, client.isAuthenticated else { return }
+        guard client.isConfigured, client.config.hasSameServer(as: expectedConfig), client.isAuthenticated else { return }
 
         #if DISPATCHERPVR
         if let level = try? await client.fetchUserLevel() {
@@ -197,7 +200,7 @@ struct ContentView: View {
         }
         #endif
 
-        guard client.isConfigured, client.config == expectedConfig else { return }
+        guard client.isConfigured, client.config.hasSameServer(as: expectedConfig) else { return }
         await epgCache.loadData(using: client)
     }
 
@@ -205,7 +208,7 @@ struct ContentView: View {
         let retryDelays: [Double] = [0.75, 1.5, 3.0, 5.0, 8.0]
 
         for attempt in 1...retryDelays.count {
-            guard client.isConfigured, client.config == expectedConfig else { return }
+            guard client.isConfigured, client.config.hasSameServer(as: expectedConfig) else { return }
 
             do {
                 try await client.authenticate()
@@ -214,7 +217,7 @@ struct ContentView: View {
                 // Don't retry credential failures — the password/PIN won't fix itself.
                 if Self.isAuthCredentialFailure(error) {
                     await MainActor.run {
-                        guard client.config == expectedConfig else { return }
+                        guard client.config.hasSameServer(as: expectedConfig) else { return }
                         #if DISPATCHERPVR
                         authErrorMessage = "Your saved username, password, or API key was rejected by the server. Update your server settings to sign in again."
                         #else
