@@ -203,18 +203,7 @@ nonisolated final class MPVRecordingMonitor {
                 return
             }
 
-            var total: Double = 0
-            for line in text.components(separatedBy: .newlines) {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("#EXTINF:") {
-                    let segPart = trimmed.dropFirst(8)
-                    let numStr = segPart.split(separator: ",")[0].trimmingCharacters(in: .whitespaces)
-                    if let d = Double(numStr) {
-                        total += d
-                    }
-                }
-            }
-            completion(total)
+            completion(HLSPlaylistDuration.totalSeconds(in: text))
         }.resume()
     }
 
