@@ -126,7 +126,7 @@ nonisolated struct DownloadItem: Identifiable, Codable, Equatable, Hashable, Sen
     }
 }
 
-extension DownloadItem {
+nonisolated extension DownloadItem {
     /// Builds the entry for a Dispatcharr catch-up programme.
     ///
     /// `expectedDuration` is the programme length plus

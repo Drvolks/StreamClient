@@ -229,7 +229,7 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
     }
 }
 
-extension Recording {
+nonisolated extension Recording {
     static var preview: Recording {
         Recording(
             id: 1,

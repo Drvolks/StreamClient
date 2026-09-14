@@ -187,7 +187,7 @@ nonisolated struct Program: Identifiable, Decodable, Hashable, Sendable {
     }
 }
 
-extension Program {
+nonisolated extension Program {
     static var preview: Program {
         Program(
             id: 12345,
