@@ -744,11 +744,19 @@ struct PlayerView: View {
             try? await Task.sleep(for: .seconds(2))
             autoSelectSubtitleIfNeeded()
 
-            // Poll subtitle text while playing
+            // Poll subtitle text while playing & periodically autosave position
+            var autosaveCounter = 0
             while !Task.isCancelled {
                 let text = getSubtitleTextFunc?()
                 if text != currentSubtitleText {
                     currentSubtitleText = text
+                }
+                autosaveCounter += 1
+                if autosaveCounter >= 60 { // 60 * 250ms = 15 seconds
+                    autosaveCounter = 0
+                    if isPlaying && currentPosition > 10 {
+                        savePlaybackPosition()
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(250))
             }
@@ -1271,7 +1279,7 @@ struct PlayerView: View {
             }
 
             #if !os(tvOS)
-            // Jump to the live edge. Not offered on tvOS: the controls overlay is
+            // Jump to the live edge or end of recording. Not offered on tvOS: the controls overlay is
             // display-only there (the mpv view keeps focus and drives everything
             // from remote presses), so the button can never be reached — up on the
             // remote opens the settings panel. The Siri Remote's skip-forward is
@@ -1284,6 +1292,14 @@ struct PlayerView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(secondsBehindLive <= Self.liveEdgeMargin)
+            } else if isRecordingInProgress && duration > 30 {
+                Button {
+                    seekToPosition(max(0, duration - 15))
+                } label: {
+                    playerControlIcon(systemName: "forward.end.alt.fill", size: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(currentPosition >= duration - 20)
             }
             #endif
         }
@@ -1733,12 +1749,12 @@ struct PlayerView: View {
 
     #if os(tvOS)
     private var hasChapters: Bool {
-        !isLiveStream && !isRecordingInProgress && duration > 0
+        !isLiveStream && duration > 0
     }
 
     private var tvTrackCount: Int {
         switch settingsTab {
-        case .video: return hasChapters ? 10 : 0
+        case .video: return hasChapters ? (isRecordingInProgress ? 11 : 10) : 0
         case .audio: return trackList.filter { $0.type == "audio" }.count
         case .subtitles: return trackList.filter { $0.type == "sub" }.count + 1 // +1 for "None"
         }
@@ -1748,9 +1764,18 @@ struct PlayerView: View {
         guard tvFocusedTrackIndex >= 0 else { return }
         switch settingsTab {
         case .video:
-            if hasChapters && tvFocusedTrackIndex < 10 {
-                let chapterPosition = duration / 10.0 * Double(tvFocusedTrackIndex)
-                seekToPosition(chapterPosition)
+            if hasChapters {
+                if isRecordingInProgress {
+                    if tvFocusedTrackIndex == 0 {
+                        seekToPosition(max(0, duration - 15))
+                    } else if tvFocusedTrackIndex <= 10 {
+                        let chapterPosition = duration / 10.0 * Double(tvFocusedTrackIndex - 1)
+                        seekToPosition(chapterPosition)
+                    }
+                } else if tvFocusedTrackIndex < 10 {
+                    let chapterPosition = duration / 10.0 * Double(tvFocusedTrackIndex)
+                    seekToPosition(chapterPosition)
+                }
             }
         case .audio:
             let audioTracks = trackList.filter { $0.type == "audio" }
@@ -1906,12 +1931,36 @@ struct PlayerView: View {
                 videoInfoRow("Dropped", "\(droppedFrames)")
             }
 
-            if !isLiveStream && !isRecordingInProgress && duration > 0 {
+            if !isLiveStream && duration > 0 {
                 Divider()
                     .background(.gray.opacity(0.5))
                     .padding(.vertical, Theme.spacingSM)
 
-                Text("Chapters")
+                if isRecordingInProgress {
+                    Button {
+                        seekToPosition(max(0, duration - 15))
+                    } label: {
+                        HStack {
+                            Label("Jump to Latest", systemImage: "forward.end.fill")
+                                .font(panelTextFont)
+                                .foregroundStyle(Theme.recording)
+                            Spacer()
+                            Text(formatTime(max(0, duration - 15)))
+                                .font(panelLabelFont)
+                                .foregroundStyle(.gray)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, Theme.spacingSM)
+                        .background(
+                            tvOSFocused(0) ? Color.white.opacity(0.2) : Color.clear
+                        )
+                        .cornerRadius(Theme.cornerRadiusSM)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 4)
+                }
+
+                Text(isRecordingInProgress ? "Recorded Chapters" : "Chapters")
                     .font(panelLabelFont)
                     .foregroundStyle(.gray)
                     .padding(.bottom, 4)
@@ -1920,6 +1969,7 @@ struct PlayerView: View {
                     let chapterPosition = duration / 10.0 * Double(index)
                     let isCurrentChapter = currentPosition >= chapterPosition &&
                         (index == 9 || currentPosition < duration / 10.0 * Double(index + 1))
+                    let focusIdx = isRecordingInProgress ? index + 1 : index
                     Button {
                         seekToPosition(chapterPosition)
                     } label: {
@@ -1935,7 +1985,7 @@ struct PlayerView: View {
                         .padding(.vertical, 6)
                         .padding(.horizontal, Theme.spacingSM)
                         .background(
-                            tvOSFocused(index) ? Color.white.opacity(0.2) :
+                            tvOSFocused(focusIdx) ? Color.white.opacity(0.2) :
                             isCurrentChapter ? Theme.accent.opacity(0.2) : Color.clear
                         )
                         .cornerRadius(Theme.cornerRadiusSM)

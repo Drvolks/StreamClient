@@ -17,6 +17,9 @@ nonisolated final class MPVRecordingMonitor {
     private var lastRefreshTime: Date = .distantPast
     private var refreshInFlight = false
 
+    var headers: [String: String] = [:]
+    var recordingStartTime: Date?
+
     /// How often to poll the server (seconds). HEAD requests are just headers
     /// (few hundred bytes), so polling frequently is fine.
     var refreshInterval: TimeInterval = 2
@@ -31,6 +34,12 @@ nonisolated final class MPVRecordingMonitor {
     /// The latest estimated duration. Returns 0 if no estimate is available.
     var estimatedDuration: Double { _estimatedDuration }
 
+    private var isHLS: Bool {
+        guard let currentURL else { return false }
+        let lower = currentURL.lowercased()
+        return lower.hasSuffix(".m3u8") || lower.contains("/hls/")
+    }
+
     private lazy var urlSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 10
@@ -41,13 +50,21 @@ nonisolated final class MPVRecordingMonitor {
     func configure(mpv: OpaquePointer) {}
 
     /// Start duration estimation. Call after `mpv_initialize()` and `loadfile`.
-    func start(mpv: OpaquePointer, url: String) {
+    func start(mpv: OpaquePointer, url: String, startTime: Date? = nil, headers: [String: String] = [:]) {
+        let effectiveStart = startTime ?? self.recordingStartTime
+        let effectiveHeaders = headers.isEmpty ? self.headers : headers
         stop()
         self.currentURL = url
+        self.recordingStartTime = effectiveStart
+        self.headers = effectiveHeaders
         baselineCaptured = false
-        _estimatedDuration = 0
+        if let start = recordingStartTime {
+            _estimatedDuration = max(0, Date().timeIntervalSince(start))
+        } else {
+            _estimatedDuration = 0
+        }
         lastRefreshTime = .distantPast
-        print("RecordingMonitor: started for \(url)")
+        print("RecordingMonitor: started for \(url) (initial duration=\(_estimatedDuration)s)")
     }
 
     /// Stop estimation.
@@ -55,12 +72,35 @@ nonisolated final class MPVRecordingMonitor {
         currentURL = nil
         baselineCaptured = false
         _estimatedDuration = 0
+        headers = [:]
+        recordingStartTime = nil
     }
 
     /// Call periodically (e.g. from the position-polling timer) with the
     /// current mpv duration so the monitor can capture its baseline.
     func updateBaseline(duration: Double) {
-        guard !baselineCaptured, duration > 0 else { return }
+        guard !baselineCaptured else { return }
+
+        if isHLS {
+            var initial = duration
+            if let start = recordingStartTime {
+                initial = max(initial, Date().timeIntervalSince(start))
+            }
+            if initial > 0 {
+                baselineDuration = initial
+                _estimatedDuration = initial
+                baselineCaptured = true
+                print("RecordingMonitor: HLS baseline set to \(String(format: "%.1f", initial))s")
+                fetchHLSPlaylistDuration { [weak self] hlsDuration in
+                    guard let self else { return }
+                    self._estimatedDuration = max(self._estimatedDuration, hlsDuration)
+                    self.onDurationEstimate?(self._estimatedDuration)
+                }
+            }
+            return
+        }
+
+        guard duration > 0 else { return }
         baselineDuration = duration
         _estimatedDuration = duration
         baselineCaptured = true
@@ -80,11 +120,38 @@ nonisolated final class MPVRecordingMonitor {
         baselineCaptured = false
     }
 
-    /// Called every position-polling tick (~0.5s). Fires a HEAD request if
-    /// enough time has elapsed based on whether we're at the live edge.
+    /// Called every position-polling tick (~0.5s). Fires a refresh request if
+    /// enough time has elapsed.
     func refreshIfNeeded() {
-        guard baselineContentLength > 0, baselineDuration > 0, !refreshInFlight else { return }
+        guard !refreshInFlight else { return }
 
+        if isHLS {
+            guard currentURL != nil else { return }
+            // Update immediately based on elapsed time if recordingStartTime is present
+            if let start = recordingStartTime {
+                let elapsed = max(0, Date().timeIntervalSince(start))
+                if elapsed > _estimatedDuration {
+                    _estimatedDuration = elapsed
+                    onDurationEstimate?(elapsed)
+                }
+            }
+
+            guard Date().timeIntervalSince(lastRefreshTime) >= refreshInterval else { return }
+            lastRefreshTime = Date()
+            refreshInFlight = true
+
+            fetchHLSPlaylistDuration { [weak self] hlsDuration in
+                guard let self else { return }
+                self.refreshInFlight = false
+                if hlsDuration > 0 {
+                    self._estimatedDuration = max(self._estimatedDuration, hlsDuration)
+                    self.onDurationEstimate?(self._estimatedDuration)
+                }
+            }
+            return
+        }
+
+        guard baselineContentLength > 0, baselineDuration > 0 else { return }
         guard Date().timeIntervalSince(lastRefreshTime) >= refreshInterval else { return }
 
         lastRefreshTime = Date()
@@ -104,11 +171,61 @@ nonisolated final class MPVRecordingMonitor {
 
     // MARK: - Private
 
+    private func fetchHLSPlaylistDuration(completion: @escaping (Double) -> Void) {
+        guard let urlString = currentURL, let url = URL(string: urlString) else {
+            refreshInFlight = false
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        for (k, v) in headers {
+            request.setValue(v, forHTTPHeaderField: k)
+        }
+
+        urlSession.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else {
+                self.refreshInFlight = false
+                return
+            }
+
+            if let durHeader = http.value(forHTTPHeaderField: "X-Recording-Total-Duration"),
+               let headerDuration = Double(durHeader), headerDuration > 0 {
+                completion(headerDuration)
+                return
+            }
+
+            guard let data = data,
+                  let text = String(data: data, encoding: .utf8) else {
+                self.refreshInFlight = false
+                return
+            }
+
+            var total: Double = 0
+            for line in text.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("#EXTINF:") {
+                    let segPart = trimmed.dropFirst(8)
+                    let numStr = segPart.split(separator: ",")[0].trimmingCharacters(in: .whitespaces)
+                    if let d = Double(numStr) {
+                        total += d
+                    }
+                }
+            }
+            completion(total)
+        }.resume()
+    }
+
     private func fetchContentLength(completion: @escaping (Int64) -> Void) {
         guard let urlString = currentURL, let url = URL(string: urlString) else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
+        for (k, v) in headers {
+            request.setValue(v, forHTTPHeaderField: k)
+        }
 
         urlSession.dataTask(with: request) { _, response, _ in
             guard let http = response as? HTTPURLResponse,
