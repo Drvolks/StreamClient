@@ -202,16 +202,20 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                 let position = self.getTimePosition()
                 var duration = self.getDuration()
 
-            // For recordings in progress: estimate growing duration via HEAD,
-            // then subtract a 15s safety margin so the seek bar and playback
-            // never reach the actual write edge (same approach as Kodi's
+            // For recordings in progress: estimate growing duration via HLS playlist,
+            // start time, or HEAD, then subtract a 15s safety margin so the seek bar
+            // and playback never reach the actual write edge (same approach as Kodi's
             // NextPVR addon). The demuxer still has real data beyond this
             // point, preventing EOF stalls during normal playback.
             if self.isRecordingInProgress {
                 self.recordingMonitor.updateBaseline(duration: duration)
                 self.recordingMonitor.refreshIfNeeded()
                 let estimated = self.recordingMonitor.estimatedDuration
-                let knownEnd = max(duration, estimated)
+                var knownEnd = max(duration, estimated)
+                if let start = self.recordingStartTime {
+                    let elapsed = max(0, Date().timeIntervalSince(start))
+                    knownEnd = max(knownEnd, elapsed)
+                }
                 duration = max(0, knownEnd - 15)
                 self.reportedDuration = duration
                 self.checkRecordingStalled(position: position, knownEnd: knownEnd)
@@ -361,13 +365,17 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         var actualSeconds = seconds
         if isRecordingInProgress {
             // Use the smaller of mpv's available duration and the UI-reported
-            // duration (which already has the 15s safety margin applied). HLS
-            // streams only expose a small segment window even though the UI
-            // shows the full length; TS growing-file streams expose the full
-            // file but need the 15s margin to avoid rebuffering at the edge.
+            // duration (which already has the 15s safety margin applied) for raw TS streams.
+            // For HLS, all segments from the start are retained (-hls_list_size 0) and
+            // force-seekable is enabled, so seeking across the entire recorded duration
+            // (reportedDuration) is valid without being constrained by mpv's readahead cache.
+            let ext = currentURL?.pathExtension.lowercased()
+            let isHLS = ext == "m3u8"
             let mpvDuration = getDuration()
             let safeDuration: Double
-            if mpvDuration > 0 && reportedDuration > 0 {
+            if isHLS {
+                safeDuration = reportedDuration
+            } else if mpvDuration > 0 && reportedDuration > 0 {
                 safeDuration = min(mpvDuration, reportedDuration)
             } else {
                 safeDuration = max(mpvDuration, reportedDuration)
@@ -409,14 +417,16 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         guard let mpv = mpv else { return }
         var target = position
-        // Clamp to the smaller of mpv's available duration and the UI-reported
-        // duration. HLS streams only expose a small segment window even though
-        // the UI shows the full length; TS growing-file streams need the 15s
-        // safety margin baked into reportedDuration to avoid edge rebuffering.
+        // Clamp seeks: for HLS, clamp to reportedDuration (the recorded content so far);
+        // for TS growing-file streams, clamp to the smaller of mpvDuration and reportedDuration.
         if isRecordingInProgress {
+            let ext = currentURL?.pathExtension.lowercased()
+            let isHLS = ext == "m3u8"
             let mpvDuration = getDuration()
             let safeDuration: Double
-            if mpvDuration > 0 && reportedDuration > 0 {
+            if isHLS {
+                safeDuration = reportedDuration
+            } else if mpvDuration > 0 && reportedDuration > 0 {
                 safeDuration = min(mpvDuration, reportedDuration)
             } else {
                 safeDuration = max(mpvDuration, reportedDuration)
@@ -435,7 +445,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
     func startRecordingMonitor(url: URL) {
         guard let mpv = mpv else { return }
-        recordingMonitor.start(mpv: mpv, url: url.absoluteString)
+        recordingMonitor.start(mpv: mpv, url: url.absoluteString, startTime: recordingStartTime, headers: streamHeaders)
     }
 
     // MARK: - Stalled in-progress recording recovery (#127)
