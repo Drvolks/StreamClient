@@ -50,6 +50,9 @@ struct GuideView: View {
     private let rowHeight: CGFloat = 58
     /// The program shown in the detail bar under the grid.
     @State private var macSelection: ProgramDetail?
+    /// Channels per group, for the channel badges. Recomputed when the groups
+    /// or the channel list change rather than for every row on every frame.
+    @State private var macGroupSizes: [Int: Int] = [:]
     @Environment(\.colorScheme) private var colorScheme
     #else
     private let hourWidth: CGFloat = Theme.hourColumnWidth
@@ -94,6 +97,9 @@ struct GuideView: View {
                 streamErrorMessage
             }
             #if os(macOS)
+            .onAppear(perform: updateMacGroupSizes)
+            .onChange(of: epgCache.channelGroups) { updateMacGroupSizes() }
+            .onChange(of: epgCache.guideSidebarChannels) { updateMacGroupSizes() }
             .onChange(of: appState.showingCalendar) {
                 if appState.showingCalendar {
                     calendarViewModel.epgCache = epgCache
@@ -507,9 +513,18 @@ struct GuideView: View {
         #endif
     }
 
-    /// The group shown in a channel's corner badge: its first populated group.
-    private func groupName(for channel: Channel) -> String? {
-        epgCache.populatedChannelGroups.first { channel.isMember(ofGroup: $0.id) }?.name
+    private func updateMacGroupSizes() {
+        macGroupSizes = ChannelGroupBadge.groupSizes(epgCache.channelGroups, in: epgCache.guideSidebarChannels)
+    }
+
+    /// The group shown in a channel's corner badge (see `ChannelGroupBadge`).
+    private func groupName(for channel: Channel, sizes: [Int: Int]) -> String? {
+        ChannelGroupBadge.name(
+            for: channel,
+            groups: epgCache.channelGroups,
+            sizes: sizes,
+            channelCount: epgCache.guideSidebarChannels.count
+        )
     }
     #endif
 
@@ -1891,7 +1906,7 @@ struct GuideView: View {
         MacGuideChannelCell(
             channel: channel,
             iconURL: try? client.channelIconURL(channelId: channel.id),
-            groupName: groupName(for: channel)
+            groupName: groupName(for: channel, sizes: macGroupSizes)
         ) {
             playLiveChannel(channel)
         }

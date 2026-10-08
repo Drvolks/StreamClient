@@ -32,6 +32,8 @@ struct ChannelsView: View {
     #if os(macOS)
     /// The current program whose detail sheet is open (card "Info" action).
     @State private var macDetail: ProgramDetail?
+    /// Channels per group, for the card badges (see `ChannelGroupBadge`).
+    @State private var macGroupSizes: [Int: Int] = [:]
     @Environment(\.colorScheme) private var colorScheme
     #endif
     #if os(tvOS)
@@ -275,6 +277,9 @@ struct ChannelsView: View {
             }
         }
         .background(MidnightGradients.ground(colorScheme))
+        .onAppear(perform: updateMacGroupSizes)
+        .onChange(of: epgCache.channelGroups) { updateMacGroupSizes() }
+        .onChange(of: epgCache.guideSidebarChannels) { updateMacGroupSizes() }
         .sheet(item: $macDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
             ProgramDetailView(
                 program: detail.program,
@@ -938,13 +943,22 @@ struct ChannelsView: View {
         return appState.guideGroupFilter != nil ? selectedGroupLabel : "All Channels"
     }
 
+    private func updateMacGroupSizes() {
+        macGroupSizes = ChannelGroupBadge.groupSizes(epgCache.channelGroups, in: epgCache.guideSidebarChannels)
+    }
+
     private func macCard(for channel: Channel) -> some View {
         let program = epgCache.currentProgram(for: channel, at: now)
         let rec = program.flatMap { recording(for: $0) }
         return MacChannelCard(
             channel: channel,
             iconURL: try? client.channelIconURL(channelId: channel.id),
-            groupName: populatedGroups.first { channel.isMember(ofGroup: $0.id) }?.name,
+            groupName: ChannelGroupBadge.name(
+                for: channel,
+                groups: epgCache.channelGroups,
+                sizes: macGroupSizes,
+                channelCount: epgCache.guideSidebarChannels.count
+            ),
             currentProgram: program,
             now: now,
             matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
