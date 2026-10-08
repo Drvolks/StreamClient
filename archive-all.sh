@@ -1,6 +1,17 @@
 #!/bin/bash
 # Archive and upload NextPVR + Dispatcharr for iOS, tvOS, and macOS to TestFlight
 #
+# Usage:
+#   ./archive-all.sh                                   # everything
+#   ./archive-all.sh --schemes Dispatcharr --platforms tvOS
+#   ./archive-all.sh --platforms iOS,tvOS
+#
+#   --schemes    comma-separated: NextPVR, Dispatcharr   (default: both)
+#   --platforms  comma-separated: iOS, tvOS, macOS       (default: all)
+#
+# Archives and exports run one at a time (each xcodebuild already uses every
+# core, and exports talk to Apple for signing); uploads run in parallel.
+#
 # Requirements:
 #   App Store Connect API key (.p8 file)
 #   Apple Distribution certificate in local Keychain
@@ -10,6 +21,64 @@
 #     ASC_KEY_PATH     - Path to AuthKey_XXXX.p8 file
 
 set -e
+
+# --- What to build (options) ---
+
+ALL_SCHEMES=(NextPVR Dispatcharr)
+ALL_PLATFORMS=(iOS tvOS macOS)
+SCHEMES=("${ALL_SCHEMES[@]}")
+PLATFORMS=("${ALL_PLATFORMS[@]}")
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Splits a comma-separated list and checks each value against the allowed ones.
+parse_list() {
+  local label="$1" value="$2"
+  shift 2
+  local allowed=("$@") item ok
+  PARSED=()
+  IFS=',' read -ra PARSED <<< "$value"
+  if [ "${#PARSED[@]}" -eq 0 ]; then
+    echo "ERROR: $label needs at least one value (${allowed[*]})." >&2
+    exit 2
+  fi
+  for item in "${PARSED[@]}"; do
+    ok=0
+    for candidate in "${allowed[@]}"; do
+      [ "$item" = "$candidate" ] && ok=1
+    done
+    if [ "$ok" -eq 0 ]; then
+      echo "ERROR: unknown $label '$item' (expected: ${allowed[*]})." >&2
+      exit 2
+    fi
+  done
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --schemes)
+      [ "$#" -ge 2 ] || { echo "ERROR: --schemes needs a value." >&2; exit 2; }
+      parse_list "scheme" "$2" "${ALL_SCHEMES[@]}"
+      SCHEMES=("${PARSED[@]}")
+      shift 2 ;;
+    --platforms)
+      [ "$#" -ge 2 ] || { echo "ERROR: --platforms needs a value." >&2; exit 2; }
+      parse_list "platform" "$2" "${ALL_PLATFORMS[@]}"
+      PLATFORMS=("${PARSED[@]}")
+      shift 2 ;;
+    -h|--help)
+      usage
+      exit 0 ;;
+    *)
+      echo "ERROR: unknown option '$1'." >&2
+      usage >&2
+      exit 2 ;;
+  esac
+done
+
+echo "=== Schemes: ${SCHEMES[*]} | Platforms: ${PLATFORMS[*]} ==="
 
 # App Store Connect API key config
 KEY_ID="${ASC_KEY_ID:?Set ASC_KEY_ID environment variable}"
@@ -21,9 +90,6 @@ EXPORT_DIR=/tmp/NexusPVR-export
 PROJECT=NexusPVR.xcodeproj
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXPORT_PLIST="$SCRIPT_DIR/ExportOptions.plist"
-
-SCHEMES=(NextPVR Dispatcharr)
-PLATFORMS=(iOS tvOS macOS)
 
 AUTH_FLAGS=(-allowProvisioningUpdates \
   -authenticationKeyPath "$KEY_PATH" \
@@ -113,11 +179,16 @@ for SCHEME in "${SCHEMES[@]}"; do
   done
 done
 
-# --- Upload to TestFlight ---
+# --- Upload to TestFlight (in parallel) ---
+
+UPLOAD_LOG_DIR="$EXPORT_DIR/upload-logs"
+mkdir -p "$UPLOAD_LOG_DIR"
+UPLOAD_PIDS=()
+UPLOAD_NAMES=()
+UPLOAD_LOGS=()
 
 for SCHEME in "${SCHEMES[@]}"; do
   for PLATFORM in "${PLATFORMS[@]}"; do
-    echo "=== Uploading $SCHEME ($PLATFORM) to TestFlight ==="
     ARTIFACT=$(find "$EXPORT_DIR/$SCHEME/$PLATFORM" \( -name "*.ipa" -o -name "*.pkg" \) -print -quit)
     if [ -z "$ARTIFACT" ]; then
       echo "ERROR: No IPA/PKG found for $SCHEME ($PLATFORM) in $EXPORT_DIR/$SCHEME/$PLATFORM"
@@ -130,13 +201,36 @@ for SCHEME in "${SCHEMES[@]}"; do
       macOS) TYPE=osx ;;
     esac
 
+    echo "=== Uploading $SCHEME ($PLATFORM) to TestFlight ==="
     xcrun altool --upload-app \
       -f "$ARTIFACT" \
       -t "$TYPE" \
       --apiKey "$KEY_ID" \
-      --apiIssuer "$ISSUER_ID"
+      --apiIssuer "$ISSUER_ID" \
+      > "$UPLOAD_LOG_DIR/$SCHEME-$PLATFORM.log" 2>&1 &
+    UPLOAD_PIDS+=($!)
+    UPLOAD_NAMES+=("$SCHEME ($PLATFORM)")
+    UPLOAD_LOGS+=("$UPLOAD_LOG_DIR/$SCHEME-$PLATFORM.log")
   done
 done
+
+# Wait for every upload, then report: one failure must not hide the others.
+UPLOAD_FAILED=0
+for i in "${!UPLOAD_PIDS[@]}"; do
+  NAME="${UPLOAD_NAMES[$i]}"
+  if wait "${UPLOAD_PIDS[$i]}"; then
+    echo "=== Uploaded $NAME ==="
+  else
+    echo "ERROR: Upload failed for $NAME:"
+    UPLOAD_FAILED=1
+  fi
+  sed 's/^/    /' "${UPLOAD_LOGS[$i]}"
+done
+
+if [ "$UPLOAD_FAILED" -ne 0 ]; then
+  echo "ERROR: At least one upload failed; not tagging."
+  exit 1
+fi
 
 # --- Tag git commit with build number ---
 
@@ -162,4 +256,4 @@ else
   git push origin "$TAG"
 fi
 
-echo "=== All schemes and platforms archived and uploaded to TestFlight ==="
+echo "=== Archived and uploaded to TestFlight: ${SCHEMES[*]} / ${PLATFORMS[*]} ==="
