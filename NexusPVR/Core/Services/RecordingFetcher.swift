@@ -98,32 +98,14 @@ enum RecordingFetcher {
     private static func fetchDispatcharr(config: ServerConfig, session: URLSession, limit: Int) async throws -> [Recording] {
         let baseURL = config.baseURL
 
-        // Step 1: Authenticate with JWT
-        guard let tokenURL = URL(string: "\(baseURL)/api/accounts/token/") else { return [] }
-
-        var tokenRequest = URLRequest(url: tokenURL)
-        tokenRequest.httpMethod = "POST"
-        tokenRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        tokenRequest.httpBody = try JSONEncoder().encode([
-            "username": config.username,
-            "password": config.password
-        ])
-
-        let (tokenData, tokenResponse) = try await session.data(for: tokenRequest)
-        guard let httpResponse = tokenResponse as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            return []
-        }
-
-        struct TokenResponse: Decodable {
-            let access: String
-        }
-        let token = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
+        // Step 1: the session shared with the app; signs in only if needed
+        let accessToken = try await DispatcharrSessionStore.accessToken(config: config, session: session)
 
         // Step 2: Fetch recordings
         guard let recordingsURL = URL(string: "\(baseURL)/api/channels/recordings/") else { return [] }
 
         var recordingsRequest = URLRequest(url: recordingsURL)
-        recordingsRequest.setValue("Bearer \(token.access)", forHTTPHeaderField: "Authorization")
+        recordingsRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         let (data, _) = try await session.data(for: recordingsRequest)
 

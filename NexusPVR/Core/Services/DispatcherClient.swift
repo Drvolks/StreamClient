@@ -535,6 +535,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             errorDetail: "Using server URL \(baseURL)"
         ))
 
+        if await resumeSavedSession() { return }
+
         guard let url = URL(string: "\(baseURL)/api/accounts/token/") else {
             logNetworkEvent(NetworkEvent(
                 timestamp: Date(),
@@ -625,6 +627,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
             accessToken = tokenResponse.access
             refreshToken = tokenResponse.refresh
+            DispatcharrSessionStore.save(access: tokenResponse.access, refresh: tokenResponse.refresh, for: config)
             useApiKeyAuth = false
             isAuthenticated = true
             logNetworkEvent(NetworkEvent(
@@ -718,8 +721,41 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     func disconnect() {
         accessToken = nil
         refreshToken = nil
+        DispatcharrSessionStore.clear()
         useApiKeyAuth = false
         isAuthenticated = false
+    }
+
+    /// Uses the session saved by an earlier launch (or by the Top Shelf
+    /// extension) instead of signing in: the access token while it is valid,
+    /// else a renewal with the refresh token. False when a sign-in is needed.
+    private func resumeSavedSession() async -> Bool {
+        guard let saved = DispatcharrSessionStore.load(for: config) else { return false }
+        if JWTExpiry.isValid(saved.access) {
+            accessToken = saved.access
+            refreshToken = saved.refresh
+        } else if let refresh = saved.refresh {
+            refreshToken = refresh
+            guard (try? await refreshAccessToken()) != nil else {
+                refreshToken = nil
+                return false
+            }
+        } else {
+            return false
+        }
+        useApiKeyAuth = false
+        isAuthenticated = true
+        logNetworkEvent(NetworkEvent(
+            timestamp: Date(),
+            method: "AUTH",
+            path: "/dispatcharr/jwt",
+            statusCode: nil,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "Resumed the saved session; no sign-in needed"
+        ))
+        return true
     }
 
     /// Back in the foreground: keep the session when it is still good
@@ -767,6 +803,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
     private func refreshAccessToken() async throws {
         guard let refreshToken else {
+            DispatcharrSessionStore.clear()
             throw PVRClientError.sessionExpired
         }
 
@@ -786,11 +823,17 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             // Refresh failed, need full re-auth
             self.refreshToken = nil
+            DispatcharrSessionStore.clear()
             throw PVRClientError.sessionExpired
         }
 
         let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
         accessToken = tokenResponse.access
+        // Servers that rotate refresh tokens send a new one.
+        if let rotated = tokenResponse.refresh {
+            self.refreshToken = rotated
+        }
+        DispatcharrSessionStore.save(access: tokenResponse.access, refresh: self.refreshToken, for: config)
     }
 
     // MARK: - Authenticated Requests
@@ -844,7 +887,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     try await refreshAccessToken()
                     return try await authenticatedRequestData(url, method: method, body: body)
                 } catch {
-                    // Refresh failed, full re-auth
+                    // Refresh failed, full re-auth. Drop the saved session
+                    // first, or sign-in would resume the rejected token.
+                    DispatcharrSessionStore.clear()
                     isAuthenticated = false
                     try await authenticate()
                     return try await authenticatedRequestData(url, method: method, body: body)
@@ -921,6 +966,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     try await authenticatedRequestNoContent(url, method: method)
                     return
                 } catch {
+                    DispatcharrSessionStore.clear()
                     isAuthenticated = false
                     try await authenticate()
                     try await authenticatedRequestNoContent(url, method: method)
@@ -2444,6 +2490,7 @@ private nonisolated struct TokenResponse: Decodable {
 
 private nonisolated struct TokenRefreshResponse: Decodable {
     let access: String
+    let refresh: String?
 }
 
 private nonisolated struct DispatcharrAPIErrorResponse: Decodable {
