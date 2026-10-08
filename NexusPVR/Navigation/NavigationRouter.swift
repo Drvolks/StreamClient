@@ -2199,7 +2199,8 @@ struct MacOSNavigation: View {
                 .font(.subheadline.weight(.semibold))
             Spacer()
         }
-        .foregroundStyle(Theme.textSecondary)
+        // Same ink as the plain top-level rows (Calendar, Downloads, …).
+        .foregroundStyle(Theme.textPrimary)
         .padding(.vertical, 2)
     }
 
