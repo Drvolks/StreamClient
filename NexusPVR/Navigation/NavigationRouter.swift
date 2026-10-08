@@ -2065,33 +2065,10 @@ struct MacOSNavigation: View {
         .onAppear {
             appState.topicKeywords = UserPreferences.load().keywords
             guideSidebarPreferences = UserPreferences.load()
-            Task { await computeTopicMatchCounts() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
             guideSidebarPreferences = UserPreferences.load()
         }
-        .onChange(of: appState.topicKeywords) { _ in
-            // Topics are edited in Settings › Topics; keep the sidebar counts current.
-            Task { await computeTopicMatchCounts() }
-        }
-        .onChange(of: epgCache.isFullyLoaded) { _ in
-            if epgCache.isFullyLoaded {
-                Task { await computeTopicMatchCounts() }
-            }
-        }
-    }
-
-    // MARK: - Topic Match Counts
-
-    private func computeTopicMatchCounts() async {
-        let keywords = appState.topicKeywords
-        guard !keywords.isEmpty, epgCache.isFullyLoaded else { return }
-        let matches = await epgCache.matchingPrograms(keywords: keywords)
-        var counts: [String: Int] = [:]
-        for match in matches where match.matchedKeyword != MatchingProgram.scheduledKeyword {
-            counts[match.matchedKeyword, default: 0] += 1
-        }
-        appState.topicKeywordMatchCounts = counts
     }
 
     // MARK: - macOS Sidebar
@@ -2113,7 +2090,7 @@ struct MacOSNavigation: View {
                 } else if tab == .topics {
                     Section {
                         ForEach(appState.topicKeywords, id: \.self) { keyword in
-                            macSidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
+                            macSidebarTopicSubRow(keyword: keyword)
                         }
                     } header: {
                         macSidebarHeader(icon: tab.icon, label: tab.label)
@@ -2477,7 +2454,7 @@ struct MacOSNavigation: View {
     }
     #endif
 
-    private func macSidebarTopicSubRow(keyword: String, count: Int?) -> some View {
+    private func macSidebarTopicSubRow(keyword: String) -> some View {
         let isSelected = appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
         return Button {
             appState.showingKeywordsEditor = false
@@ -2488,11 +2465,6 @@ struct MacOSNavigation: View {
                 Text(keyword)
                     .font(.subheadline)
                 Spacer()
-                if let count {
-                    Text("(\(count))")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
             .padding(.leading, 36)
