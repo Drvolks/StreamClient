@@ -6,7 +6,7 @@
 //  channel group or profile).
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MacSettingsCheckboxRow: View {

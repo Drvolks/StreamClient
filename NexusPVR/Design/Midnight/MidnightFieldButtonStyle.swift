@@ -5,7 +5,7 @@
 //  Primary action: a short verb on the accent field.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightFieldButtonStyle: ButtonStyle {

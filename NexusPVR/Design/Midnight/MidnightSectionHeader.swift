@@ -7,7 +7,6 @@
 //  tvOS uses it too, at TV sizes.
 //
 
-#if os(macOS) || os(tvOS)
 import SwiftUI
 
 struct MidnightSectionHeader: View {
@@ -42,4 +41,3 @@ struct MidnightSectionHeader: View {
         .accessibilityAddTraits(.isHeader)
     }
 }
-#endif

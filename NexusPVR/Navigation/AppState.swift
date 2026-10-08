@@ -36,7 +36,6 @@ final class AppState: ObservableObject {
     @Published var topicKeywords: [String] = []
     @Published var topicKeywordMatchCounts: [String: Int] = [:]
     @Published var selectedTopicKeyword: String = ""
-    @Published var showingKeywordsEditor = false
     /// Set to open macOS Settings on a given category (e.g. Topics from the
     /// sidebar's "Manage"); Settings applies it and clears it.
     @Published var requestedSettingsCategory: SettingsCategory?
@@ -382,6 +381,38 @@ final class AppState: ObservableObject {
         isShowingAlert = true
     }
 
+    init() {
+        applyDemoPageArguments()
+    }
+
+    /// Opens a sub-page at launch, for screenshots and UI tests. Demo mode
+    /// only; see also `--demo-tab` in `initialLandingTab()`.
+    ///
+    /// - `--demo-recordings Scheduled | Series | <series name>`
+    /// - `--demo-settings <category title>`, e.g. `Topics`
+    private func applyDemoPageArguments() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--demo-mode") else { return }
+        func value(after flag: String) -> String? {
+            guard let index = arguments.firstIndex(of: flag),
+                  arguments.indices.contains(index + 1) else { return nil }
+            return arguments[index + 1]
+        }
+        if let recordings = value(after: "--demo-recordings") {
+            if recordings == "Series" {
+                showRecordingsSeriesMenu(userInitiated: true)
+            } else if let filter = RecordingsFilter(rawValue: recordings) {
+                setRecordingsFilter(filter, userInitiated: true)
+            } else {
+                selectRecordingsSeries(named: recordings, userInitiated: true)
+            }
+        }
+        if let title = value(after: "--demo-settings"),
+           let category = SettingsCategory.allCases.first(where: { $0.title == title }) {
+            requestedSettingsCategory = category
+        }
+    }
+
     func setRecordingsFilter(_ filter: RecordingsFilter, userInitiated: Bool) {
         recordingsFilter = filter
         selectedRecordingsSeriesName = ""
@@ -401,6 +432,15 @@ final class AppState: ObservableObject {
     static func initialLandingTab() -> Tab {
         if let override = testLandingTabOverride {
             return tab(for: override)
+        }
+        // `--demo-mode --demo-tab Settings` opens any page, for screenshots
+        // and UI tests (values are Tab raw values). Demo mode only.
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--demo-mode"),
+           let index = arguments.firstIndex(of: "--demo-tab"),
+           arguments.indices.contains(index + 1),
+           let tab = Tab(rawValue: arguments[index + 1]) {
+            return tab
         }
         let prefs = UserPreferences.load()
         if prefs.hideRecordings && prefs.landingTab == .completedRecordings {

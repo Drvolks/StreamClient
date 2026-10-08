@@ -188,7 +188,9 @@ struct IOSNavigation: View {
     @EnvironmentObject private var epgCache: EPGCache
     @StateObject private var guideViewModel = GuideViewModel()
 
-    @State private var isSidebarOpen = false
+    /// `--demo-mode --demo-sidebar` starts with the menu open (screenshots).
+    @State private var isSidebarOpen = ProcessInfo.processInfo.arguments.contains("--demo-mode")
+        && ProcessInfo.processInfo.arguments.contains("--demo-sidebar")
     @State private var searchText = ""
     @State private var showSearchDropdown = false
     @State private var channelMatchCount = 0
@@ -219,26 +221,14 @@ struct IOSNavigation: View {
                                     iOSGuideToolbarContent
                                 }
                             }
-                            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                            .toolbarBackground(MidnightPalette.railHead, for: .navigationBar)
                             .toolbarBackground(.visible, for: .navigationBar)
                             .navigationBarTitleDisplayMode(.inline)
                     }
                 case .channels:
                     ChannelsView()
                 case .topics:
-                    if appState.showingKeywordsEditor {
-                        NavigationStack {
-                            KeywordsEditorView()
-                                .sidebarMenuToolbar()
-                                .navigationBarTitleDisplayMode(.inline)
-                                .onDisappear {
-                                    appState.topicKeywords = UserPreferences.load().keywords
-                                    Task { await computeTopicMatchCounts() }
-                                }
-                        }
-                    } else {
-                        TopicsView()
-                    }
+                    TopicsView()
                 case .calendar:
                     CalendarTabView()
                 case .search:
@@ -252,7 +242,6 @@ struct IOSNavigation: View {
                     NavigationStack {
                         DownloadsView()
                             .sidebarMenuToolbar()
-                            .navigationBarTitleDisplayMode(.inline)
                     }
                 #if DISPATCHERPVR
                 case .stats:
@@ -260,8 +249,6 @@ struct IOSNavigation: View {
                     NavigationStack {
                         StatsView()
                             .sidebarMenuToolbar()
-                            .navigationTitle("Status")
-                            .navigationBarTitleDisplayMode(.inline)
                     }
                 #endif
                 case .settings:
@@ -382,11 +369,9 @@ struct IOSNavigation: View {
         .onAppear {
             appState.topicKeywords = UserPreferences.load().keywords
         }
-        .onChange(of: appState.showingKeywordsEditor) {
-            if !appState.showingKeywordsEditor {
-                appState.topicKeywords = UserPreferences.load().keywords
-                Task { await computeTopicMatchCounts() }
-            }
+        // Topics are edited in Settings; keep the menu's counts in step.
+        .onChange(of: appState.topicKeywords) {
+            Task { await computeTopicMatchCounts() }
         }
         .onChange(of: epgCache.isFullyLoaded) {
             if epgCache.isFullyLoaded {
@@ -436,9 +421,6 @@ struct IOSNavigation: View {
                 appState.isBottomBarHidden = false
             }
             // Reset editor flag when leaving topics
-            if appState.selectedTab != .topics {
-                appState.showingKeywordsEditor = false
-            }
         }
         .background {
             Button("") {
@@ -482,7 +464,9 @@ struct IOSNavigation: View {
             .disabled(!guideViewModel.canGoToPreviousDay)
 
             Text(guideViewModel.selectedDate, format: .dateTime.month(.abbreviated).day())
-                .font(.subheadline.weight(.medium))
+                .font(.archivo(15, .extraBold))
+                .textCase(.uppercase)
+                .foregroundStyle(MidnightPalette.ink)
 
             Button {
                 guideViewModel.nextDay()
@@ -538,8 +522,8 @@ struct IOSNavigation: View {
             // Header
             HStack {
                 Text("Menu")
-                    .font(.headline)
-                    .foregroundStyle(Theme.textPrimary)
+                    .midnightDisplay(20)
+                    .foregroundStyle(MidnightPalette.ink)
                 Spacer()
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -581,10 +565,10 @@ struct IOSNavigation: View {
                             sidebarSubRow(label: "Scheduled", filter: .scheduled)
                             sidebarShowMoreSubRow()
                         } else if tab == .topics {
-                            // Topics header — opens keywords editor as full view
+                            // Topics header — topics are managed in Settings
                             Button {
-                                appState.showingKeywordsEditor = true
-                                appState.selectedTab = .topics
+                                appState.requestedSettingsCategory = .topics
+                                appState.selectedTab = .settings
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                     isSidebarOpen = false
                                 }
@@ -592,7 +576,7 @@ struct IOSNavigation: View {
                                 sidebarRow(
                                     icon: tab.icon,
                                     label: tab.label,
-                                    isSelected: appState.selectedTab == .topics && appState.showingKeywordsEditor,
+                                    isSelected: false,
                                     badge: { EmptyView() }
                                 )
                             }
@@ -722,17 +706,19 @@ struct IOSNavigation: View {
                 .font(.system(size: 18))
                 .frame(width: 28)
             Text(label)
-                .font(.body)
+                .font(.archivo(16, .extraBold))
             Spacer()
             badge()
         }
-        .foregroundStyle(isSelected ? Theme.accent : Theme.textPrimary)
+        .foregroundStyle(MidnightPalette.ink)
         .padding(.horizontal, Theme.spacingLG)
         .padding(.vertical, 14)
-        .background(
-            isSelected ? Theme.accent.opacity(0.12) : Color.clear
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+        .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+            }
+        }
     }
 
     private func sidebarSubRow(label: String, filter: RecordingsFilter) -> some View {
@@ -750,17 +736,19 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28) // indent to align with parent icon
                 Text(label)
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("recordings-filter-\(filter.rawValue)")
     }
@@ -777,20 +765,22 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text("\(series.name) (\(series.count))")
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("recordings-series-\(series.name)")
     }
@@ -808,17 +798,19 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text("Series")
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("recordings-series-menu")
     }
@@ -827,7 +819,7 @@ struct IOSNavigation: View {
         HStack(spacing: 12) {
             Color.clear.frame(width: 28)
             Text(label)
-                .font(.subheadline)
+                .font(.archivo(14, .semibold))
                 .foregroundStyle(Theme.textTertiary)
             Spacer()
         }
@@ -837,9 +829,8 @@ struct IOSNavigation: View {
     }
 
     private func sidebarTopicSubRow(keyword: String, count: Int?) -> some View {
-        let isSelected = appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
+        let isSelected = appState.selectedTab == .topics && appState.selectedTopicKeyword == keyword
         return Button {
-            appState.showingKeywordsEditor = false
             appState.selectedTopicKeyword = keyword
             appState.selectedTab = .topics
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -849,7 +840,7 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text(keyword)
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
                 if let count {
                     Text("(\(count))")
@@ -857,14 +848,16 @@ struct IOSNavigation: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("topic-keyword-\(keyword)")
     }
@@ -883,17 +876,19 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text(group.name)
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("guide-group-\(group.id)")
     }
@@ -913,17 +908,19 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text(profile.name)
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("guide-profile-\(profile.id)")
     }
@@ -943,17 +940,19 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text(group.name)
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("channel-group-\(group.id)")
     }
@@ -973,17 +972,19 @@ struct IOSNavigation: View {
             HStack(spacing: 12) {
                 Color.clear.frame(width: 28)
                 Text(profile.name)
-                    .font(.subheadline)
+                    .font(.archivo(14, .semibold))
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)
             .padding(.leading, Theme.spacingSM)
             .padding(.vertical, 10)
-            .background(
-                isSelected ? Theme.accent.opacity(0.12) : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
         }
         .accessibilityIdentifier("channel-profile-\(profile.id)")
     }
@@ -999,11 +1000,10 @@ struct IOSNavigation: View {
         if tab == .downloads, appState.activeDownloadCount > 0 {
             Text("\(appState.activeDownloadCount)")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.textOnAccent)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Theme.accent)
-                .clipShape(Capsule())
                 .accessibilityIdentifier("downloads-active-badge")
         }
         #if DISPATCHERPVR
@@ -1017,11 +1017,10 @@ struct IOSNavigation: View {
                 if appState.activeStreamCount > 0 {
                     Text("\(appState.activeStreamCount)")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Theme.accent)
-                        .clipShape(Capsule())
                 }
             }
         }
@@ -1037,7 +1036,7 @@ struct IOSNavigation: View {
                 .foregroundStyle(Theme.textTertiary)
 
             TextField("Search...", text: $searchText)
-                .font(.subheadline)
+                .font(.archivo(14, .semibold))
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("global-search-field")
                 .focused($isSearchFocused)
@@ -2062,9 +2061,6 @@ struct MacOSNavigation: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 showSearchDropdown = false
             }
-            if appState.selectedTab != .topics {
-                appState.showingKeywordsEditor = false
-            }
         }
         .onAppear {
             appState.topicKeywords = UserPreferences.load().keywords
@@ -2460,9 +2456,8 @@ struct MacOSNavigation: View {
     #endif
 
     private func macSidebarTopicSubRow(keyword: String) -> some View {
-        let isSelected = appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
+        let isSelected = appState.selectedTab == .topics && appState.selectedTopicKeyword == keyword
         return Button {
-            appState.showingKeywordsEditor = false
             appState.selectedTopicKeyword = keyword
             appState.selectedTab = .topics
         } label: {

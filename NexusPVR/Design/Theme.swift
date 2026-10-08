@@ -91,50 +91,28 @@ enum Theme {
 
     // MARK: - Primary Colors
 
-    // macOS and tvOS use the Midnight palette; iOS keeps the brand colours
-    // until it gets its own redesign pass.
-    #if os(macOS) || os(tvOS)
+    // Every platform uses the Midnight palette.
     static let accent = MidnightPalette.accent
-    #else
-    static let accent = Brand.accent
-    #endif
     static let accentSecondary = Brand.accentSecondary
 
     // MARK: - Background Colors
 
-    #if os(macOS) || os(tvOS)
     static let background = MidnightPalette.shell
     static let surface = MidnightPalette.railHead
     static let surfaceElevated = MidnightPalette.rail
     static let surfaceHighlight = MidnightPalette.cellRest
-    #else
-    static let background = Brand.background
-    static let surface = Brand.surface
-    static let surfaceElevated = Brand.surfaceElevated
-    static let surfaceHighlight = Brand.surfaceHighlight
-    #endif
     static let channelColumnBackground = Brand.channelColumnBackground
 
     // MARK: - Text Colors
 
-    #if os(macOS) || os(tvOS)
     static let textPrimary = MidnightPalette.ink
     static let textSecondary = MidnightPalette.inkSoft
     static let textTertiary = MidnightPalette.inkFaint
-    #else
-    static let textPrimary = Brand.textPrimary
-    static let textSecondary = Brand.textSecondary
-    static let textTertiary = Brand.textTertiary
-    #endif
 
     /// Text and icons drawn on an `accent` fill. White can't be read on the
-    /// bright Midnight cyan, so macOS and tvOS use the field ink (dark on
-    /// Night, white on Day).
-    #if os(macOS) || os(tvOS)
+    /// bright Midnight cyan, so this is the field ink (dark on Night, white
+    /// on Day).
     static let textOnAccent = MidnightPalette.fieldInk
-    #else
-    static let textOnAccent = Color.white
-    #endif
 
     // MARK: - Status Colors
 
@@ -177,18 +155,15 @@ enum Theme {
     // MARK: - Corner Radius
 
     // Midnight follows the Modernist rule of square corners, so every radius
-    // is zero on macOS and tvOS.
+    // is zero.
     static let cornerRadiusSM: CGFloat = radius(8)
     static let cornerRadiusMD: CGFloat = radius(12)
     static let cornerRadiusLG: CGFloat = radius(20)
 
-    /// A one-off corner radius: `value` on iOS, zero on macOS and tvOS.
+    /// A one-off corner radius. Always zero under Midnight; call sites keep
+    /// the value they would use if corners ever came back.
     static func radius(_ value: CGFloat) -> CGFloat {
-        #if os(macOS) || os(tvOS)
         0
-        #else
-        value
-        #endif
     }
 
     // MARK: - Animation
@@ -220,14 +195,14 @@ enum Theme {
 extension View {
     /// Font and padding shared by the small status tags (NEW, LIVE, REC,
     /// catch-up, and the macOS topic tags), so tags side by side are the same
-    /// height. macOS uses the Midnight badge type.
+    /// height. macOS and iOS use the Midnight badge type.
     func badgeLabel(compact: Bool = false) -> some View {
-        #if os(macOS)
-        midnightBadge(8.5)
+        #if os(tvOS)
+        font(.system(size: 9, weight: .bold))
             .padding(.horizontal, compact ? 4 : 5)
             .padding(.vertical, 2)
         #else
-        font(.system(size: 9, weight: .bold))
+        midnightBadge(8.5)
             .padding(.horizontal, compact ? 4 : 5)
             .padding(.vertical, 2)
         #endif

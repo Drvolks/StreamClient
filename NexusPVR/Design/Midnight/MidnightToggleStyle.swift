@@ -7,7 +7,7 @@
 //  title — and keeps the toggle's label for VoiceOver.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightToggleStyle: ToggleStyle {

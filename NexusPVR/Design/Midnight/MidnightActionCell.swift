@@ -7,7 +7,7 @@
 //  icon. A dimmed cell stays clickable only when `isEnabled`.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightActionCell: View {

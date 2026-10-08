@@ -27,8 +27,8 @@ struct DownloadRow: View {
         HStack(alignment: .top, spacing: Theme.spacingMD) {
             VStack(alignment: .leading, spacing: Theme.spacingXS) {
                 Text(item.title)
-                    .font(.headline)
-                    .foregroundStyle(Theme.textPrimary)
+                    .font(.archivo(16, .extraBold))
+                    .foregroundStyle(MidnightPalette.ink)
                     // Two lines, wrapping: a programme title is the one thing
                     // in the row worth reading in full, and truncating it to
                     // one line loses the episode or event that distinguishes
@@ -38,14 +38,14 @@ struct DownloadRow: View {
 
                 if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textSecondary)
+                        .font(.archivo(13))
+                        .foregroundStyle(MidnightPalette.inkSoft)
                         .lineLimit(1)
                 }
 
                 Text(contextLine)
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .midnightMeta(11)
+                    .foregroundStyle(MidnightPalette.inkSoft)
                     // Secondary detail: better clipped than wrapped onto a
                     // second line that pushes the status out of view.
                     .lineLimit(1)
@@ -61,9 +61,11 @@ struct DownloadRow: View {
             actions
                 .layoutPriority(1)
         }
-        .padding(Theme.spacingMD)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+        }
         .accessibilityIdentifier("download-row")
     }
 
@@ -74,33 +76,34 @@ struct DownloadRow: View {
         switch item.state {
         case .queued:
             Label("Waiting…", systemImage: "clock")
-                .font(.caption)
-                .foregroundStyle(Theme.textSecondary)
+                .midnightMeta(11)
+                .foregroundStyle(MidnightPalette.inkSoft)
 
         case .running(let seconds, let bytes):
             VStack(alignment: .leading, spacing: Theme.spacingXS) {
                 if let progress = DownloadPolicy.progress(writtenSeconds: seconds, expectedDuration: item.expectedDuration) {
                     ProgressView(value: progress)
+                        .tint(MidnightPalette.accent)
                         .frame(maxWidth: 320)
                 } else {
                     ProgressView()
                         .controlSize(.small)
                 }
                 Text("\(Self.duration(seconds)) downloaded · \(Self.size(bytes))")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
+                    .midnightMeta(11)
+                    .foregroundStyle(MidnightPalette.inkSoft)
             }
             .padding(.top, Theme.spacingXS)
 
         case .completed:
-            Label(completedSummary, systemImage: "checkmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(Theme.success)
+            Text(completedSummary)
+                .midnightMeta(11)
+                .foregroundStyle(MidnightPalette.accentSoft)
 
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(Theme.error)
+                .font(.archivo(11.5, .extraBold))
+                .foregroundStyle(MidnightPalette.danger)
                 .lineLimit(3)
         }
     }
@@ -203,7 +206,7 @@ struct DownloadRow: View {
             .help(item.state.isActive ? "Cancel download" : "Delete download")
             .accessibilityIdentifier("download-remove-button")
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(MidnightOutlineButtonStyle())
     }
 
     private var isCompact: Bool {

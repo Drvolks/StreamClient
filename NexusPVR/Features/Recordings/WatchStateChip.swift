@@ -6,7 +6,6 @@
 //  accent, Watched is outlined in a quiet rule. macOS and tvOS (Midnight).
 //
 
-#if os(macOS) || os(tvOS)
 import SwiftUI
 
 struct WatchStateChip: View {
@@ -50,4 +49,3 @@ struct WatchStateChip: View {
         }
     }
 }
-#endif

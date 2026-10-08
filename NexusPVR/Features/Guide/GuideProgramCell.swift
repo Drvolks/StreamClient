@@ -1,16 +1,16 @@
 //
-//  MacProgramCell.swift
+//  GuideProgramCell.swift
 //  nextpvr-apple-client
 //
-//  A program in the macOS guide grid (Midnight). Upcoming cells rest on a
-//  lifted plate, past ones fade, the airing one sits on the accent field and
-//  a selected one inverts. A topic match adds a badge.
+//  A program in the macOS and iOS guide grid (Midnight). Upcoming cells rest
+//  on a lifted plate, past ones fade, the airing one sits on the accent
+//  field and a selected one (macOS) inverts. A topic match adds a badge.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
-struct MacProgramCell: View {
+struct GuideProgramCell: View {
     let program: Program
     let width: CGFloat
     let height: CGFloat

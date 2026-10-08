@@ -5,7 +5,7 @@
 //  Tertiary action: accent text with no box, tinted on hover.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightGhostButtonStyle: ButtonStyle {

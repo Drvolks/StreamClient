@@ -7,7 +7,7 @@
 //  connected clients.
 //
 
-#if os(macOS) && DISPATCHERPVR
+#if !os(tvOS) && DISPATCHERPVR
 import SwiftUI
 
 struct MacStreamCard: View {

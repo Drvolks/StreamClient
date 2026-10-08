@@ -5,7 +5,7 @@
 //  The single explanatory note at the foot of a macOS Settings pane.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MacSettingsHint: View {

@@ -33,9 +33,7 @@ struct ChannelsView: View {
     /// The current program whose detail sheet is open (card "Info" action).
     @State private var macDetail: ProgramDetail?
     #endif
-    #if os(macOS) || os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
-    #endif
     #if os(tvOS)
     @FocusState private var focusedChannelId: Int?
     @State private var requestTVSearchKeyboard = false
@@ -226,7 +224,10 @@ struct ChannelsView: View {
         #elseif os(iOS)
         NavigationStack {
             content
-            .navigationTitle("Channels")
+            .midnightNavigationTitle(
+                appState.guideGroupFilter != nil ? selectedGroupLabel : "All Channels",
+                kicker: "Channels · \(visibleChannels.count)"
+            )
             .accessibilityIdentifier("channels-view")
             .toolbar {
                 if hasFilterData {
@@ -242,8 +243,8 @@ struct ChannelsView: View {
             } message: {
                 if let error = streamError { Text(error) }
             }
+            .background(MidnightGradients.ground(colorScheme))
         }
-        .background(Theme.background)
         .task {
             await tickCurrentTime()
         }
@@ -560,9 +561,12 @@ struct ChannelsView: View {
                         isCurrentlyRecording: rec?.recordingStatus == .recording
                     )
                     #else
-                    ChannelGridCard(
+                    PhoneChannelCard(
                         channel: channel,
+                        iconURL: try? client.channelIconURL(channelId: channel.id),
                         currentProgram: program,
+                        now: now,
+                        matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
                         isScheduledRecording: rec != nil,
                         isCurrentlyRecording: rec?.recordingStatus == .recording
                     )
@@ -1071,119 +1075,6 @@ struct ChannelsView: View {
 /// `LiveTVView.ChannelCard` but pulls program data from `EPGCache`
 /// (so it never duplicates the per-channel `getListings` request and
 /// is not limited to 50 channels).
-struct ChannelGridCard: View {
-    @EnvironmentObject private var client: PVRClient
-    let channel: Channel
-    let currentProgram: Program?
-    var isScheduledRecording: Bool = false
-    var isCurrentlyRecording: Bool = false
-
-    /// NEW badge stacked above REC when both apply, right-aligned next to
-    /// the current program's title.
-    @ViewBuilder
-    private var badgeStack: some View {
-        if let currentProgram,
-           currentProgram.shouldShowLiveBadge || currentProgram.shouldShowNewBadge || isScheduledRecording {
-            VStack(alignment: .trailing, spacing: 4) {
-                if currentProgram.shouldShowLiveBadge {
-                    LiveBadge()
-                }
-                if currentProgram.shouldShowNewBadge {
-                    NewBadge()
-                }
-                if isScheduledRecording {
-                    RecBadge(isActive: isCurrentlyRecording)
-                }
-            }
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.spacingSM) {
-            // Logo header
-            HStack(alignment: .top) {
-                CachedAsyncImage(url: try? client.channelIconURL(channelId: channel.id)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    Image(systemName: "tv")
-                        .font(.title)
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .frame(width: Theme.iconSize, height: Theme.iconSize)
-
-                Spacer(minLength: Theme.spacingSM)
-            }
-
-            Text(channel.name)
-                .font(.headline)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-
-            if let program = currentProgram {
-                VStack(alignment: .leading, spacing: 2) {
-                    // Top-aligned so the badges stay level with the title's
-                    // first line when the name wraps.
-                    HStack(alignment: .top, spacing: 6) {
-                        Text(program.cleanName)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.textSecondary)
-                            // Long program names get a second line rather
-                            // than being truncated. `reservesSpace` keeps
-                            // every card in a grid row the same height, so
-                            // one wrapping title doesn't make its
-                            // neighbours grow with it.
-                            .lineLimit(2, reservesSpace: true)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer()
-                        badgeStack
-                    }
-
-                    // Progress bar
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Rectangle()
-                                .fill(Theme.surfaceHighlight)
-                            Rectangle()
-                                .fill(Theme.accent)
-                                .frame(width: geo.size.width * program.progress())
-                        }
-                    }
-                    .frame(height: 3)
-                    .clipShape(Capsule())
-                }
-            } else {
-                Text("No program info")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textTertiary)
-                    // Matches the two-line reservation above so cards
-                    // without EPG data line up with the ones that have it.
-                    .lineLimit(2, reservesSpace: true)
-            }
-        }
-        .padding(Theme.spacingMD)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: Theme.cornerRadiusMD)
-                .fill(channelInteriorGradient)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
-    }
-
-    private var channelInteriorGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Theme.surfaceElevated,
-                Theme.accent.opacity(0.14),
-                Theme.surface
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-}
 
 #Preview {
     ChannelsView()

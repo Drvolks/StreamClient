@@ -52,15 +52,12 @@ struct GuideView: View {
     private let rowHeight: CGFloat = 58
     /// The program shown in the detail bar under the grid.
     @State private var macSelection: ProgramDetail?
-    @Environment(\.colorScheme) private var colorScheme
     #else
     private let hourWidth: CGFloat = Theme.hourColumnWidth
     private let channelWidth: CGFloat = Theme.channelColumnWidth
     private let rowHeight: CGFloat = Theme.cellHeight
     #endif
-    #if os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
-    #endif
 
     private var hasFilterData: Bool {
         !epgCache.channelProfiles.isEmpty || hasPopulatedGroups
@@ -85,11 +82,7 @@ struct GuideView: View {
     private func presentationLayer<Content: View>(_ content: Content) -> some View {
         content
             .accessibilityIdentifier("guide-view")
-            #if os(macOS) || os(tvOS)
             .background(MidnightGradients.ground(colorScheme))
-            #else
-            .background(.ultraThinMaterial)
-            #endif
             .detailCover(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
                 programDetailSheet(detail)
             }
@@ -927,12 +920,10 @@ struct GuideView: View {
                                 Color.clear.frame(width: channelWidth, height: rowHeight)
                                 programsRow(channel)
                                     .frame(height: rowHeight)
-                                    #if os(macOS)
+                                    #if !os(tvOS)
                                     .overlay(alignment: .bottom) {
                                         Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
                                     }
-                                    #else
-                                    .background(Theme.surface)
                                     #endif
                             }
 
@@ -1895,18 +1886,19 @@ struct GuideView: View {
         Button {
             playLiveChannel(channel)
         } label: {
-            CachedAsyncImage(url: try? client.channelIconURL(channelId: channel.id)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } placeholder: {
-                ProgressView()
-                    .scaleEffect(0.5)
-            }
-            .frame(width: Theme.iconSize, height: Theme.iconSize)
+            MidnightChannelPlate(
+                channel: channel,
+                iconURL: try? client.channelIconURL(channelId: channel.id),
+                logoInsets: EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10),
+                nameSize: 9
+            )
             .frame(width: channelWidth, height: rowHeight)
-            .background(Theme.channelColumnBackground)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            .overlay(alignment: .trailing) {
+                Rectangle().fill(MidnightPalette.line).frame(width: 1)
+            }
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+            }
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("guide-channel-\(channel.id)")
@@ -1952,7 +1944,6 @@ struct GuideView: View {
                 let isScheduled = viewModel.isScheduledRecording(program)
                 let status = viewModel.recordingStatus(program)
                 let isRecording = isScheduled && program.isCurrentlyAiring && status == .recording
-                let matchesKeywords = viewModel.keywordMatchedProgramIds.contains(program.id)
                 #if DISPATCHERPVR
                 let catchupAvailable = viewModel.isCatchupAvailable(program, on: channel)
                 #else
@@ -1967,7 +1958,7 @@ struct GuideView: View {
                 )
 
                 #if os(macOS)
-                MacProgramCell(
+                GuideProgramCell(
                     program: program,
                     width: viewModel.programWidth(for: program, hourWidth: hourWidth, startTime: timelineStart),
                     height: rowHeight - 1,
@@ -1993,29 +1984,25 @@ struct GuideView: View {
                 }
                 .accessibilityIdentifier("guide-program-\(program.id)")
                 .offset(x: viewModel.programOffset(for: program, hourWidth: hourWidth, startTime: timelineStart))
-                #else
+                #elseif os(iOS)
                 Button {
                     selectedProgramDetail = (program: program, channel: channel)
                 } label: {
-                    ProgramCell(
+                    GuideProgramCell(
                         program: program,
                         width: viewModel.programWidth(for: program, hourWidth: hourWidth, startTime: timelineStart),
+                        height: rowHeight - 1,
                         isScheduledRecording: isScheduled,
                         isCurrentlyRecording: isRecording,
                         isCatchupAvailable: catchupAvailable,
-                        matchesKeyword: matchesKeywords,
+                        matchedTopic: viewModel.keywordMatchByProgramId[program.id],
                         leadingPadding: leadingPad
                     )
                 }
-                #if os(tvOS)
-                .buttonStyle(TVGuideButtonStyle())
-                .focusEffectDisabled()
-                #else
                 .buttonStyle(.plain)
                 .contextMenu {
                     programContextMenu(program: program, channel: channel, isScheduled: isScheduled)
                 }
-                #endif
                 .accessibilityIdentifier("guide-program-\(program.id)")
                 .offset(x: viewModel.programOffset(for: program, hourWidth: hourWidth, startTime: timelineStart))
                 #endif

@@ -5,7 +5,7 @@
 //  The track and knob drawn by `MidnightToggleStyle`.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightSwitch: View {
