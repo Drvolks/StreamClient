@@ -14,6 +14,8 @@ enum PVRClientError: Error, LocalizedError {
     case networkError(Error)
     case invalidResponse
     case apiError(String)
+    /// The server is limiting sign-ins (HTTP 429); try again after the delay.
+    case rateLimited(retryAfter: TimeInterval)
 
     var errorDescription: String? {
         switch self {
@@ -29,6 +31,8 @@ enum PVRClientError: Error, LocalizedError {
             return "Invalid response from server"
         case .apiError(let message):
             return message
+        case .rateLimited(let retryAfter):
+            return "The server is limiting sign-ins. Trying again in \(Int(retryAfter.rounded(.up))) s."
         }
     }
 }

@@ -200,9 +200,17 @@ struct PVRApp: App {
                   ) else { return }
 
             do {
-                try await client.authenticate()
+                try await client.resumeSession()
                 return
             } catch {
+                // Retrying can't fix rejected credentials, and would only
+                // extend a server's sign-in limit.
+                if let pvr = error as? PVRClientError {
+                    switch pvr {
+                    case .authenticationFailed, .rateLimited: return
+                    default: break
+                    }
+                }
                 guard attempt < retryDelays.count else { return }
                 try? await Task.sleep(for: .seconds(retryDelays[attempt - 1]))
             }
