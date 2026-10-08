@@ -44,8 +44,10 @@ struct GuideView: View {
     #endif
 
     #if os(macOS)
-    // Midnight guide: 3.5pt per minute, a logo-first channel column.
-    private let hourWidth: CGFloat = 210
+    // Midnight guide: 5pt per minute, so a half-hour cell (150pt) clears the
+    // width at which times keep AM/PM and badges show; a logo-first channel
+    // column.
+    private let hourWidth: CGFloat = 300
     private let channelWidth: CGFloat = 194
     private let rowHeight: CGFloat = 58
     /// The program shown in the detail bar under the grid.
