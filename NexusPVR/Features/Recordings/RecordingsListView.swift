@@ -594,21 +594,27 @@ private struct RecordingsListContentView: View {
         }
     }
 
-    /// Grouped by series, one-off recordings last (Midnight).
+    /// Completed recordings keep newest-first date order; other filters group by series.
     private func macRecordingsList(_ vm: RecordingsViewModel) -> some View {
-        let sections = RecordingSection.grouped(macShownRecordings(vm))
+        let recordings = macShownRecordings(vm)
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if sections.isEmpty {
+                if recordings.isEmpty {
                     Text("No recordings match \u{201C}\(macSearchText)\u{201D}.")
                         .font(.archivo(12.5))
                         .foregroundStyle(MidnightPalette.inkSoft)
                         .padding(.top, Theme.spacingLG)
                 }
-                ForEach(sections) { section in
-                    MacRecordingSectionHeader(section: section)
-                    ForEach(section.recordings) { recording in
+                if vm.filter == .completed {
+                    ForEach(recordings) { recording in
                         macRecordingRow(recording)
+                    }
+                } else {
+                    ForEach(RecordingSection.grouped(recordings)) { section in
+                        MacRecordingSectionHeader(section: section)
+                        ForEach(section.recordings) { recording in
+                            macRecordingRow(recording)
+                        }
                     }
                 }
             }

@@ -4,7 +4,8 @@
 //
 //  A channel in the macOS Channels grid (Midnight): logo band, what's on now
 //  (always live, so it carries no LIVE badge) with its progress, and an action strip (watch, watch from the beginning,
-//  record, info). Double-clicking the logo band also watches.
+//  record, info). Watching from the beginning is Dispatcharr-only.
+//  Double-clicking the logo band also watches.
 //
 
 #if os(macOS)
@@ -128,6 +129,7 @@ struct MacChannelCard: View {
         let hasProgram = currentProgram != nil
         return HStack(spacing: 0) {
             MidnightActionCell(systemImage: "play.fill", help: "Watch", action: onWatch)
+            #if DISPATCHERPVR
             divider
             MidnightActionCell(
                 systemImage: "gobackward",
@@ -136,6 +138,7 @@ struct MacChannelCard: View {
                 isDimmed: !hasProgram,
                 action: onWatchFromStart
             )
+            #endif
             if showsRecord {
                 divider
                 MidnightActionCell(
