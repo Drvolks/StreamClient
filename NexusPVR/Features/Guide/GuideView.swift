@@ -670,6 +670,12 @@ struct GuideView: View {
 
     @State private var currentTimelineHour: Date?
     @State private var scrollTargetId: String?
+    /// The time `scrollTargetId` stands for.
+    @State private var scrollTargetTime: Date?
+    #if os(macOS)
+    /// Drives the macOS grid's scroll by absolute offset (see `scrollGrid(to:)`).
+    @State private var gridScrollPosition = ScrollPosition()
+    #endif
     @State private var gridHorizontalOffset: CGFloat = 0
     #if os(iOS)
     @State private var lastScrollDirectionChangeY: CGFloat = 0
@@ -824,6 +830,12 @@ struct GuideView: View {
             hasCompletedInitialScroll = true
 
             guard let targetId = updateScrollTarget() else { return }
+            #if os(macOS)
+            _ = targetId
+            if let time = scrollTargetTime {
+                await scrollGrid(to: time)
+            }
+            #else
             let expectedOffset = GuideScrollHelper.expectedScrollOffsetX(
                 timelineStart: viewModel.timelineStart,
                 scrollTarget: currentTimelineHour ?? viewModel.timelineStart,
@@ -841,22 +853,39 @@ struct GuideView: View {
                     return
                 }
             }
+            #endif
         }
     }
 
-    /// Where a scroll-to-time target lands in the viewport. On macOS it clears
-    /// the wide pinned channel column and the pinned time ruler; elsewhere it
-    /// sits a tenth of the way in.
-    private var gridScrollAnchor: UnitPoint {
-        #if os(macOS)
-        guard scrollViewWidth > 0, scrollViewHeight > 0 else { return UnitPoint(x: 0.10, y: 0) }
-        return UnitPoint(
-            x: (channelWidth + Theme.spacingLG) / scrollViewWidth,
-            y: MacGuideTimeRuler.height / scrollViewHeight
+    #if os(macOS)
+    /// Scrolls the grid so `time` sits just past the pinned channel column.
+    ///
+    /// Uses an absolute content offset rather than a fractional anchor: an
+    /// anchor is resolved against the viewport width at the moment of the
+    /// request, and right after launch that width can still be settling, which
+    /// left the guide opened an hour or more short of "now". The scroll view
+    /// also clamps to the content laid out so far, so this retries until the
+    /// offset is exactly where it was asked to be.
+    private func scrollGrid(to time: Date) async {
+        let targetX = GuideScrollHelper.contentOffsetX(
+            timelineStart: viewModel.timelineStart,
+            target: time,
+            hourWidth: hourWidth,
+            inset: Theme.spacingLG
         )
-        #else
-        return UnitPoint(x: 0.10, y: 0)
-        #endif
+        for attempt in 0..<8 {
+            gridScrollPosition.scrollTo(point: CGPoint(x: targetX, y: 0))
+            try? await Task.sleep(for: .milliseconds(attempt == 0 ? 150 : 300))
+            guard !Task.isCancelled else { return }
+            if abs(gridHorizontalOffset - targetX) <= 1 { return }
+        }
+    }
+    #endif
+
+    /// Where a scroll-to-time target lands in the viewport (iOS; macOS scrolls
+    /// by absolute offset, see `scrollGrid(to:)`).
+    private var gridScrollAnchor: UnitPoint {
+        UnitPoint(x: 0.10, y: 0)
     }
 
     #if os(macOS)
@@ -939,6 +968,9 @@ struct GuideView: View {
                 .modifier(MacScrollDirectionalLockModifier())
                 #endif
             }
+            #if os(macOS)
+            .scrollPosition($gridScrollPosition)
+            #endif
             .refreshable {
                 await refreshGuide()
             }
@@ -1018,15 +1050,11 @@ struct GuideView: View {
 
                 await Task.yield()
                 guard !Task.isCancelled,
-                      let targetId = updateScrollTarget(preferredTime: catchupReturnTime) else { return }
+                      updateScrollTarget(preferredTime: catchupReturnTime) != nil,
+                      let time = scrollTargetTime else { return }
 
-                programProxy.scrollTo(targetId, anchor: gridScrollAnchor)
-                try? await Task.sleep(for: .milliseconds(250))
+                await scrollGrid(to: time)
                 guard !Task.isCancelled else { return }
-                programProxy.scrollTo(targetId, anchor: gridScrollAnchor)
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-                programProxy.scrollTo(targetId, anchor: gridScrollAnchor)
 
                 appState.clearCatchupGuideReturnTime(ifMatching: catchupReturnTime)
             }
@@ -1035,9 +1063,15 @@ struct GuideView: View {
                 updateScrollTarget()
             }
             .onChange(of: scrollTargetId) { _, newValue in
+                #if os(macOS)
+                if newValue != nil, let time = scrollTargetTime {
+                    Task { await scrollGrid(to: time) }
+                }
+                #else
                 if let targetId = newValue {
                     programProxy.scrollTo(targetId, anchor: gridScrollAnchor)
                 }
+                #endif
             }
         }
         .onChange(of: scenePhase) {
@@ -2141,6 +2175,7 @@ struct GuideView: View {
         // needs no initial scroll. Catch-up keeps the whole day and opens at
         // the current half-hour, leaving the earlier schedule to its left.
         if preferredTime == nil && isToday && !viewModel.allowsPastDates {
+            scrollTargetTime = nil
             scrollTargetId = nil
             return nil
         }
@@ -2151,9 +2186,12 @@ struct GuideView: View {
         let targetHourComponent = calendar.component(.hour, from: targetTime)
         if let targetHour = viewModel.hoursToShow.first(where: { calendar.component(.hour, from: $0) == targetHourComponent }) {
             let targetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
+            // Set before the id: the id's onChange reads it.
+            scrollTargetTime = targetTime
             scrollTargetId = targetId
             return targetId
         }
+        scrollTargetTime = nil
         scrollTargetId = nil
         return nil
     }

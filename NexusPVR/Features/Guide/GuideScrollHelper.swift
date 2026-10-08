@@ -66,6 +66,20 @@ nonisolated enum GuideScrollHelper {
         return CGFloat(seconds / 3600) * hourWidth
     }
 
+    /// The horizontal content offset that shows `target` `inset` points to the
+    /// right of the timeline's leading edge — that is, just past a pinned
+    /// column that covers the content in front of the timeline. Independent of
+    /// the viewport width, unlike a fractional scroll anchor. Never negative.
+    static func contentOffsetX(
+        timelineStart: Date,
+        target: Date,
+        hourWidth: CGFloat,
+        inset: CGFloat
+    ) -> CGFloat {
+        let distance = expectedScrollOffsetX(timelineStart: timelineStart, scrollTarget: target, hourWidth: hourWidth)
+        return max(0, distance - inset)
+    }
+
     /// Calculates the leading padding for a program cell to align text with the visible scroll position
     /// - Parameters:
     ///   - programStart: The program's start time
