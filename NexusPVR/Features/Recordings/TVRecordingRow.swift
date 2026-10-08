@@ -48,15 +48,8 @@ struct TVRecordingRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isFocused ? MidnightPalette.selectedBg : MidnightPalette.cellRest)
         .overlay(alignment: .leading) {
-            if isFocused || matchedTopic != nil {
-                Rectangle()
-                    .fill(matchedTopic != nil ? MidnightPalette.topic : MidnightPalette.accent)
-                    .frame(width: 6)
-            }
-        }
-        .overlay {
-            if matchedTopic != nil {
-                Rectangle().strokeBorder(MidnightPalette.topic, lineWidth: 3)
+            if isFocused {
+                Rectangle().fill(MidnightPalette.accent).frame(width: 6)
             }
         }
         .accessibilityElement(children: .combine)
