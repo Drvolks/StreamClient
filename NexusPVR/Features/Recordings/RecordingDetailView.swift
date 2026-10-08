@@ -527,7 +527,11 @@ struct RecordingDetailView: View {
             }
             .frame(maxWidth: .infinity)
         }
+        #if os(macOS)
+        .buttonStyle(AccentButtonStyle())
+        #else
         .buttonStyle(SecondaryButtonStyle())
+        #endif
         .disabled(alreadyDownloaded)
         .accessibilityIdentifier("download-recording-button")
     }
