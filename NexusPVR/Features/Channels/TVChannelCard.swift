@@ -65,11 +65,7 @@ struct TVChannelCard: View {
         }
         .background(MidnightPalette.cellRest)
         .overlay {
-            if matchedTopic != nil {
-                Rectangle().strokeBorder(MidnightPalette.topic, lineWidth: 3)
-            } else {
-                Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
-            }
+            Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
         }
     }
 
