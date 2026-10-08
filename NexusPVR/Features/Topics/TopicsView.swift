@@ -16,6 +16,10 @@ struct TopicsView: View {
     @State private var refreshTrigger = UUID()
     @State private var selectedKeyword: String = ""
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var streamError: String?
+    #endif
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     @State private var newKeyword = ""
@@ -84,6 +88,13 @@ struct TopicsView: View {
         }
         .onExitCommand {
             requestSidebarFocus()
+        }
+        #elseif os(macOS)
+        .background(MidnightGradients.ground(colorScheme))
+        .alert("Error", isPresented: Binding(get: { streamError != nil }, set: { if !$0 { streamError = nil } })) {
+            Button("OK") { streamError = nil }
+        } message: {
+            if let streamError { Text(streamError) }
         }
         #else
         .background(Theme.background)
@@ -179,6 +190,13 @@ struct TopicsView: View {
     private var topicsContent: some View {
         VStack(spacing: 0) {
             // macOS topic selection is driven by the sidebar sub-rows.
+            #if os(macOS)
+            MacTopicsHeader(
+                title: selectedKeyword.isEmpty ? "Topics" : selectedKeyword,
+                programCount: filteredPrograms.count,
+                onManage: { appState.showingKeywordsEditor = true }
+            )
+            #endif
 
             // Content
             Group {
@@ -322,6 +340,36 @@ struct TopicsView: View {
             }
             .padding()
         }
+        #elseif os(macOS)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(TopicDaySection.grouped(filteredPrograms)) { section in
+                    MidnightSectionHeader(
+                        title: section.title,
+                        meta: "\(section.programs.count) program\(section.programs.count == 1 ? "" : "s")"
+                    )
+                    ForEach(section.programs) { item in
+                        MacTopicProgramRow(
+                            program: item.program,
+                            channel: item.channel,
+                            onWatch: { playLive(item.channel, program: item.program) },
+                            onRecordingChanged: { refreshTrigger = UUID() },
+                            onShowDetails: { recordingId, completedRecording in
+                                selectedProgramDetail = ProgramTopicDetail(
+                                    program: item.program,
+                                    channel: item.channel,
+                                    recordingId: recordingId,
+                                    completedRecording: completedRecording
+                                )
+                            }
+                        )
+                        .id("\(item.id)-\(refreshTrigger)")
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, Theme.spacingLG)
+        }
         #else
         List {
             ForEach(filteredPrograms) { item in
@@ -359,6 +407,21 @@ struct TopicsView: View {
         }
         #endif
     }
+
+    #if os(macOS)
+    private func playLive(_ channel: Channel, program: Program) {
+        Task {
+            do {
+                let url = try await appState.preparingStream {
+                    try await client.liveStreamURL(channelId: channel.id)
+                }
+                appState.playStream(url: url, title: "\(channel.name) - \(program.name)", channelId: channel.id, channelName: channel.name)
+            } catch {
+                streamError = error.localizedDescription
+            }
+        }
+    }
+    #endif
 
     #if os(tvOS)
     private var manageKeywordsView: some View {

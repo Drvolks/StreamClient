@@ -77,9 +77,9 @@ struct DownloadsView: View {
 
     private var emptyMessage: String {
         #if os(macOS)
-        "Download a catch-up programme or a recording to keep it on this Mac and watch it offline."
+        "Download a catch-up program or a recording to keep it on this Mac and watch it offline."
         #else
-        "Download a catch-up programme or a recording to keep it on this device and watch it offline."
+        "Download a catch-up program or a recording to keep it on this device and watch it offline."
         #endif
     }
 

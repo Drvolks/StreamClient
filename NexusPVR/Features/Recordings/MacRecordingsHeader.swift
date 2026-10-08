@@ -46,7 +46,7 @@ struct MacRecordingsHeader: View {
             .frame(height: MacGuideHeaderMetrics.searchHeight)
             .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
             .fixedSize()
-            .help("Recordings outlined in this colour match your topics.")
+            .help("Recordings outlined in this color match your topics.")
 
             Spacer(minLength: Theme.spacingSM)
 

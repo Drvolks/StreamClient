@@ -33,7 +33,7 @@ struct MacGuideDetailBar: View {
                 Spacer(minLength: Theme.spacingMD)
                 actions
             } else {
-                Text("Select a programme to see what's on and what you can do with it.")
+                Text("Select a program to see what's on and what you can do with it.")
                     .font(.archivo(12.5))
                     .foregroundStyle(MidnightPalette.inkSoft)
                 Spacer()

@@ -78,7 +78,7 @@ struct MacChannelCard: View {
                     .midnightMeta(9.5)
                     .foregroundStyle(MidnightPalette.inkFaint)
             } else {
-                Text("No programme info")
+                Text("No program info")
                     .font(.archivo(12))
                     .foregroundStyle(MidnightPalette.inkFaint)
                     .lineLimit(2, reservesSpace: true)

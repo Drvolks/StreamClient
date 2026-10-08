@@ -2542,7 +2542,7 @@ struct MacOSNavigation: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textTertiary)
 
-            TextField("Search programmes", text: $searchText)
+            TextField("Search programs", text: $searchText)
                 .font(.archivo(12.5))
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("global-search-field")

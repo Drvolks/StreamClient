@@ -166,7 +166,7 @@ struct MacGuideHeader: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Programmes outlined in this colour match your topics. Click to edit them.")
+        .help("Programs outlined in this color match your topics. Click to edit them.")
         .accessibilityLabel("Your topics")
         .fixedSize()
     }

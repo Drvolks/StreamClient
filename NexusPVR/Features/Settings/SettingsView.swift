@@ -1411,7 +1411,7 @@ struct SettingsView: View {
         }
         return "Live TV switches to \(cellularStreamQuality.label) on cellular, a personal "
             + "hotspot, or in Low Data Mode. Chosen when playback starts — changing network "
-            + "mid-programme doesn't interrupt the stream."
+            + "mid-program doesn't interrupt the stream."
     }
     #endif
 
@@ -1984,7 +1984,7 @@ extension SettingsView {
             toggle: toggleGuideProfile
         )
         #endif
-        MacSettingsRow(title: "Topic Keywords", subtitle: "Programmes matching these appear under Topics.") {
+        MacSettingsRow(title: "Topic Keywords", subtitle: "Programs matching these appear under Topics.") {
             Button("Edit") { showingKeywordsEditor = true }
                 .buttonStyle(MidnightOutlineButtonStyle())
         }
