@@ -91,9 +91,9 @@ enum Theme {
 
     // MARK: - Primary Colors
 
-    // macOS uses the Midnight palette; iOS and tvOS keep the brand colours
-    // until they get their own redesign pass.
-    #if os(macOS)
+    // macOS and tvOS use the Midnight palette; iOS keeps the brand colours
+    // until it gets its own redesign pass.
+    #if os(macOS) || os(tvOS)
     static let accent = MidnightPalette.accent
     #else
     static let accent = Brand.accent
@@ -102,7 +102,7 @@ enum Theme {
 
     // MARK: - Background Colors
 
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     static let background = MidnightPalette.shell
     static let surface = MidnightPalette.railHead
     static let surfaceElevated = MidnightPalette.rail
@@ -117,7 +117,7 @@ enum Theme {
 
     // MARK: - Text Colors
 
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     static let textPrimary = MidnightPalette.ink
     static let textSecondary = MidnightPalette.inkSoft
     static let textTertiary = MidnightPalette.inkFaint
@@ -128,9 +128,9 @@ enum Theme {
     #endif
 
     /// Text and icons drawn on an `accent` fill. White can't be read on the
-    /// bright Midnight cyan, so macOS uses the field ink (dark on Night,
-    /// white on Day).
-    #if os(macOS)
+    /// bright Midnight cyan, so macOS and tvOS use the field ink (dark on
+    /// Night, white on Day).
+    #if os(macOS) || os(tvOS)
     static let textOnAccent = MidnightPalette.fieldInk
     #else
     static let textOnAccent = Color.white
@@ -177,14 +177,14 @@ enum Theme {
     // MARK: - Corner Radius
 
     // Midnight follows the Modernist rule of square corners, so every radius
-    // is zero on macOS.
+    // is zero on macOS and tvOS.
     static let cornerRadiusSM: CGFloat = radius(8)
     static let cornerRadiusMD: CGFloat = radius(12)
     static let cornerRadiusLG: CGFloat = radius(20)
 
-    /// A one-off corner radius: `value` on iOS and tvOS, zero on macOS.
+    /// A one-off corner radius: `value` on iOS, zero on macOS and tvOS.
     static func radius(_ value: CGFloat) -> CGFloat {
-        #if os(macOS)
+        #if os(macOS) || os(tvOS)
         0
         #else
         value

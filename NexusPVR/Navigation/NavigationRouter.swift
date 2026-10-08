@@ -1838,7 +1838,7 @@ struct TVOSNavigation: View {
                 if appState.activeStreamCount > 0 {
                     Text("\(appState.activeStreamCount)")
                         .font(.tvSidebarScaled(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Theme.accent)
