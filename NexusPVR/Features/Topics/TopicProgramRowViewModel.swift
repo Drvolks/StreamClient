@@ -2,7 +2,8 @@
 //  TopicProgramRowViewModel.swift
 //  NexusPVR
 //
-//  Shared state and logic for TopicProgramRow (iOS/macOS) and TopicProgramRowTV (tvOS)
+//  Shared state and logic for the topic rows: TopicProgramRow (iOS),
+//  MacTopicProgramRow (macOS) and TVTopicProgramRow (tvOS)
 //
 
 import SwiftUI

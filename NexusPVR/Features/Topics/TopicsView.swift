@@ -16,8 +16,10 @@ struct TopicsView: View {
     @State private var refreshTrigger = UUID()
     @State private var selectedKeyword: String = ""
     @Environment(\.scenePhase) private var scenePhase
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
+    #endif
+    #if os(macOS)
     @State private var streamError: String?
     #endif
     #if os(tvOS)
@@ -81,7 +83,7 @@ struct TopicsView: View {
             #endif
         }
         #if os(tvOS)
-        .background(.ultraThinMaterial)
+        .background(MidnightGradients.ground(colorScheme))
         .onMoveCommand { direction in
             if direction == .left { requestSidebarFocus() }
         }
@@ -157,6 +159,17 @@ struct TopicsView: View {
                 }
             }
         }
+        // Opened before the EPG finished loading: `loadData` found nothing
+        // to match against, so match again once it has.
+        .onChange(of: epgCache.hasLoaded) { _ in
+            guard epgCache.hasLoaded else { return }
+            Task {
+                await viewModel.loadData()
+                #if os(iOS)
+                updateKeywordsWithMatches()
+                #endif
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .recordingsDidChange)) { _ in
             Task {
                 await viewModel.loadData()
@@ -183,6 +196,12 @@ struct TopicsView: View {
             MacTopicsHeader(
                 title: selectedKeyword.isEmpty ? "Topics" : selectedKeyword,
                 programCount: filteredPrograms.count
+            )
+            #elseif os(tvOS)
+            TVPageHeader(
+                kicker: "Topics",
+                title: appState.selectedTopicKeyword.isEmpty ? "Topics" : appState.selectedTopicKeyword,
+                readout: "\(filteredPrograms.count) program\(filteredPrograms.count == 1 ? "" : "s")"
             )
             #endif
 
@@ -304,25 +323,27 @@ struct TopicsView: View {
     private var programsList: some View {
         #if os(tvOS)
         ScrollView {
-            LazyVStack(spacing: Theme.spacingMD) {
-                ForEach(filteredPrograms) { item in
-                    TopicProgramRowTV(
-                        program: item.program,
-                        channel: item.channel,
-                        matchedKeyword: item.matchedKeyword,
-                        onRecordingChanged: {
-                            refreshTrigger = UUID()
-                        },
-                        onShowDetails: {
-                            selectedProgramDetail = ProgramTopicDetail(program: item.program, channel: item.channel)
-                        }
+            LazyVStack(alignment: .leading, spacing: 10) {
+                ForEach(TopicDaySection.grouped(filteredPrograms)) { section in
+                    MidnightSectionHeader(
+                        title: section.title,
+                        meta: "\(section.programs.count) program\(section.programs.count == 1 ? "" : "s")"
                     )
-                    .environmentObject(client)
-                    .environmentObject(appState)
-                    .id("\(item.id)-\(refreshTrigger)")
+                    ForEach(section.programs) { item in
+                        TVTopicProgramRow(
+                            program: item.program,
+                            channel: item.channel,
+                            onRecordingChanged: { refreshTrigger = UUID() },
+                            onShowDetails: {
+                                selectedProgramDetail = ProgramTopicDetail(program: item.program, channel: item.channel)
+                            }
+                        )
+                        .id("\(item.id)-\(refreshTrigger)")
+                    }
                 }
             }
-            .padding()
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.vertical, Theme.spacingMD)
         }
         #elseif os(macOS)
         ScrollView {
