@@ -215,7 +215,7 @@ struct TopicsView: View {
             .navigationTitle(appState.selectedTopicKeyword.isEmpty ? "Topics" : appState.selectedTopicKeyword)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .sheet(item: $selectedProgramDetail) { detail in
+            .detailCover(item: $selectedProgramDetail) { detail in
                 ProgramDetailView(
                     program: detail.program,
                     channel: detail.channel,

@@ -247,7 +247,7 @@ struct ProgramDetailView: View {
 
     #if os(tvOS)
     private var tvOSContent: some View {
-        VStack(spacing: 0) {
+        TVDetailPanel {
             // Content
             ScrollView {
                 ZStack(alignment: .trailing) {
@@ -337,10 +337,6 @@ struct ProgramDetailView: View {
                 }
             }
         }
-        .frame(width: 800)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Theme.background)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
     }
 
     private var descriptionWithCategories: String {
@@ -1176,18 +1172,18 @@ private struct TVProgramPopupButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(backgroundColor(configuration: configuration))
             .foregroundStyle(foregroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusMD)
-                    .stroke(isFocused ? Color.white : Color.clear, lineWidth: 2)
-            )
+            .overlay {
+                Rectangle().strokeBorder(isFocused ? MidnightPalette.ink : Color.clear, lineWidth: 3)
+            }
             .scaleEffect(configuration.isPressed ? 0.98 : isFocused ? 1.02 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: configuration.isPressed)
             .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 
     private var foregroundColor: Color {
-        isEnabled ? .white : Theme.textTertiary
+        guard isEnabled else { return Theme.textTertiary }
+        // White is unreadable on the cyan accent.
+        return variant == .accent ? Theme.textOnAccent : Theme.textPrimary
     }
 
     private func backgroundColor(configuration: Configuration) -> Color {

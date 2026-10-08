@@ -90,7 +90,7 @@ struct GuideView: View {
             #else
             .background(.ultraThinMaterial)
             #endif
-            .sheet(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
+            .detailCover(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
                 programDetailSheet(detail)
             }
             .alert("Error", isPresented: .constant(streamError != nil)) {

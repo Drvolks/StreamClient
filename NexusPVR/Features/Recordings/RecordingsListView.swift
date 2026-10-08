@@ -183,7 +183,7 @@ private struct RecordingsListContentView: View {
                 }
             }
             #endif
-            .sheet(item: $selectedRecording) { recording in
+            .detailCover(item: $selectedRecording) { recording in
                 RecordingDetailView(recording: recording)
                     .environmentObject(client)
                     .environmentObject(appState)
