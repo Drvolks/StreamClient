@@ -194,7 +194,7 @@ struct MacRecordingRow: View {
                 .padding(.vertical, 3)
                 .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
         default:
-            MacWatchStateChip(state: watchState)
+            WatchStateChip(state: watchState)
         }
     }
 
