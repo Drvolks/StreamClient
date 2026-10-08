@@ -149,7 +149,6 @@ struct CalendarView: View {
             VStack(spacing: 0) {
                 #if !os(iOS)
                 navigationBar
-                Divider()
                 #endif
 
                 switch viewMode {
@@ -161,7 +160,11 @@ struct CalendarView: View {
             }
             .accessibilityIdentifier("calendar-view")
             .frame(maxHeight: .infinity)
+            #if os(macOS)
+            .background(MidnightGradients.ground(colorScheme))
+            #else
             .background(Theme.background)
+            #endif
             .onGeometryChange(for: CGFloat.self) { geo in
                 geo.size.width
             } action: { newWidth in
@@ -306,72 +309,54 @@ struct CalendarView: View {
 
     // MARK: - Navigation Bar
 
+    #if os(macOS)
     private var navigationBar: some View {
-        HStack(spacing: Theme.spacingMD) {
-            Button { navigateBack() } label: {
-                Image(systemName: "chevron.left")
-                    .fontWeight(.semibold)
-            }
-            .buttonStyle(.plain)
-            .disabled(!canNavigateBack)
-
-            Text(dateRangeLabel)
-                .font(.headline)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-
-            Button { navigateForward() } label: {
-                Image(systemName: "chevron.right")
-                    .fontWeight(.semibold)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Menu {
-                Button { selectedKeyword = "" } label: {
-                    if selectedKeyword.isEmpty {
-                        Label("All", systemImage: "checkmark")
-                    } else {
-                        Text("All")
-                    }
-                }
-                ForEach(keywords, id: \.self) { keyword in
-                    Button {
-                        selectedKeyword = keyword
-                    } label: {
-                        Label(keyword, systemImage: keyword == selectedKeyword ? "checkmark.circle.fill" : "circle.fill")
-                    }
-                    .tint(colorForKeyword(keyword))
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    if !selectedKeyword.isEmpty {
-                        Circle()
-                            .fill(colorForKeyword(selectedKeyword))
-                            .frame(width: 8, height: 8)
-                    }
-                    Text(selectedKeyword.isEmpty ? "All" : selectedKeyword)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.tvScaled(size: 10))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .font(.subheadline)
-            }
-
-            Picker("", selection: $viewMode) {
-                ForEach(ViewMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
-        }
-        .padding(.horizontal, Theme.spacingMD)
-        .padding(.vertical, Theme.spacingSM)
-        .background(Theme.surface)
+        MacCalendarHeader(
+            title: macRangeTitle,
+            canGoBack: canNavigateBack,
+            viewMode: $viewMode,
+            selectedKeyword: $selectedKeyword,
+            keywordOptions: [("All topics", "")] + keywords.map { ($0, $0) },
+            onBack: navigateBack,
+            onForward: navigateForward,
+            onToday: { selectedDate = Date() }
+        )
     }
+
+    /// "Thu, Oct 8" for a day; "Oct 4 – 10" (or "Sep 28 – Oct 4") for a week.
+    private var macRangeTitle: String {
+        let day = DateFormatter()
+        switch viewMode {
+        case .day:
+            day.setLocalizedDateFormatFromTemplate("EEEMMMd")
+            return day.string(from: selectedDate)
+        case .week:
+            guard let first = visibleDates.first, let last = visibleDates.last else { return "" }
+            day.setLocalizedDateFormatFromTemplate("MMMd")
+            let cal = Calendar.current
+            if cal.isDate(first, equalTo: last, toGranularity: .month) {
+                let dayOnly = DateFormatter()
+                dayOnly.setLocalizedDateFormatFromTemplate("d")
+                return "\(day.string(from: first)) – \(dayOnly.string(from: last))"
+            }
+            return "\(day.string(from: first)) – \(day.string(from: last))"
+        }
+    }
+
+    /// The accent now-line across a day column, while that day is today.
+    @ViewBuilder
+    private func nowLine(xOffset: CGFloat, width: CGFloat) -> some View {
+        TimelineView(.everyMinute) { context in
+            let cal = Calendar.current
+            let minutes = CGFloat(cal.component(.hour, from: context.date) * 60 + cal.component(.minute, from: context.date))
+            Rectangle()
+                .fill(MidnightPalette.accent)
+                .frame(width: max(width, 0), height: 2)
+                .offset(x: xOffset, y: minutes / 60 * hourHeight - 1)
+        }
+        .allowsHitTesting(false)
+    }
+    #endif
 
     // MARK: - Day View
 
@@ -404,6 +389,11 @@ struct CalendarView: View {
                             let layout = columns[item.id] ?? (column: 0, totalColumns: 1)
                             programBlock(item, columnOffset: timeColumnWidth, columnWidth: availableWidth, colIndex: layout.column, totalCols: layout.totalColumns)
                         }
+                        #if os(macOS)
+                        if cal.isDateInToday(selectedDate) {
+                            nowLine(xOffset: timeColumnWidth, width: availableWidth)
+                        }
+                        #endif
                     }
                 }
                 .padding(.trailing, Theme.spacingSM)
@@ -448,6 +438,26 @@ struct CalendarView: View {
                 Color.clear.frame(width: timeColumnWidth, height: 1)
                 ForEach(dates, id: \.self) { date in
                     let isToday = cal.isDateInToday(date)
+                    #if os(macOS)
+                    VStack(spacing: 1) {
+                        Text({
+                            dayFormatter.dateFormat = "EEE"
+                            return dayFormatter.string(from: date)
+                        }())
+                            .midnightKicker(9.5)
+                            .foregroundStyle(isToday ? MidnightPalette.accent : MidnightPalette.inkSoft)
+                        Text("\(cal.component(.day, from: date))")
+                            .font(.archivo(18, .extraBold))
+                            .foregroundStyle(isToday ? MidnightPalette.accent : MidnightPalette.ink)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .overlay(alignment: .bottom) {
+                        if isToday {
+                            Rectangle().fill(MidnightPalette.accent).frame(height: 2)
+                        }
+                    }
+                    #else
                     VStack(spacing: 2) {
                         Text({
                             dayFormatter.dateFormat = "EEE"
@@ -462,12 +472,22 @@ struct CalendarView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.spacingXS)
+                    #endif
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
+            #if os(macOS)
+            .background(MidnightPalette.railHead)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(MidnightPalette.line).frame(height: 1)
+            }
+            #else
             .background(Theme.surface)
+            #endif
 
+            #if !os(macOS)
             Divider()
+            #endif
 
             // Timeline
             ScrollViewReader { proxy in
@@ -480,8 +500,13 @@ struct CalendarView: View {
                             // Vertical column dividers
                             ForEach(0..<dates.count, id: \.self) { index in
                                 Rectangle()
+                                    #if os(macOS)
+                                    .fill(MidnightPalette.lineSoft)
+                                    .frame(width: 1)
+                                    #else
                                     .fill(Theme.surfaceHighlight.opacity(0.5))
                                     .frame(width: 0.5)
+                                    #endif
                                     .offset(x: timeColumnWidth + columnWidth * CGFloat(index))
                             }
 
@@ -496,6 +521,11 @@ struct CalendarView: View {
                                     programBlock(item, columnOffset: xOffset + 1, columnWidth: columnWidth - 2, colIndex: layout.column, totalCols: layout.totalColumns)
                                 }
                             }
+                            #if os(macOS)
+                            if let todayIndex = dates.firstIndex(where: { cal.isDateInToday($0) }) {
+                                nowLine(xOffset: timeColumnWidth + columnWidth * CGFloat(todayIndex), width: columnWidth)
+                            }
+                            #endif
                         }
                     }
                 }
@@ -522,6 +552,17 @@ struct CalendarView: View {
             ForEach(startHour..<endHour, id: \.self) { hour in
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
+                        #if os(macOS)
+                        Text(hourLabel(hour))
+                            .midnightMeta(10)
+                            .foregroundStyle(MidnightPalette.inkSoft)
+                            .frame(width: timeColumnWidth, alignment: .trailing)
+                            .padding(.trailing, 4)
+
+                        Rectangle()
+                            .fill(MidnightPalette.lineSoft)
+                            .frame(height: 1)
+                        #else
                         Text(hourLabel(hour))
                             .font(.caption2)
                             .foregroundStyle(Theme.textTertiary)
@@ -531,6 +572,7 @@ struct CalendarView: View {
                         Rectangle()
                             .fill(Theme.textTertiary.opacity(0.3))
                             .frame(height: 0.5)
+                        #endif
                     }
                     Spacer()
                 }
@@ -612,6 +654,17 @@ struct CalendarView: View {
                 channel: item.channel
             )
         } label: {
+            #if os(macOS)
+            MacCalendarBlock(
+                program: item.program,
+                channel: item.channel,
+                topicColor: colorForKeyword(item.matchedKeyword),
+                height: blockHeight,
+                isScheduled: scheduledProgramIds.contains(item.program.id),
+                isCatchupAvailable: catchupAvailable
+            )
+            .padding(.horizontal, 1)
+            #else
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.program.cleanName)
@@ -694,6 +747,7 @@ struct CalendarView: View {
                     }
                 }
             }
+            #endif
         }
         .buttonStyle(.plain)
         .offset(x: {

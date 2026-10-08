@@ -2240,6 +2240,7 @@ struct MacOSNavigation: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar-\(tab.rawValue)")
     }
 
     private func macSidebarSubRow(label: String, filter: RecordingsFilter) -> some View {
