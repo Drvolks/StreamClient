@@ -445,13 +445,12 @@ struct SettingsView: View {
         if topicList.isEmpty {
             tvOSGuideStatusRow("No topics yet.")
         } else {
-            ForEach(Array(topicList.enumerated()), id: \.element) { index, keyword in
+            ForEach(topicList, id: \.self) { keyword in
                 Button {
                     activeTVPopup = .topic(keyword)
                 } label: {
                     TVSettingsRowLabel(
                         title: keyword,
-                        subtitle: index == 0 ? "Opens by default" : nil,
                         value: appState.topicKeywordMatchCounts[keyword].map { "\($0) program\($0 == 1 ? "" : "s")" } ?? ""
                     )
                 }
@@ -1930,7 +1929,7 @@ extension SettingsView {
                 .padding(.vertical, 12)
         } else {
             ForEach(Array(topicList.enumerated()), id: \.element) { index, keyword in
-                MacSettingsRow(title: keyword, subtitle: index == 0 ? "Opens by default" : nil) {
+                MacSettingsRow(title: keyword) {
                     HStack(spacing: 6) {
                         Button {
                             moveTopic(at: index, by: -1)
