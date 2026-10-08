@@ -212,6 +212,7 @@ struct RecordingDetailView: View {
                             .fontWeight(.bold)
                             .foregroundStyle(Theme.textPrimary)
                         Spacer()
+                        if recording.isLiveBroadcast { LiveBadge() }
                         if recording.isNew { NewBadge() }
                     }
 
@@ -436,6 +437,7 @@ struct RecordingDetailView: View {
                     .fontWeight(.bold)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
+                if recording.isLiveBroadcast { LiveBadge() }
                 if recording.isNew { NewBadge() }
             }
 

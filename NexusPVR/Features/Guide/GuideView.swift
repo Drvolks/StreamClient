@@ -1364,6 +1364,10 @@ struct GuideView: View {
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
 
+                        if program.shouldShowLiveBadge {
+                            LiveBadge(compact: useCompactBadges)
+                        }
+
                         if program.shouldShowNewBadge && !catchupAvailable {
                             NewBadge(compact: useCompactBadges)
                         }

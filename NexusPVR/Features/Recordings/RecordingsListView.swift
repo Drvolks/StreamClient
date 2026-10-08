@@ -230,7 +230,7 @@ private struct RecordingsListContentView: View {
             } message: { recording in
                 let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
                 if canPlay {
-                    Text("\(recording.name) is currently recording.")
+                    Text("\(recording.cleanName) is currently recording.")
                 } else {
                     Text("Watching in-progress recordings requires the PixelBuffer renderer. You can change this in Settings > Playback.")
                 }
@@ -266,8 +266,8 @@ private struct RecordingsListContentView: View {
             }
         } message: { recording in
             Text(recording.recordingStatus.isScheduled
-                 ? "\(recording.name) won't be recorded."
-                 : "\(recording.name) will be deleted from the server.")
+                 ? "\(recording.cleanName) won't be recorded."
+                 : "\(recording.cleanName) will be deleted from the server.")
         }
         #else
         .background(Theme.background)
@@ -1811,7 +1811,7 @@ private struct ResumeDialogModifier: ViewModifier {
                 if let position = recording.playbackPosition {
                     let minutes = position / 60
                     let seconds = position % 60
-                    Text("\(recording.name)\nStopped at \(minutes):\(String(format: "%02d", seconds))")
+                    Text("\(recording.cleanName)\nStopped at \(minutes):\(String(format: "%02d", seconds))")
                 }
             }
     }

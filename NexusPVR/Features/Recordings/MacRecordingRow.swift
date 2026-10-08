@@ -77,6 +77,9 @@ struct MacRecordingRow: View {
                     .font(.archivo(15.5, .extraBold))
                     .foregroundStyle(MidnightPalette.ink)
                     .lineLimit(1)
+                if recording.isLiveBroadcast {
+                    LiveBadge()
+                }
                 if let matchedTopic {
                     Text(matchedTopic)
                         .midnightBadge(8.5)

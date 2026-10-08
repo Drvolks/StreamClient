@@ -92,6 +92,9 @@ struct MacChannelCard: View {
     private var chips: some View {
         // Fixed height, so cards stay level whether or not they carry chips.
         HStack(spacing: 5) {
+            if currentProgram?.shouldShowLiveBadge == true {
+                LiveBadge()
+            }
             if currentProgram?.shouldShowNewBadge == true {
                 NewBadge(compact: false)
             }

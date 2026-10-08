@@ -133,6 +133,7 @@ struct TopicProgramRow: View {
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                     Spacer()
+                    if program.shouldShowLiveBadge { LiveBadge() }
                     if program.shouldShowNewBadge { NewBadge() }
                 }
 

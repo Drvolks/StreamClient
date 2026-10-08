@@ -533,7 +533,8 @@ final class AppState: ObservableObject {
         let effectiveURL = url
         #endif
         currentlyPlayingURL = effectiveURL
-        currentlyPlayingTitle = title
+        // Callers pass raw EPG titles; drop the ᴺᵉʷ / ᴸᶦᵛᵉ markers for display.
+        currentlyPlayingTitle = EPGTitleMarkers.clean(title)
         currentlyPlayingDownloadId = downloadId
         currentlyPlayingRecordingId = recordingId
         currentlyPlayingResumePosition = resumePosition

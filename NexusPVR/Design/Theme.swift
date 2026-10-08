@@ -233,6 +233,24 @@ struct NewBadge: View {
     }
 }
 
+// MARK: - Live Badge
+
+/// Marks a program the guide flags as airing live ("ᴸᶦᵛᵉ" in its title).
+struct LiveBadge: View {
+    /// Shrinks the label to a single "L" for tight spots, like `NewBadge`.
+    var compact: Bool = false
+
+    var body: some View {
+        Text(compact ? "L" : "LIVE")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(Theme.textOnAccent)
+            .padding(.horizontal, compact ? 4 : 5)
+            .padding(.vertical, 2)
+            .background(Theme.accent)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
+    }
+}
+
 // MARK: - Recording Badge
 
 struct RecBadge: View {

@@ -56,7 +56,17 @@ nonisolated struct Program: Identifiable, Decodable, Hashable, Sendable {
 
     /// Whether the program name contains the "ᴺᵉʷ" marker
     var isNew: Bool {
-        name.contains("\u{1D3A}\u{1D49}\u{02B7}")
+        name.contains(EPGTitleMarkers.new)
+    }
+
+    /// Whether the program name contains the "ᴸᶦᵛᵉ" marker: it airs live.
+    var isLiveBroadcast: Bool {
+        EPGTitleMarkers.isLive(name)
+    }
+
+    /// Like the NEW badge, the LIVE badge drops once the program has ended.
+    var shouldShowLiveBadge: Bool {
+        isLiveBroadcast && !hasEnded
     }
 
     /// The EPG may retain the NEW marker after a program has ended. Keep the
@@ -65,11 +75,10 @@ nonisolated struct Program: Identifiable, Decodable, Hashable, Sendable {
         isNew && !hasEnded
     }
 
-    /// Program name with the "ᴺᵉʷ" marker and any surrounding line break stripped
+    /// Program name with the "ᴺᵉʷ" / "ᴸᶦᵛᵉ" markers and any surrounding line
+    /// break stripped
     var cleanName: String {
-        name.replacingOccurrences(of: "\\s*ᴺᵉʷ\\s*", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "  ", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        EPGTitleMarkers.clean(name)
     }
 
     var seriesInfo: SeriesInfo? {

@@ -58,6 +58,9 @@ struct MacGuideDetailBar: View {
                 if program.isCurrentlyAiring {
                     MidnightFieldChip(text: "Live now", size: 9)
                 }
+                if program.shouldShowLiveBadge {
+                    LiveBadge()
+                }
             }
             Text(program.cleanName)
                 .font(.archivo(21, .extraBold))
