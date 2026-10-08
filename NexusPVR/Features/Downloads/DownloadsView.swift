@@ -12,8 +12,30 @@ struct DownloadsView: View {
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var downloads: DownloadManager
+    #if os(macOS)
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
 
     var body: some View {
+        #if os(macOS)
+        VStack(spacing: 0) {
+            MacDownloadsHeader(
+                count: downloads.items.count,
+                totalBytes: downloads.items.reduce(0) { $0 + (($1.state == .completed) ? ($1.byteSize ?? 0) : 0) },
+                activeCount: downloads.items.filter(\.state.isActive).count
+            )
+            content
+        }
+        .background(MidnightGradients.ground(colorScheme))
+        .modifier(DownloadsChrome(downloads: downloads))
+        #else
+        content
+            .background(Theme.background)
+            .modifier(DownloadsChrome(downloads: downloads))
+        #endif
+    }
+
+    private var content: some View {
         Group {
             if downloads.items.isEmpty {
                 emptyView
@@ -22,25 +44,52 @@ struct DownloadsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.background)
-        .navigationTitle("Downloads")
-        .accessibilityIdentifier("downloads-view")
-        .task { await downloads.refresh() }
-        .alert(
-            "Download",
-            isPresented: Binding(
-                get: { downloads.startError != nil },
-                set: { if !$0 { downloads.startError = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { downloads.startError = nil }
-        } message: {
-            Text(downloads.startError ?? "")
-        }
     }
 
     private var list: some View {
+        #if os(macOS)
+        macList
+        #else
+        rowList
+        #endif
+    }
+
+    #if os(macOS)
+    /// In progress, then ready to watch, then failed (Midnight).
+    private var macList: some View {
+        let sections: [(title: String, items: [DownloadItem])] = [
+            ("In progress", downloads.items.filter(\.state.isActive)),
+            ("Ready to watch", downloads.items.filter { $0.state == .completed }),
+            ("Failed", downloads.items.filter { if case .failed = $0.state { return true } else { return false } })
+        ].filter { !$0.items.isEmpty }
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(sections, id: \.title) { section in
+                    MidnightSectionHeader(
+                        title: section.title,
+                        meta: "\(section.items.count) download\(section.items.count == 1 ? "" : "s")"
+                    )
+                    ForEach(section.items) { item in
+                        MacDownloadRow(
+                            item: item,
+                            play: { play(item, fromStart: false) },
+                            playFromStart: { play(item, fromStart: true) },
+                            reveal: { reveal(item) },
+                            retry: { Task { await downloads.retry(item, using: client) } },
+                            remove: { Task { await downloads.delete(item) } }
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, Theme.spacingLG)
+        }
+    }
+    #endif
+
+    private var rowList: some View {
         ScrollView {
+
             LazyVStack(spacing: Theme.spacingSM) {
                 ForEach(downloads.items) { item in
                     DownloadRow(
@@ -59,6 +108,22 @@ struct DownloadsView: View {
     }
 
     private var emptyView: some View {
+        #if os(macOS)
+        VStack(spacing: Theme.spacingMD) {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(MidnightPalette.accent)
+            Text("No downloads")
+                .midnightDisplay(20)
+                .foregroundStyle(MidnightPalette.ink)
+            Text(emptyMessage)
+                .font(.archivo(12.5))
+                .foregroundStyle(MidnightPalette.inkSoft)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
         VStack(spacing: Theme.spacingMD) {
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 48))
@@ -73,6 +138,7 @@ struct DownloadsView: View {
                 .frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
     }
 
     private var emptyMessage: String {
@@ -103,6 +169,29 @@ struct DownloadsView: View {
         guard let url = downloads.fileURL(for: item) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
         #endif
+    }
+}
+
+/// Title, identifier, refresh and the start-error alert, shared by both layouts.
+private struct DownloadsChrome: ViewModifier {
+    @ObservedObject var downloads: DownloadManager
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle("Downloads")
+            .accessibilityIdentifier("downloads-view")
+            .task { await downloads.refresh() }
+            .alert(
+                "Download",
+                isPresented: Binding(
+                    get: { downloads.startError != nil },
+                    set: { if !$0 { downloads.startError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { downloads.startError = nil }
+            } message: {
+                Text(downloads.startError ?? "")
+            }
     }
 }
 #endif
