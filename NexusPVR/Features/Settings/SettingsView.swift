@@ -139,7 +139,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: Theme.spacingXL) {
                     HStack(alignment: .center, spacing: Theme.spacingMD) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 14)
+                            RoundedRectangle(cornerRadius: Theme.radius(14))
                                 .fill(Theme.guideNowPlaying.opacity(0.95))
                                 .frame(width: 56, height: 56)
                             Image(systemName: "gearshape.fill")

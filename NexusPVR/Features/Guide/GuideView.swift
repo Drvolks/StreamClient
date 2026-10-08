@@ -1173,7 +1173,7 @@ struct GuideView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .background(isFocused ? Theme.accent.opacity(0.3) : Color.clear)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: Theme.radius(4))
                                 .stroke(isFocused ? Theme.accent : Color.clear, lineWidth: 2)
                         )
                 } else {
@@ -1209,14 +1209,14 @@ struct GuideView: View {
         .padding(.trailing, 10)
         .frame(width: channelWidth, height: rowHeight - 10)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .fill(Theme.surfaceElevated.opacity(0.92))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(isSelected ? Theme.accent.opacity(0.6) : Theme.surfaceHighlight.opacity(0.55), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(10)))
     }
 
     private func tvOSProgramCell(program: Program, channel: Channel, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
@@ -1294,12 +1294,12 @@ struct GuideView: View {
             .padding(.vertical, 8)
         }
         .frame(width: max(cellWidth - 4, 80), height: rowHeight - 10, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(bgColor))
+        .background(RoundedRectangle(cornerRadius: Theme.radius(10)).fill(bgColor))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(isFocused ? Theme.accent.opacity(0.95) : Color.clear, lineWidth: 3)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(10)))
         .shadow(color: isFocused ? Theme.accent.opacity(0.22) : .clear, radius: 10, x: 0, y: 1)
         .scaleEffect(isFocused ? 1.015 : 1.0, anchor: .leading)
         .zIndex(isFocused ? 1 : 0)
@@ -1385,11 +1385,11 @@ struct GuideView: View {
         .padding(.horizontal, Theme.spacingLG)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .fill(Theme.surface.opacity(0.55))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .stroke(isFocused ? Theme.surfaceHighlight : Color.clear, lineWidth: 1)
         )
         .padding(.horizontal, 4)
@@ -1440,11 +1440,11 @@ struct GuideView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .fill(isActive ? Color.white : Theme.surfaceElevated.opacity(0.75))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .stroke(isActive ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
         )
         .scaleEffect(isActive ? 1.06 : 1.0)
@@ -1484,11 +1484,11 @@ struct GuideView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.75))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
         )
         .scaleEffect(isFocused ? 1.06 : 1.0)
@@ -1522,11 +1522,11 @@ struct GuideView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
+                            RoundedRectangle(cornerRadius: Theme.radius(10))
                                 .fill(isSelected ? Theme.surfaceElevated : Theme.surface.opacity(0.3))
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10)
+                            RoundedRectangle(cornerRadius: Theme.radius(10))
                                 .stroke(isSelected ? Theme.accent : Theme.surfaceHighlight.opacity(0.5), lineWidth: isSelected ? 2 : 1)
                         )
                     }
@@ -1536,7 +1536,7 @@ struct GuideView: View {
         .padding(.horizontal, Theme.spacingLG)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .fill(.ultraThinMaterial)
         )
         .padding(.horizontal, 8)
@@ -1558,11 +1558,11 @@ struct GuideView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radius(8))
                     .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.8))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radius(8))
                     .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
             )
             .scaleEffect(isFocused ? 1.06 : 1.0)
@@ -1821,11 +1821,11 @@ struct GuideView: View {
         .padding(Theme.spacingSM)
         .frame(width: channelWidth, height: rowHeight)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .fill(Theme.surfaceElevated.opacity(0.9))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(Theme.surfaceHighlight.opacity(0.55), lineWidth: 1)
         )
         #else

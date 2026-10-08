@@ -300,7 +300,7 @@ private struct TVRecordingFocusWrapper<Content: View>: View {
     var body: some View {
         content()
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: Theme.radius(14))
                     .stroke(isFocused ? Theme.accent.opacity(0.8) : Color.clear, lineWidth: 1.5)
             )
             .shadow(color: isFocused ? .black.opacity(0.28) : .clear, radius: 7, x: 0, y: 2)
@@ -530,11 +530,11 @@ struct RecordingRowTV: View {
                 .padding(.horizontal, Theme.spacingMD)
                 .frame(width: Theme.channelColumnWidth, height: rowHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: Theme.radius(10))
                         .fill(channelCellBackground)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: Theme.radius(10))
                         .stroke(
                             isFocused ? Theme.accent.opacity(0.35) : Theme.surfaceHighlight.opacity(0.55),
                             lineWidth: 1
@@ -680,9 +680,9 @@ struct RecordingRowTV: View {
                     }
                 }
                 .frame(height: rowHeight)
-                .background(RoundedRectangle(cornerRadius: 12).fill(rightCellBackground))
+                .background(RoundedRectangle(cornerRadius: Theme.radius(12)).fill(rightCellBackground))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: Theme.radius(12))
                         .stroke(isFocused ? Theme.accent.opacity(0.75) : Color.clear, lineWidth: 1.5)
                 )
                 .shadow(color: isFocused ? .black.opacity(0.22) : .clear, radius: 6, x: 0, y: 2)

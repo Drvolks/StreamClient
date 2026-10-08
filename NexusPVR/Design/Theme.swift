@@ -91,22 +91,41 @@ enum Theme {
 
     // MARK: - Primary Colors
 
+    // macOS uses the Midnight palette; iOS and tvOS keep the brand colours
+    // until they get their own redesign pass.
+    #if os(macOS)
+    static let accent = MidnightPalette.accent
+    #else
     static let accent = Brand.accent
+    #endif
     static let accentSecondary = Brand.accentSecondary
 
     // MARK: - Background Colors
 
+    #if os(macOS)
+    static let background = MidnightPalette.shell
+    static let surface = MidnightPalette.railHead
+    static let surfaceElevated = MidnightPalette.rail
+    static let surfaceHighlight = MidnightPalette.cellRest
+    #else
     static let background = Brand.background
     static let surface = Brand.surface
     static let surfaceElevated = Brand.surfaceElevated
     static let surfaceHighlight = Brand.surfaceHighlight
+    #endif
     static let channelColumnBackground = Brand.channelColumnBackground
 
     // MARK: - Text Colors
 
+    #if os(macOS)
+    static let textPrimary = MidnightPalette.ink
+    static let textSecondary = MidnightPalette.inkSoft
+    static let textTertiary = MidnightPalette.inkFaint
+    #else
     static let textPrimary = Brand.textPrimary
     static let textSecondary = Brand.textSecondary
     static let textTertiary = Brand.textTertiary
+    #endif
 
     // MARK: - Status Colors
 
@@ -117,7 +136,11 @@ enum Theme {
 
     // MARK: - Guide Colors
 
+    #if os(macOS)
+    static let guideNowPlaying = MidnightPalette.accent
+    #else
     static let guideNowPlaying = Brand.guideNowPlaying
+    #endif
 
     // MARK: - Focus Colors (tvOS)
 
@@ -144,9 +167,20 @@ enum Theme {
 
     // MARK: - Corner Radius
 
-    static let cornerRadiusSM: CGFloat = 8
-    static let cornerRadiusMD: CGFloat = 12
-    static let cornerRadiusLG: CGFloat = 20
+    // Midnight follows the Modernist rule of square corners, so every radius
+    // is zero on macOS.
+    static let cornerRadiusSM: CGFloat = radius(8)
+    static let cornerRadiusMD: CGFloat = radius(12)
+    static let cornerRadiusLG: CGFloat = radius(20)
+
+    /// A one-off corner radius: `value` on iOS and tvOS, zero on macOS.
+    static func radius(_ value: CGFloat) -> CGFloat {
+        #if os(macOS)
+        0
+        #else
+        value
+        #endif
+    }
 
     // MARK: - Animation
 
@@ -186,7 +220,7 @@ struct NewBadge: View {
             .padding(.horizontal, compact ? 4 : 5)
             .padding(.vertical, 2)
             .background(Theme.success)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
     }
 }
 
@@ -207,7 +241,7 @@ struct RecBadge: View {
             .padding(.horizontal, compact ? 4 : 5)
             .padding(.vertical, 2)
             .background(Theme.recording)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
             .opacity(isActive ? 1.0 : 0.6)
     }
 }
@@ -226,7 +260,7 @@ struct CatchupBadge: View {
             .padding(.horizontal, compact ? 4 : 5)
             .padding(.vertical, 2)
             .background(Theme.catchup)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
     }
 }
 

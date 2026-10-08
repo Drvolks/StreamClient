@@ -639,10 +639,10 @@ struct CalendarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: blockHeight, alignment: .top)
             .background(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: Theme.radius(4))
                     .fill(colorForKeyword(item.matchedKeyword).opacity(item.program.isCurrentlyAiring ? 0.6 : 0.4))
             )
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(4)))
             .overlay {
                 // Catch-up replaces NEW in the top-right status position.
                 if catchupAvailable {

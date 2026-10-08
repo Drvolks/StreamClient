@@ -582,11 +582,11 @@ struct ChannelsView: View {
             .frame(minHeight: 62)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: Theme.radius(12))
                     .fill(Theme.surface.opacity(0.55))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: Theme.radius(12))
                     .stroke(Theme.surfaceHighlight.opacity(0.5), lineWidth: 1)
             )
 
@@ -709,7 +709,7 @@ struct ChannelsView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .fill(.ultraThinMaterial)
         )
         .padding(.horizontal, 8)
@@ -1145,11 +1145,11 @@ private struct TVPillFieldFocusWrapper<Content: View>: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radius(8))
                     .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.75))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radius(8))
                     .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
             )
             .scaleEffect(isFocused ? 1.06 : 1.0)
@@ -1187,11 +1187,11 @@ private struct ChannelsDrawerItemFocusWrapper<Content: View>: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .fill(isFocused ? Theme.surfaceElevated : Theme.surface.opacity(0.3))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(isFocused ? Theme.accent : Theme.surfaceHighlight.opacity(0.5), lineWidth: isFocused ? 2 : 1)
         )
         .animation(.easeInOut(duration: 0.12), value: isFocused)

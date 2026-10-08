@@ -218,7 +218,7 @@ private struct TVTopicFocusWrapper<Content: View>: View {
     var body: some View {
         content()
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: Theme.radius(14))
                     .stroke(isFocused ? Theme.accent.opacity(0.8) : Color.clear, lineWidth: 1.5)
             )
             .shadow(color: isFocused ? .black.opacity(0.28) : .clear, radius: 7, x: 0, y: 2)
@@ -398,7 +398,7 @@ struct TopicProgramRowTV: View {
                                 Theme.success
                                     .frame(width: 8, height: 24)
                                     .clipShape(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        RoundedRectangle(cornerRadius: Theme.radius(4), style: .continuous)
                                     )
                             }
                             Spacer()
@@ -406,7 +406,7 @@ struct TopicProgramRowTV: View {
                     }
                 }
                 .frame(height: Theme.cellHeight)
-                .background(RoundedRectangle(cornerRadius: 12).fill(rightCellBackground))
+                .background(RoundedRectangle(cornerRadius: Theme.radius(12)).fill(rightCellBackground))
             }
         }
         .buttonStyle(TVTopicSubtleButtonStyle())

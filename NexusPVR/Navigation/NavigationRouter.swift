@@ -1161,7 +1161,7 @@ struct IOSNavigation: View {
             .disabled(programMatchCount == 0)
         }
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(16)))
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
     }
 }
@@ -1614,7 +1614,7 @@ struct TVOSNavigation: View {
         return Button(action: action) {
             HStack(spacing: 14) {
                 // Selected indicator
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: Theme.radius(2))
                     .fill(isSelected ? Theme.accent : Color.clear)
                     .frame(width: 4, height: indicatorHeight)
 
@@ -1752,7 +1752,7 @@ struct TVOSNavigation: View {
         } label: {
             HStack(spacing: 10) {
                 // Selected indicator
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: Theme.radius(2))
                     .fill(isSelected ? Theme.accent : Color.clear)
                     .frame(width: 3, height: 22)
 
@@ -1812,7 +1812,7 @@ struct TVOSNavigation: View {
 
     private func tvOSSidebarStaticSubRow(label: String) -> some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)
+            RoundedRectangle(cornerRadius: Theme.radius(2))
                 .fill(Color.clear)
                 .frame(width: 3, height: 22)
             Text(label)
@@ -2251,7 +2251,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2277,7 +2277,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2302,7 +2302,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2328,7 +2328,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2354,7 +2354,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2381,7 +2381,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2408,7 +2408,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2434,7 +2434,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2461,7 +2461,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2486,7 +2486,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2516,7 +2516,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2656,7 +2656,7 @@ struct MacOSNavigation: View {
             .disabled(programMatchCount == 0)
         }
         .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(16)))
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
     }
 }
