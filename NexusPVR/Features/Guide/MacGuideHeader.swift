@@ -55,6 +55,7 @@ struct MacGuideHeader: View {
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 13, weight: .bold))
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(MidnightOutlineButtonStyle())
             .disabled(isRefreshing)
@@ -68,6 +69,7 @@ struct MacGuideHeader: View {
                           ? "line.3.horizontal.decrease.circle.fill"
                           : "line.3.horizontal.decrease")
                         .font(.system(size: 13, weight: .bold))
+                        .frame(width: 16, height: 16)
                         .foregroundStyle(hasActiveFilters ? MidnightPalette.accent : MidnightPalette.ink)
                 }
                 .buttonStyle(MidnightOutlineButtonStyle())

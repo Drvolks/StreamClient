@@ -127,6 +127,15 @@ enum Theme {
     static let textTertiary = Brand.textTertiary
     #endif
 
+    /// Text and icons drawn on an `accent` fill. White can't be read on the
+    /// bright Midnight cyan, so macOS uses the field ink (dark on Night,
+    /// white on Day).
+    #if os(macOS)
+    static let textOnAccent = MidnightPalette.fieldInk
+    #else
+    static let textOnAccent = Color.white
+    #endif
+
     // MARK: - Status Colors
 
     static let success = Brand.success
@@ -285,7 +294,7 @@ struct AccentButtonStyle: ButtonStyle {
             .padding(.horizontal, Theme.spacingLG)
             .padding(.vertical, Theme.spacingMD)
             .background(isEnabled ? Theme.accent : Theme.textTertiary)
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.textOnAccent)
             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
             .scaleEffect(configuration.isPressed ? 0.95 : isFocused ? 1.05 : 1)
             .shadow(color: isFocused ? Theme.accent.opacity(0.6) : .clear, radius: isFocused ? 12 : 0)

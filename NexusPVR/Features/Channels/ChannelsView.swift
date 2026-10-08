@@ -29,6 +29,11 @@ struct ChannelsView: View {
     // name + start time for servers where epgEventId doesn't line up.
     @State private var recordingsByEventId: [Int: Recording] = [:]
     @State private var recordingsByNameAndStart: [String: Recording] = [:]
+    #if os(macOS)
+    /// The current program whose detail sheet is open (card "Info" action).
+    @State private var macDetail: ProgramDetail?
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
     #if os(tvOS)
     @FocusState private var focusedChannelId: Int?
     @State private var requestTVSearchKeyboard = false
@@ -54,6 +59,10 @@ struct ChannelsView: View {
         #if os(tvOS)
         return [
             GridItem(.adaptive(minimum: 320, maximum: 420), spacing: Theme.spacingMD)
+        ]
+        #elseif os(macOS)
+        return [
+            GridItem(.adaptive(minimum: 176, maximum: 300), spacing: 14)
         ]
         #else
         return [
@@ -243,12 +252,38 @@ struct ChannelsView: View {
         // channels tab the same title-bar-respecting inset as the guide.
         NavigationStack {
             VStack(spacing: 0) {
-                macOSChannelsNavBar
+                MacChannelsHeader(
+                    title: macOSTitle,
+                    channelCount: visibleChannels.count,
+                    searchText: $appState.guideChannelFilter,
+                    isRefreshing: epgCache.isRefreshing,
+                    showsFilterButton: hasFilterData,
+                    hasActiveFilters: hasActiveFilters,
+                    onRefresh: { Task { await refreshChannels() } },
+                    onToggleFilters: {
+                        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+                            showFilters.toggle()
+                        }
+                    }
+                )
+                if showFilters && hasFilterData {
+                    filterPanel
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 content
                     .accessibilityIdentifier("channels-view")
             }
         }
-        .background(.ultraThinMaterial)
+        .background(MidnightGradients.ground(colorScheme))
+        .sheet(item: $macDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
+            ProgramDetailView(
+                program: detail.program,
+                channel: detail.channel,
+                initialRecordingId: recording(for: detail.program)?.id
+            )
+            .environmentObject(client)
+            .environmentObject(appState)
+        }
         .alert("Error", isPresented: .constant(streamError != nil)) {
             Button("OK") { streamError = nil }
         } message: {
@@ -441,7 +476,7 @@ struct ChannelsView: View {
             emptyView
         }
         #elseif os(macOS)
-        // Filters live in the floating nav bar on macOS.
+        // The header and filter panel sit above the content on macOS.
         emptyView
         #else
         VStack(spacing: 0) {
@@ -485,6 +520,26 @@ struct ChannelsView: View {
     }
 
     private var cardsGrid: some View {
+        #if os(macOS)
+        LazyVGrid(columns: columns, spacing: 14) {
+            ForEach(visibleChannels) { channel in
+                macCard(for: channel)
+                    #if DISPATCHERPVR
+                    .contextMenu {
+                        if channel.isCatchup && channel.catchupDays > 0 {
+                            Button {
+                                appState.selectedCatchupChannel = channel
+                            } label: {
+                                Label("Show Catch-up Programs", systemImage: "clock.arrow.circlepath")
+                            }
+                        }
+                    }
+                    #endif
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        #else
         LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
             ForEach(visibleChannels) { channel in
                 Button {
@@ -522,6 +577,7 @@ struct ChannelsView: View {
             }
         }
         .padding(Theme.spacingMD)
+        #endif
     }
 
     private func play(channel: Channel) {
@@ -875,82 +931,101 @@ struct ChannelsView: View {
     }
 
     #if os(macOS)
-    /// macOS nav bar, mirroring the guide's `macOSGuideNavBar`: a capsule search
-    /// field on the left and a filter toggle on the right. Rendered at the top of
-    /// the content in normal flow, below the title bar.
-    private var macOSChannelsNavBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: Theme.spacingSM) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.textTertiary)
-                    TextField("Search channels", text: $appState.guideChannelFilter)
-                        .textFieldStyle(.plain)
-                        .frame(width: 220)
-                        .accessibilityIdentifier("channels-view-field")
-                    if !appState.guideChannelFilter.isEmpty {
-                        Button {
-                            appState.guideChannelFilter = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.textTertiary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
+    private var macOSTitle: String {
+        #if DISPATCHERPVR
+        if appState.guideProfileFilter != nil { return selectedProfileLabel }
+        #endif
+        return appState.guideGroupFilter != nil ? selectedGroupLabel : "All Channels"
+    }
 
-                Spacer()
-
-                // macOS has no pull-to-refresh gesture, so the page gets an
-                // explicit refresh button next to the filter toggle (#118).
-                Button {
-                    Task { await refreshChannels() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 32, height: 32)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                }
-                .buttonStyle(.plain)
-                .disabled(epgCache.isRefreshing)
-                .accessibilityLabel("Refresh channels")
-                .accessibilityIdentifier("channels-refresh-button")
-
-                if hasFilterData {
-                    Button {
-                        withAnimation(.easeInOut(duration: Theme.animationDuration)) {
-                            showFilters.toggle()
-                        }
-                    } label: {
-                        Image(systemName: hasActiveFilters
-                              ? "line.3.horizontal.decrease.circle.fill"
-                              : "line.3.horizontal.decrease")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(hasActiveFilters ? Theme.accent : Theme.textPrimary)
-                            .frame(width: 32, height: 32)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(showFilters ? "Hide filters" : "Show filters")
-                }
+    private func macCard(for channel: Channel) -> some View {
+        let program = epgCache.currentProgram(for: channel, at: now)
+        let rec = program.flatMap { recording(for: $0) }
+        return MacChannelCard(
+            channel: channel,
+            iconURL: try? client.channelIconURL(channelId: channel.id),
+            groupName: populatedGroups.first { channel.isMember(ofGroup: $0.id) }?.name,
+            currentProgram: program,
+            now: now,
+            matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
+            isScheduledRecording: rec != nil,
+            isCurrentlyRecording: rec?.recordingStatus == .recording,
+            canWatchFromStart: program.map { canWatchFromStart(channel: channel, program: $0, recording: rec) } ?? false,
+            showsRecord: !appState.hideRecordings,
+            onWatch: { play(channel: channel) },
+            onWatchFromStart: {
+                guard let program else { return }
+                watchFromStart(channel: channel, program: program, recording: rec)
+            },
+            onRecord: {
+                guard let program else { return }
+                toggleRecording(channel: channel, program: program, recording: rec)
+            },
+            onInfo: {
+                guard let program else { return }
+                macDetail = ProgramDetail(program: program, channel: channel)
             }
-            .padding(.horizontal, Theme.spacingMD)
-            .padding(.vertical, Theme.spacingSM)
+        )
+    }
 
-            if showFilters && hasFilterData {
-                filterPanel
-                    .transition(.move(edge: .top).combined(with: .opacity))
+    /// Catch-up can restart the airing program on Dispatcharr; otherwise an
+    /// in-progress recording of it can be played from its start.
+    private func canWatchFromStart(channel: Channel, program: Program, recording: Recording?) -> Bool {
+        #if DISPATCHERPVR
+        if CatchupAvailability.isAvailableFromStart(
+            program: program,
+            channelIsCatchup: channel.isCatchup,
+            catchupDays: channel.catchupDays
+        ) {
+            return true
+        }
+        #endif
+        return recording?.recordingStatus == .recording
+    }
+
+    private func watchFromStart(channel: Channel, program: Program, recording: Recording?) {
+        Task {
+            do {
+                #if DISPATCHERPVR
+                if CatchupAvailability.isAvailableFromStart(
+                    program: program,
+                    channelIsCatchup: channel.isCatchup,
+                    catchupDays: channel.catchupDays
+                ) {
+                    try await CatchupPlayback.start(
+                        program: program,
+                        channel: channel,
+                        client: client,
+                        appState: appState,
+                        guideReturnTime: nil
+                    )
+                    return
+                }
+                #endif
+                guard let recording, recording.recordingStatus == .recording else { return }
+                let url = try await appState.preparingStream {
+                    try await client.recordingStreamURL(recordingId: recording.id)
+                }
+                appState.playStream(url: url, title: program.name, recordingId: recording.id)
+            } catch {
+                streamError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Schedules the airing program, or cancels its recording if one is set.
+    private func toggleRecording(channel: Channel, program: Program, recording: Recording?) {
+        Task {
+            do {
+                if let recording {
+                    try await client.cancelRecording(recordingId: recording.id)
+                } else {
+                    try await client.scheduleRecording(program: program, channel: channel)
+                }
+                // Reloads this page's REC badges and any other open list.
+                NotificationCenter.default.post(name: .recordingsDidChange, object: nil)
+            } catch {
+                streamError = error.localizedDescription
             }
         }
     }

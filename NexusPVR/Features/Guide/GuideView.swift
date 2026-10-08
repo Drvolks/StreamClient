@@ -11,13 +11,6 @@ import UIKit
 #endif
 
 
-// Helper struct to hold both program and channel for sheet presentation
-private struct ProgramDetail: Identifiable {
-    var id: Int { program.id }
-    let program: Program
-    let channel: Channel
-}
-
 struct GuideView: View {
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState

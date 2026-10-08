@@ -258,17 +258,11 @@ final class GuideViewModel: ObservableObject {
             keywordMatchByProgramId = [:]
             return
         }
-        let lowercasedKeywords = keywords.map { ($0, $0.lowercased()) }
         var matches: [Int: String] = [:]
         for channel in channels {
             for program in cache.programs(for: channel.id, on: selectedDate) {
-                let searchText = [
-                    program.name,
-                    program.subtitle ?? "",
-                    program.desc ?? ""
-                ].joined(separator: " ").lowercased()
-                if let keyword = lowercasedKeywords.first(where: { searchText.contains($0.1) }) {
-                    matches[program.id] = keyword.0
+                if let keyword = TopicMatcher.matchedKeyword(for: program, in: keywords) {
+                    matches[program.id] = keyword
                 }
             }
         }

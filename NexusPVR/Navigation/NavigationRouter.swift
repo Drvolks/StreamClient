@@ -2567,7 +2567,9 @@ struct MacOSNavigation: View {
         }
         .padding(.horizontal, 10)
         .frame(height: MacGuideHeaderMetrics.searchHeight)
-        .background(MidnightPalette.inputBg)
+        // Closure form: a plain colour background would bleed up into the
+        // title bar's safe area.
+        .background { Rectangle().fill(MidnightPalette.inputBg) }
         .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
 
