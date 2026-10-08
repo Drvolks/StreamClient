@@ -4,7 +4,7 @@
 //
 //  A program in the macOS guide grid (Midnight). Upcoming cells rest on a
 //  lifted plate, past ones fade, the airing one sits on the accent field and
-//  a selected one inverts. A topic match layers an outline and a tag on top.
+//  a selected one inverts. A topic match adds a badge.
 //
 
 #if os(macOS)
@@ -60,9 +60,7 @@ struct MacProgramCell: View {
             }
         }
         .overlay {
-            if matchedTopic != nil {
-                Rectangle().strokeBorder(MidnightPalette.topic, lineWidth: 2)
-            } else if isHovering && !isSelected {
+            if isHovering && !isSelected {
                 Rectangle().strokeBorder(MidnightPalette.accent.opacity(0.7), lineWidth: 1)
             }
         }
@@ -135,9 +133,8 @@ struct MacProgramCell: View {
 
     // MARK: Colours
 
-    /// The 4pt leading bar. A topic match outranks the state it sits on.
+    /// The 4pt leading bar indicates the selected or airing state.
     private var barColor: Color? {
-        if matchedTopic != nil { return MidnightPalette.topic }
         if isSelected { return MidnightPalette.accent }
         if isAiring && !isCurrentlyRecording { return MidnightPalette.accentSoft }
         return nil

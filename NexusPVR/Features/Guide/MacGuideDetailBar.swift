@@ -52,7 +52,7 @@ struct MacGuideDetailBar: View {
     private func details(program: Program, channel: Channel) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 10) {
-                Text("\(channel.name) · \(channel.number)")
+                Text(channel.name)
                     .midnightKicker(10)
                     .foregroundStyle(MidnightPalette.accentSoft)
                 if program.isCurrentlyAiring {

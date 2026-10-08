@@ -48,11 +48,7 @@ struct MacChannelCard: View {
         }
         .background(MidnightPalette.cellRest)
         .overlay {
-            if matchedTopic != nil {
-                Rectangle().strokeBorder(MidnightPalette.topic, lineWidth: 2)
-            } else {
-                Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
-            }
+            Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("channel-card-\(channel.id)")

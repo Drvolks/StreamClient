@@ -2,8 +2,8 @@
 //  MidnightChannelPlate.swift
 //  nextpvr-apple-client
 //
-//  A channel's logo on its plate, with its number in the bottom-right
-//  corner. The name only shows when there is no logo. Used by the macOS guide column and the channel cards.
+//  A channel's logo on its plate. The name only shows when there is no logo.
+//  Used by the macOS guide column and the channel cards.
 //
 
 #if os(macOS)
@@ -40,14 +40,6 @@ struct MidnightChannelPlate: View {
                     .foregroundStyle(Self.plateInk)
                     .padding(.horizontal, 12)
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Text(verbatim: "\(channel.number)")
-                .midnightMeta(10, weight: .heavy)
-                .foregroundStyle(MidnightPalette.accentSoft)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(MidnightPalette.shell)
         }
     }
 }
