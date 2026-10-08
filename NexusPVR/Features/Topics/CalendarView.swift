@@ -11,12 +11,8 @@ import SwiftUI
 
 // MARK: - Constants
 
-#if os(macOS)
-// Taller hours on macOS so a 15-minute program still gets a readable line.
+// Tall hours, so a 15-minute program still gets a readable line.
 private let hourHeight: CGFloat = 80
-#else
-private let hourHeight: CGFloat = 60
-#endif
 /// Shortest a block is drawn, unless the next program leaves less room.
 private let minimumBlockHeight: CGFloat = 20
 private let timeColumnWidth: CGFloat = 50
@@ -109,10 +105,6 @@ struct CalendarView: View {
         }
     }
 
-    private var blockTextColor: Color {
-        colorScheme == .dark ? .white : .black
-    }
-
     private var programsByDate: [Date: [MatchingProgram]] {
         Dictionary(grouping: filteredPrograms) { item in
             Calendar.current.startOfDay(for: item.program.startDate)
@@ -167,11 +159,7 @@ struct CalendarView: View {
             }
             .accessibilityIdentifier("calendar-view")
             .frame(maxHeight: .infinity)
-            #if os(macOS)
             .background(MidnightGradients.ground(colorScheme))
-            #else
-            .background(Theme.background)
-            #endif
             .onGeometryChange(for: CGFloat.self) { geo in
                 geo.size.width
             } action: { newWidth in
@@ -179,6 +167,8 @@ struct CalendarView: View {
             }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(MidnightPalette.railHead, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .sidebarMenuToolbar()
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -190,7 +180,9 @@ struct CalendarView: View {
                         .disabled(!canNavigateBack)
 
                         Text(dateRangeLabel)
-                            .font(.subheadline.weight(.medium))
+                            .font(.archivo(15, .extraBold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(MidnightPalette.ink)
                             .lineLimit(1)
 
                         Button { navigateForward() } label: {
@@ -349,6 +341,7 @@ struct CalendarView: View {
             return "\(day.string(from: first)) – \(day.string(from: last))"
         }
     }
+    #endif
 
     /// The accent now-line across a day column, while that day is today.
     @ViewBuilder
@@ -363,7 +356,6 @@ struct CalendarView: View {
         }
         .allowsHitTesting(false)
     }
-    #endif
 
     // MARK: - Day View
 
@@ -396,11 +388,9 @@ struct CalendarView: View {
                             let layout = columns[item.id]
                             programBlock(item, columnOffset: timeColumnWidth, columnWidth: availableWidth, slot: layout)
                         }
-                        #if os(macOS)
                         if cal.isDateInToday(selectedDate) {
                             nowLine(xOffset: timeColumnWidth, width: availableWidth)
                         }
-                        #endif
                     }
                 }
                 .padding(.trailing, Theme.spacingSM)
@@ -445,7 +435,6 @@ struct CalendarView: View {
                 Color.clear.frame(width: timeColumnWidth, height: 1)
                 ForEach(dates, id: \.self) { date in
                     let isToday = cal.isDateInToday(date)
-                    #if os(macOS)
                     VStack(spacing: 1) {
                         Text({
                             dayFormatter.dateFormat = "EEE"
@@ -464,37 +453,14 @@ struct CalendarView: View {
                             Rectangle().fill(MidnightPalette.accent).frame(height: 2)
                         }
                     }
-                    #else
-                    VStack(spacing: 2) {
-                        Text({
-                            dayFormatter.dateFormat = "EEE"
-                            return dayFormatter.string(from: date)
-                        }())
-                            .font(.caption2)
-                            .foregroundStyle(isToday ? Theme.accent : Theme.textTertiary)
-                        Text("\(cal.component(.day, from: date))")
-                            .font(.subheadline)
-                            .fontWeight(isToday ? .bold : .regular)
-                            .foregroundStyle(isToday ? Theme.accent : Theme.textPrimary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.spacingXS)
-                    #endif
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
-            #if os(macOS)
             .background(MidnightPalette.railHead)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(MidnightPalette.line).frame(height: 1)
             }
-            #else
-            .background(Theme.surface)
-            #endif
 
-            #if !os(macOS)
-            Divider()
-            #endif
 
             // Timeline
             ScrollViewReader { proxy in
@@ -507,13 +473,8 @@ struct CalendarView: View {
                             // Vertical column dividers
                             ForEach(0..<dates.count, id: \.self) { index in
                                 Rectangle()
-                                    #if os(macOS)
                                     .fill(MidnightPalette.lineSoft)
                                     .frame(width: 1)
-                                    #else
-                                    .fill(Theme.surfaceHighlight.opacity(0.5))
-                                    .frame(width: 0.5)
-                                    #endif
                                     .offset(x: timeColumnWidth + columnWidth * CGFloat(index))
                             }
 
@@ -528,11 +489,9 @@ struct CalendarView: View {
                                     programBlock(item, columnOffset: xOffset + 1, columnWidth: columnWidth - 2, slot: layout)
                                 }
                             }
-                            #if os(macOS)
                             if let todayIndex = dates.firstIndex(where: { cal.isDateInToday($0) }) {
                                 nowLine(xOffset: timeColumnWidth + columnWidth * CGFloat(todayIndex), width: columnWidth)
                             }
-                            #endif
                         }
                     }
                 }
@@ -557,7 +516,6 @@ struct CalendarView: View {
     private var timelineVStack: some View {
         VStack(spacing: 0) {
             ForEach(startHour..<endHour, id: \.self) { hour in
-                #if os(macOS)
                 // The rule sits exactly on the hour, where the blocks are
                 // positioned; the label is centred on it.
                 ZStack(alignment: .topLeading) {
@@ -573,24 +531,6 @@ struct CalendarView: View {
                 }
                 .frame(height: hourHeight, alignment: .top)
                 .id(hour)
-                #else
-                VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        Text(hourLabel(hour))
-                            .font(.caption2)
-                            .foregroundStyle(Theme.textTertiary)
-                            .frame(width: timeColumnWidth, alignment: .trailing)
-                            .padding(.trailing, 4)
-
-                        Rectangle()
-                            .fill(Theme.textTertiary.opacity(0.3))
-                            .frame(height: 0.5)
-                    }
-                    Spacer()
-                }
-                .frame(height: hourHeight)
-                .id(hour)
-                #endif
             }
         }
     }
@@ -635,8 +575,7 @@ struct CalendarView: View {
                 channel: item.channel
             )
         } label: {
-            #if os(macOS)
-            MacCalendarBlock(
+            CalendarBlock(
                 program: item.program,
                 channel: item.channel,
                 topicColor: colorForKeyword(item.matchedKeyword),
@@ -645,90 +584,6 @@ struct CalendarView: View {
                 isCatchupAvailable: catchupAvailable
             )
             .padding(.horizontal, 1)
-            #else
-            ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.program.cleanName)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(blockTextColor)
-                        .lineLimit(blockHeight > 40 ? 2 : 1)
-
-                    if blockHeight > 35 {
-                        Text(item.channel.name)
-                            .font(.tvScaled(size: 9))
-                            .foregroundStyle(blockTextColor.opacity(0.8))
-                            .lineLimit(1)
-                    }
-
-                    if blockHeight > 50 {
-                        Text("\(item.program.startDate.formatted(date: .omitted, time: .shortened)) - \(item.program.endDate.formatted(date: .omitted, time: .shortened))")
-                            .font(.tvScaled(size: 9))
-                            .foregroundStyle(blockTextColor.opacity(0.7))
-                    }
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: blockHeight, alignment: .top)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radius(4))
-                    .fill(colorForKeyword(item.matchedKeyword).opacity(item.program.isCurrentlyAiring ? 0.6 : 0.4))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(4)))
-            .overlay {
-                // Catch-up replaces NEW in the top-right status position.
-                if catchupAvailable {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Theme.catchup
-                                .frame(width: 4, height: 14)
-                                .clipShape(UnevenRoundedRectangle(
-                                    topLeadingRadius: 0,
-                                    bottomLeadingRadius: 2,
-                                    bottomTrailingRadius: 0,
-                                    topTrailingRadius: 4
-                                ))
-                        }
-                        Spacer()
-                    }
-                } else if item.program.shouldShowNewBadge {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Theme.success
-                                .frame(width: 4, height: 14)
-                                .clipShape(UnevenRoundedRectangle(
-                                    topLeadingRadius: 0,
-                                    bottomLeadingRadius: 2,
-                                    bottomTrailingRadius: 0,
-                                    topTrailingRadius: 4
-                                ))
-                        }
-                        Spacer()
-                    }
-                }
-                // Scheduled recording red band on bottom-right
-                if scheduledProgramIds.contains(item.program.id) {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Theme.recording
-                                .frame(width: 4, height: 14)
-                                .clipShape(UnevenRoundedRectangle(
-                                    topLeadingRadius: 2,
-                                    bottomLeadingRadius: 0,
-                                    bottomTrailingRadius: 4,
-                                    topTrailingRadius: 0
-                                ))
-                        }
-                    }
-                }
-            }
-            #endif
         }
         .buttonStyle(.plain)
         .offset(x: {

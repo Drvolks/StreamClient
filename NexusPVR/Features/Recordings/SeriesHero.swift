@@ -2,12 +2,11 @@
 //  SeriesHero.swift
 //  nextpvr-apple-client
 //
-//  The top of a series page (Midnight, macOS and tvOS): the poster on the
+//  The top of a series page (Midnight, all platforms): the poster on the
 //  series' fanart, with how many episodes there are and when the next one
 //  records.
 //
 
-#if os(macOS) || os(tvOS)
 import SwiftUI
 
 struct SeriesHero: View {
@@ -17,9 +16,13 @@ struct SeriesHero: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// tvOS draws the same hero larger, for the distance.
+    /// tvOS draws the same hero larger, for the distance; an iPhone-width
+    /// screen draws it smaller so the facts fit beside the poster.
     #if os(tvOS)
     private let scale: CGFloat = Theme.scaledFont(1.7)
+    #elseif os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var scale: CGFloat { horizontalSizeClass == .compact ? 0.72 : 1 }
     #else
     private let scale: CGFloat = 1
     #endif
@@ -123,4 +126,3 @@ struct SeriesHero: View {
         return parts.joined(separator: " · ")
     }
 }
-#endif

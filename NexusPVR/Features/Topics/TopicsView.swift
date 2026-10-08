@@ -16,9 +16,7 @@ struct TopicsView: View {
     @State private var refreshTrigger = UUID()
     @State private var selectedKeyword: String = ""
     @Environment(\.scenePhase) private var scenePhase
-    #if os(macOS) || os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
-    #endif
     #if os(macOS)
     @State private var streamError: String?
     #endif
@@ -98,7 +96,7 @@ struct TopicsView: View {
             if let streamError { Text(streamError) }
         }
         #else
-        .background(Theme.background)
+        .background(MidnightGradients.ground(colorScheme))
         #endif
         #if os(macOS)
         .onChange(of: appState.showingCalendar) { _ in
@@ -209,11 +207,16 @@ struct TopicsView: View {
             Group {
                 contentView
             }
+            #if os(iOS)
+            .background(MidnightGradients.ground(colorScheme))
+            #endif
             .accessibilityIdentifier("topics-view")
             #if os(iOS)
             .sidebarMenuToolbar()
-            .navigationTitle(appState.selectedTopicKeyword.isEmpty ? "Topics" : appState.selectedTopicKeyword)
-            .navigationBarTitleDisplayMode(.inline)
+            .midnightNavigationTitle(
+                appState.selectedTopicKeyword.isEmpty ? "Topics" : appState.selectedTopicKeyword,
+                kicker: "Topics · \(filteredPrograms.count) program\(filteredPrograms.count == 1 ? "" : "s")"
+            )
             #endif
             .detailCover(item: $selectedProgramDetail) { detail in
                 ProgramDetailView(
@@ -377,26 +380,37 @@ struct TopicsView: View {
         }
         #else
         List {
-            ForEach(filteredPrograms) { item in
-                TopicProgramRow(
-                    program: item.program,
-                    channel: item.channel,
-                    matchedKeyword: item.matchedKeyword,
-                    onRecordingChanged: {
-                        refreshTrigger = UUID()
-                    },
-                    onShowDetails: { recordingId, completedRecording in
-                        selectedProgramDetail = ProgramTopicDetail(
-                            program: item.program,
-                            channel: item.channel,
-                            recordingId: recordingId,
-                            completedRecording: completedRecording
-                        )
-                    }
+            ForEach(TopicDaySection.grouped(filteredPrograms)) { section in
+                MidnightSectionHeader(
+                    title: section.title,
+                    meta: "\(section.programs.count) program\(section.programs.count == 1 ? "" : "s")"
                 )
-                .contentShape(Rectangle())
-                .listRowBackground(Theme.surface)
-                .id("\(item.id)-\(refreshTrigger)")
+                .padding(.horizontal, 16)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
+
+                ForEach(section.programs) { item in
+                    TopicProgramRow(
+                        program: item.program,
+                        channel: item.channel,
+                        onRecordingChanged: {
+                            refreshTrigger = UUID()
+                        },
+                        onShowDetails: { recordingId, completedRecording in
+                            selectedProgramDetail = ProgramTopicDetail(
+                                program: item.program,
+                                channel: item.channel,
+                                recordingId: recordingId,
+                                completedRecording: completedRecording
+                            )
+                        }
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
+                    .id("\(item.id)-\(refreshTrigger)")
+                }
             }
             #if os(iOS)
             Color.clear
@@ -407,6 +421,7 @@ struct TopicsView: View {
             #endif
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .refreshable {
             await viewModel.loadData()
         }

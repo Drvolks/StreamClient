@@ -7,7 +7,7 @@
 //  colour, anything else outlined.
 //
 
-#if os(macOS) && DISPATCHERPVR
+#if !os(tvOS) && DISPATCHERPVR
 import SwiftUI
 
 struct MacStateChip: View {

@@ -6,7 +6,7 @@
 //  trailing control.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MacSettingsRow<Trailing: View>: View {

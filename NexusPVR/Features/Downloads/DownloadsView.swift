@@ -12,9 +12,7 @@ struct DownloadsView: View {
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var downloads: DownloadManager
-    #if os(macOS)
     @Environment(\.colorScheme) private var colorScheme
-    #endif
 
     var body: some View {
         #if os(macOS)
@@ -30,7 +28,7 @@ struct DownloadsView: View {
         .modifier(DownloadsChrome(downloads: downloads))
         #else
         content
-            .background(Theme.background)
+            .background(MidnightGradients.ground(colorScheme))
             .modifier(DownloadsChrome(downloads: downloads))
         #endif
     }
@@ -54,15 +52,18 @@ struct DownloadsView: View {
         #endif
     }
 
-    #if os(macOS)
     /// In progress, then ready to watch, then failed (Midnight).
-    private var macList: some View {
-        let sections: [(title: String, items: [DownloadItem])] = [
+    private var sections: [(title: String, items: [DownloadItem])] {
+        [
             ("In progress", downloads.items.filter(\.state.isActive)),
             ("Ready to watch", downloads.items.filter { $0.state == .completed }),
             ("Failed", downloads.items.filter { if case .failed = $0.state { return true } else { return false } })
         ].filter { !$0.items.isEmpty }
-        return ScrollView {
+    }
+
+    #if os(macOS)
+    private var macList: some View {
+        ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(sections, id: \.title) { section in
                     MidnightSectionHeader(
@@ -89,26 +90,31 @@ struct DownloadsView: View {
 
     private var rowList: some View {
         ScrollView {
-
-            LazyVStack(spacing: Theme.spacingSM) {
-                ForEach(downloads.items) { item in
-                    DownloadRow(
-                        item: item,
-                        fileURL: downloads.fileURL(for: item),
-                        play: { play(item, fromStart: false) },
-                        playFromStart: { play(item, fromStart: true) },
-                        reveal: { reveal(item) },
-                        retry: { Task { await downloads.retry(item, using: client) } },
-                        remove: { Task { await downloads.delete(item) } }
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(sections, id: \.title) { section in
+                    MidnightSectionHeader(
+                        title: section.title,
+                        meta: "\(section.items.count) download\(section.items.count == 1 ? "" : "s")"
                     )
+                    .padding(.horizontal, 16)
+                    ForEach(section.items) { item in
+                        DownloadRow(
+                            item: item,
+                            fileURL: downloads.fileURL(for: item),
+                            play: { play(item, fromStart: false) },
+                            playFromStart: { play(item, fromStart: true) },
+                            reveal: { reveal(item) },
+                            retry: { Task { await downloads.retry(item, using: client) } },
+                            remove: { Task { await downloads.delete(item) } }
+                        )
+                    }
                 }
             }
-            .padding(Theme.spacingMD)
+            .padding(.bottom, 120)
         }
     }
 
     private var emptyView: some View {
-        #if os(macOS)
         VStack(spacing: Theme.spacingMD) {
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 40, weight: .semibold))
@@ -121,24 +127,9 @@ struct DownloadsView: View {
                 .foregroundStyle(MidnightPalette.inkSoft)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
+                .padding(.horizontal, Theme.spacingLG)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #else
-        VStack(spacing: Theme.spacingMD) {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 48))
-                .foregroundStyle(Theme.accent)
-            Text("No Downloads")
-                .font(.headline)
-                .foregroundStyle(Theme.textPrimary)
-            Text(emptyMessage)
-                .font(.subheadline)
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #endif
     }
 
     private var emptyMessage: String {
@@ -178,7 +169,14 @@ private struct DownloadsChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            #if os(iOS)
+            .midnightNavigationTitle(
+                "Downloads",
+                kicker: "Offline · \(downloads.items.count) download\(downloads.items.count == 1 ? "" : "s")"
+            )
+            #else
             .navigationTitle("Downloads")
+            #endif
             .accessibilityIdentifier("downloads-view")
             .task { await downloads.refresh() }
             .alert(

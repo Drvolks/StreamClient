@@ -16,26 +16,30 @@ struct StatsView: View {
     @FocusState private var isRootFocused: Bool
     #endif
     @StateObject private var vm = StatsViewModel()
-    #if os(macOS)
     @Environment(\.colorScheme) private var colorScheme
-    #endif
 
     var body: some View {
         #if os(tvOS)
         tvOSBody
         #elseif os(macOS)
-        macBody
+        midnightBody
         #else
-        standardBody
+        midnightBody
+            .midnightNavigationTitle(
+                "Status",
+                kicker: "\(vm.activeCount) active · \(vm.m3uAccounts.count) account\(vm.m3uAccounts.count == 1 ? "" : "s")"
+            )
         #endif
     }
 
-    // MARK: - macOS (Midnight)
+    // MARK: - macOS and iOS (Midnight)
 
-    #if os(macOS)
-    private var macBody: some View {
+    #if !os(tvOS)
+    private var midnightBody: some View {
         VStack(spacing: 0) {
+            #if os(macOS)
             MacStatusHeader(activeCount: vm.activeCount, accountCount: vm.m3uAccounts.count)
+            #endif
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if let message = vm.switchError {
@@ -76,8 +80,13 @@ struct StatsView: View {
                         }
                     }
                 }
+                #if os(macOS)
                 .padding(.horizontal, 20)
                 .padding(.bottom, Theme.spacingLG)
+                #else
+                .padding(.horizontal, 16)
+                .padding(.bottom, 120)
+                #endif
             }
         }
         .background(MidnightGradients.ground(colorScheme))
@@ -113,52 +122,6 @@ struct StatsView: View {
             .font(.archivo(12.5))
             .foregroundStyle(isError ? MidnightPalette.danger : MidnightPalette.inkSoft)
             .padding(.vertical, 8)
-    }
-    #endif
-
-    // MARK: - iOS / macOS
-
-    #if !os(tvOS)
-    private var standardBody: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.spacingMD) {
-                header
-                    .padding(.horizontal)
-
-                switchErrorBanner
-                    .padding(.horizontal)
-
-                if vm.isLoading && vm.channels.isEmpty && vm.m3uAccounts.isEmpty {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, minHeight: 200)
-                } else if let error = vm.error, vm.channels.isEmpty {
-                    errorView(error)
-                } else if vm.channels.isEmpty {
-                    emptyView
-                } else {
-                    LazyVStack(spacing: Theme.spacingMD) {
-                        ForEach(vm.channels) { channel in
-                            card(for: channel)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-
-                // M3U Accounts section
-                if !vm.m3uAccounts.isEmpty {
-                    m3uAccountsSection
-                        .padding(.horizontal)
-                }
-            }
-            .padding(.vertical)
-        }
-        .background(.ultraThinMaterial)
-        .task {
-            vm.startRefreshing(client: client, appState: appState)
-        }
-        .onDisappear {
-            vm.stopRefreshing()
-        }
     }
     #endif
 

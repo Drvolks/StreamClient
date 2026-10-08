@@ -6,7 +6,7 @@
 //  use the danger ink, the only place it appears.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightOutlineButtonStyle: ButtonStyle {

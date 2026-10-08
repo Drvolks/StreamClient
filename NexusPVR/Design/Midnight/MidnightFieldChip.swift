@@ -5,7 +5,6 @@
 //  A status chip on the accent field ("CONNECTED", "LIVE NOW").
 //
 
-#if os(macOS) || os(tvOS)
 import SwiftUI
 
 struct MidnightFieldChip: View {
@@ -25,4 +24,3 @@ struct MidnightFieldChip: View {
             .background(MidnightGradients.field(colorScheme))
     }
 }
-#endif

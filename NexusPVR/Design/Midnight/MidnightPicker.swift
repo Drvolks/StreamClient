@@ -7,7 +7,7 @@
 //  selected one.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
 struct MidnightPicker<Value: Hashable>: View {

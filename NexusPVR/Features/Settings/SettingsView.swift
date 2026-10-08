@@ -52,13 +52,18 @@ struct SettingsView: View {
     }
     #if os(macOS)
     @SceneStorage("settings.category") private var macCategory: SettingsCategory = .server
-    @State private var showingMacEventLog = false
     #endif
-    #if os(macOS) || os(tvOS)
+    #if !os(tvOS)
+    @State private var showingEventLog = false
+    #endif
+    #if os(iOS)
+    /// The open category page; empty shows the index.
+    @State private var iOSSettingsPath: [SettingsCategory] = []
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
     /// The topics being edited (Settings > Topics).
     @State private var topicList: [String] = UserPreferences.load().keywords
     @State private var newTopic = ""
-    #endif
     #if os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
     @State private var activeTVPopup: TVSettingsPopup?
@@ -100,32 +105,19 @@ struct SettingsView: View {
     #endif
 
     var body: some View {
-        NavigationStack {
-            #if os(tvOS)
-            tvOSContent
-            #elseif os(macOS)
-            macOSContent
+        Group {
+            #if os(iOS)
+            NavigationStack(path: $iOSSettingsPath) {
+                iOSContent
+            }
             #else
-            List {
-                serverSection
-                generalSection
-                playbackSection
-                guideSection
-                #if DEBUG
-                debugStreamSection
+            NavigationStack {
+                #if os(tvOS)
+                tvOSContent
+                #else
+                macOSContent
                 #endif
-                eventLogLinkSection
             }
-            .safeAreaInset(edge: .bottom) {
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.spacingSM)
-            }
-            .navigationTitle("Settings")
-            .listStyle(.insetGrouped)
-            .sidebarMenuToolbar()
             #endif
         }
         .accessibilityIdentifier("settings-view")
@@ -134,10 +126,10 @@ struct SettingsView: View {
             await client.ensureOutputProfilesLoaded()
         }
         #endif
-        #if os(tvOS)
-        .background(MidnightGradients.ground(colorScheme))
-        #else
+        #if os(macOS)
         .background(Theme.background)
+        #else
+        .background(MidnightGradients.ground(colorScheme))
         #endif
     }
 
@@ -1001,34 +993,6 @@ struct SettingsView: View {
     }
     #endif
 
-    private var generalSection: some View {
-        Section {
-            // Filter the picker to only show landing options the current
-            // user can actually open. Hiding unavailable options keeps the
-            // UI honest and avoids surprising the user with a redirected
-            // landing on next launch.
-            Picker("Landing Page", selection: landingTabSelection) {
-                ForEach(availableLandingOptions) { option in
-                    Text(option.label).tag(option)
-                }
-            }
-            .accessibilityIdentifier("settings-landing-page-picker")
-
-            Picker("Theme", selection: themeSelection) {
-                ForEach(AppTheme.allCases) { option in
-                    Text(option.label).tag(option)
-                }
-            }
-            .accessibilityIdentifier("settings-theme-picker")
-
-            Toggle("Hide Recording Features", isOn: hideRecordingsSelection)
-                .accessibilityIdentifier("settings-hide-recordings-toggle")
-        } header: {
-            Text("General")
-        } footer: {
-            Text("Choose which page opens when the app launches. Theme overrides the device appearance — System follows your device setting. Hiding recording features removes all recording menus and buttons from the app.")
-        }
-    }
 
     private var landingTabSelection: Binding<LandingTabOption> {
         Binding(
@@ -1087,67 +1051,6 @@ struct SettingsView: View {
         appState.hideRecordings = hidden
     }
 
-    private var serverSection: some View {
-        Section {
-            HStack {
-                Text("Host")
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Text(verbatim: client.config.displayAddress)
-                    .foregroundStyle(Theme.textPrimary)
-            }
-
-            #if !os(tvOS)
-            CustomHostSettingsRows()
-            #endif
-
-            #if DISPATCHERPVR
-            environmentServerRow
-            #endif
-
-            HStack {
-                Text("Status")
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                if client.isAuthenticated {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Theme.success)
-                        Text("Connected")
-                            .foregroundStyle(Theme.success)
-                    }
-                } else {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(Theme.warning)
-                        Text("Not Connected")
-                            .foregroundStyle(Theme.warning)
-                    }
-                }
-            }
-
-            Button(role: .destructive) {
-                showingUnlinkConfirm = true
-            } label: {
-                HStack {
-                    Spacer()
-                    Label("Unlink Server", systemImage: "server.rack")
-                    Spacer()
-                }
-            }
-            .accessibilityIdentifier("unlink-server-button")
-            .confirmationDialog("Unlink Server", isPresented: $showingUnlinkConfirm, titleVisibility: .visible) {
-                Button("Unlink", role: .destructive) {
-                    unlinkServer()
-                }
-                .accessibilityIdentifier("confirm-unlink-button")
-            } message: {
-                Text("This will disconnect and forget the server. You'll need to set it up again.")
-            }
-        } header: {
-            Text("\(Brand.serverName) Server")
-        }
-    }
 
     private func unlinkServer() {
         client.disconnect()
@@ -1165,107 +1068,6 @@ struct SettingsView: View {
         #endif
     }
 
-    private var playbackSection: some View {
-        persistingPlaybackPreferences(Section {
-            Picker("Seek Backward", selection: $seekBackwardSeconds) {
-                Text("5 seconds").tag(5)
-                Text("10 seconds").tag(10)
-                Text("15 seconds").tag(15)
-                Text("30 seconds").tag(30)
-            }
-
-            Picker("Seek Forward", selection: $seekForwardSeconds) {
-                Text("15 seconds").tag(15)
-                Text("30 seconds").tag(30)
-                Text("45 seconds").tag(45)
-                Text("60 seconds").tag(60)
-            }
-
-            Picker("Audio Output", selection: $audioChannels) {
-                Text("Auto").tag("auto")
-                Text("Stereo").tag("stereo")
-            }
-
-            #if !DISPATCHERPVR
-            Picker("Live TV Quality", selection: $streamQuality) {
-                ForEach(StreamQuality.allCases) { quality in
-                    Text(quality.label).tag(quality)
-                }
-            }
-            Text(streamQualityDescription)
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-
-            #if !os(tvOS)
-            Picker("On Cellular", selection: $cellularStreamQuality) {
-                Text("Same as usual").tag(StreamQuality?.none)
-                ForEach(StreamQuality.allCases) { quality in
-                    Text(quality.label).tag(StreamQuality?.some(quality))
-                }
-            }
-            Text(cellularStreamQualityDescription)
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-            #endif
-            #else
-            Picker("Live TV Output Profile", selection: $outputProfileId) {
-                ForEach(outputProfileChoices) { choice in
-                    Text(choice.label).tag(choice.id)
-                }
-            }
-            Text(outputProfileDescription)
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-            #endif
-
-            Picker("Deinterlacing", selection: $deinterlaceMode) {
-                ForEach(DeinterlaceMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            Text(deinterlaceDescription)
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-
-            Picker("Subtitles", selection: $subtitleMode) {
-                Text("Manual").tag(SubtitleMode.manual)
-                Text("Auto").tag(SubtitleMode.auto)
-            }
-            Text(subtitleModeDescription)
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-
-            Picker("Subtitle Size", selection: $subtitleSize) {
-                ForEach(SubtitleSize.allCases, id: \.self) { size in
-                    Text(size.displayName).tag(size)
-                }
-            }
-
-            Toggle("Subtitle Background", isOn: $subtitleBackground)
-
-            #if os(iOS)
-            Picker("Renderer", selection: $iosGPUAPI) {
-                Text("OpenGL").tag(GPUAPI.opengl)
-                Text("Metal").tag(GPUAPI.metal)
-                Text("PixelBuffer (Recommended)").tag(GPUAPI.pixelbuffer)
-            }
-            Text(rendererDescription(for: iosGPUAPI))
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-            #elseif os(macOS)
-            Picker("Renderer", selection: $macosGPUAPI) {
-                Text("OpenGL").tag(GPUAPI.opengl)
-                Text("Metal").tag(GPUAPI.metal)
-                Text("PixelBuffer (Recommended)").tag(GPUAPI.pixelbuffer)
-            }
-            Text(rendererDescription(for: macosGPUAPI))
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-            #endif
-        } header: {
-            Text("Playback")
-        })
-    }
 
     /// Saves each playback and subtitle setting when it changes. Shared by the
     /// iOS Playback section and the macOS Settings panes.
@@ -1443,79 +1245,6 @@ struct SettingsView: View {
         }
     }
 
-    private var guideSection: some View {
-        Section {
-            Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
-                .onChange(of: guideShowGroupsInSidebar) { newValue in
-                    saveGuideShowGroups(newValue)
-                }
-            if guideShowGroupsInSidebar {
-                if epgCache.channelGroups.isEmpty {
-                    Text("No channel groups available")
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    let populatedGroups = epgCache.populatedChannelGroups
-                    if populatedGroups.isEmpty {
-                        Text("No channels in any group")
-                            .foregroundStyle(Theme.textSecondary)
-                    } else {
-                        ForEach(populatedGroups) { group in
-                            let isSelected = guideGroupIds.contains(group.id)
-                            Button {
-                                toggleGuideGroup(group.id)
-                            } label: {
-                                HStack {
-                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
-                                    Text(group.name)
-                                        .foregroundStyle(Theme.textPrimary)
-                                    Spacer()
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-
-            // Channel profiles are a Dispatcharr concept; NextPVR only has groups.
-            #if DISPATCHERPVR
-            Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
-                .onChange(of: guideShowProfilesInSidebar) { newValue in
-                    saveGuideShowProfiles(newValue)
-                }
-            if guideShowProfilesInSidebar {
-                if epgCache.channelProfiles.isEmpty {
-                    Text("No channel profiles available")
-                        .foregroundStyle(Theme.textSecondary)
-                } else {
-                    if populatedProfiles.isEmpty {
-                        Text("No channels in any profile")
-                            .foregroundStyle(Theme.textSecondary)
-                    } else {
-                        ForEach(populatedProfiles) { profile in
-                            let isSelected = guideProfileIds.contains(profile.id)
-                            Button {
-                                toggleGuideProfile(profile.id)
-                            } label: {
-                                HStack {
-                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
-                                    Text(profile.name)
-                                        .foregroundStyle(Theme.textPrimary)
-                                    Spacer()
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-            #endif
-        } header: {
-            Text("Guide")
-        }
-    }
 
     private func saveGuideShowGroups(_ show: Bool) {
         var prefs = UserPreferences.load()
@@ -1599,37 +1328,6 @@ struct SettingsView: View {
     #endif
 
     #if DEBUG
-    private var debugStreamSection: some View {
-        Section {
-            Toggle("Test Stream Override", isOn: $debugStreamEnabled)
-                .onChange(of: debugStreamEnabled) { newValue in
-                    UserDefaults.standard.set(newValue, forKey: "debugStreamEnabled")
-                }
-
-            if debugStreamEnabled {
-                TextField("Stream URL", text: $debugStreamURL)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    #endif
-                    .onChange(of: debugStreamURL) { newValue in
-                        UserDefaults.standard.set(newValue, forKey: "debugStreamURL")
-                    }
-
-                Toggle("Play as Recording", isOn: $debugStreamAsRecording)
-                    .onChange(of: debugStreamAsRecording) { newValue in
-                        UserDefaults.standard.set(newValue, forKey: "debugStreamAsRecording")
-                    }
-
-                Button(debugStreamAsRecording ? "Play Test Recording" : "Play Test Stream") {
-                    playDebugStream()
-                }
-            }
-        } header: {
-            Text("Debug")
-        }
-    }
 
     private func playDebugStream() {
         guard let url = URL(string: debugStreamURL) else { return }
@@ -1641,30 +1339,107 @@ struct SettingsView: View {
     }
     #endif
 
-    private var eventLogLinkSection: some View {
-        Section {
-            NavigationLink(destination: EventLogView()) {
-                HStack {
-                    Label("Event Log", systemImage: "list.bullet.rectangle")
-                    Spacer()
-                    if !eventLog.events.isEmpty {
-                        Text("\(eventLog.events.count)")
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                }
-            }
-        }
-    }
 
 
 }
 
-#if os(macOS)
-// MARK: - macOS (Midnight)
+#if !os(tvOS)
+// MARK: - macOS and iOS (Midnight)
 
-/// macOS Settings: a numbered category index beside one pane of rows. Only the
-/// layout differs from iOS — every row reads and saves the same state.
+/// macOS Settings: a category index beside one pane of rows. iOS shows the
+/// same index, and each category's rows on a page of its own.
 extension SettingsView {
+    #if os(iOS)
+    var iOSContent: some View {
+        persistingPlaybackPreferences(
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(SettingsCategory.allCases) { category in
+                        NavigationLink(value: category) {
+                            iOSIndexRow(category)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings-category-\(category.title.lowercased())")
+                    }
+                    Text(iOSVersionText)
+                        .midnightMeta(10.5)
+                        .foregroundStyle(MidnightPalette.inkFaint)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, Theme.spacingLG)
+                        .padding(.bottom, 120)
+                }
+            }
+            .background(MidnightGradients.ground(colorScheme))
+            .navigationDestination(for: SettingsCategory.self) { category in
+                iOSCategoryPage(category)
+            }
+        )
+        .midnightNavigationTitle("Settings")
+        .sidebarMenuToolbar()
+        .onAppear(perform: applyRequestedCategory)
+        .onChange(of: appState.requestedSettingsCategory) { _ in applyRequestedCategory() }
+    }
+
+    private func iOSIndexRow(_ category: SettingsCategory) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(category.title)
+                    .font(.archivo(17, .extraBold))
+                    .foregroundStyle(MidnightPalette.ink)
+                Text(categorySummary(for: category))
+                    .font(.archivo(12.5))
+                    .foregroundStyle(MidnightPalette.inkSoft)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(MidnightPalette.inkFaint)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func iOSCategoryPage(_ category: SettingsCategory) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                macRows(for: category)
+                MacSettingsHint(text: categoryHint(for: category))
+                    .padding(.top, 16)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 120)
+        }
+        .toggleStyle(MidnightToggleStyle())
+        .background(MidnightGradients.ground(colorScheme))
+        .midnightNavigationTitle(category.title, kicker: "Settings")
+        .navigationDestination(isPresented: $showingEventLog) {
+            EventLogView()
+        }
+        // On the page that holds the Unlink button: a dialog attached to the
+        // index underneath would never present.
+        .confirmationDialog("Unlink Server", isPresented: $showingUnlinkConfirm, titleVisibility: .visible) {
+            Button("Unlink", role: .destructive) {
+                unlinkServer()
+            }
+            .accessibilityIdentifier("confirm-unlink-button")
+        } message: {
+            Text("This will disconnect and forget the server. You'll need to set it up again.")
+        }
+    }
+
+    private var iOSVersionText: String {
+        let info = Bundle.main.infoDictionary
+        return "Version \(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+    }
+    #endif
+
+    #if os(macOS)
     var macOSContent: some View {
         persistingPlaybackPreferences(
             HStack(spacing: 0) {
@@ -1676,7 +1451,7 @@ extension SettingsView {
             }
         )
         .toggleStyle(MidnightToggleStyle())
-        .navigationDestination(isPresented: $showingMacEventLog) {
+        .navigationDestination(isPresented: $showingEventLog) {
             EventLogView()
         }
         .onAppear(perform: applyRequestedCategory)
@@ -1690,6 +1465,7 @@ extension SettingsView {
             Text("This will disconnect and forget the server. You'll need to set it up again.")
         }
     }
+    #endif
 
     @ViewBuilder
     private func macRows(for category: SettingsCategory) -> some View {
@@ -1735,11 +1511,37 @@ extension SettingsView {
             }
         }
         CustomHostSettingsRows()
-        MacSettingsRow(title: "Unlink this device", subtitle: "Forget this server on this Mac.") {
+        MacSettingsRow(title: "Unlink this device", subtitle: Self.unlinkSubtitle) {
             Button("Unlink") { showingUnlinkConfirm = true }
                 .buttonStyle(MidnightOutlineButtonStyle(isDestructive: true))
                 .accessibilityIdentifier("unlink-server-button")
         }
+    }
+
+    /// A phone-width row has no room for "(Recommended)" beside the label.
+    private static func rendererPickerLabel(_ name: String) -> String {
+        #if os(iOS)
+        name.replacingOccurrences(of: " (Recommended)", with: "")
+        #else
+        name
+        #endif
+    }
+
+    private static var unlinkSubtitle: String {
+        #if os(macOS)
+        "Forget this server on this Mac."
+        #else
+        "Forget this server on this device."
+        #endif
+    }
+
+    /// The renderer setting of the platform the app is running on.
+    private var platformGPUAPI: Binding<GPUAPI> {
+        #if os(macOS)
+        $macosGPUAPI
+        #else
+        $iosGPUAPI
+        #endif
     }
 
     @ViewBuilder
@@ -1895,7 +1697,11 @@ extension SettingsView {
 
     private func applyRequestedCategory() {
         guard let requested = appState.requestedSettingsCategory else { return }
+        #if os(macOS)
         macCategory = requested
+        #else
+        iOSSettingsPath = [requested]
+        #endif
         appState.requestedSettingsCategory = nil
     }
 
@@ -1903,25 +1709,21 @@ extension SettingsView {
 
     @ViewBuilder
     private var macTopicsRows: some View {
-        MacSettingsRow(title: "Add a topic", subtitle: "Matched against program titles, subtitles and descriptions.") {
-            HStack(spacing: 8) {
-                TextField("e.g. Cycling", text: $newTopic)
-                    .textFieldStyle(.plain)
-                    .font(.archivo(13))
-                    .frame(width: 200)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background { Rectangle().fill(MidnightPalette.inputBg) }
-                    .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
-                    .onSubmit(addTopic)
-                    .accessibilityIdentifier("keyword-text-field")
-                Button("Add", action: addTopic)
-                    .buttonStyle(MidnightFieldButtonStyle())
-                    .fixedSize()
-                    .disabled(newTopic.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .accessibilityIdentifier("add-keyword-confirm")
-            }
+        #if os(iOS)
+        // A phone is too narrow for the field beside the label.
+        VStack(alignment: .leading, spacing: 8) {
+            MacSettingsRow(title: "Add a topic", subtitle: "Matched against program titles, subtitles and descriptions.")
+            addTopicControls
         }
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+        }
+        #else
+        MacSettingsRow(title: "Add a topic", subtitle: "Matched against program titles, subtitles and descriptions.") {
+            addTopicControls
+        }
+        #endif
         if topicList.isEmpty {
             Text("No topics yet.")
                 .font(.archivo(12.5))
@@ -1949,12 +1751,38 @@ extension SettingsView {
                         .accessibilityLabel("Move \(keyword) down")
                         Button("Remove") { removeTopic(keyword) }
                             .buttonStyle(MidnightOutlineButtonStyle(isDestructive: true))
+                            .fixedSize()
                     }
                 }
             }
         }
     }
 
+
+    private var addTopicControls: some View {
+        HStack(spacing: 8) {
+            TextField("e.g. Cycling", text: $newTopic)
+                .textFieldStyle(.plain)
+                .font(.archivo(13))
+                #if os(iOS)
+                .frame(maxWidth: .infinity)
+                .submitLabel(.done)
+                #else
+                .frame(width: 200)
+                #endif
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background { Rectangle().fill(MidnightPalette.inputBg) }
+                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                .onSubmit(addTopic)
+                .accessibilityIdentifier("keyword-text-field")
+            Button("Add", action: addTopic)
+                .buttonStyle(MidnightFieldButtonStyle())
+                .fixedSize()
+                .disabled(newTopic.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityIdentifier("add-keyword-confirm")
+        }
+    }
 
     @ViewBuilder
     private var macRecordingRows: some View {
@@ -1973,18 +1801,18 @@ extension SettingsView {
                 options: DeinterlaceMode.allCases.map { ($0.label, $0) }
             )
         }
-        MacSettingsRow(title: "Renderer", subtitle: rendererDescription(for: macosGPUAPI)) {
+        MacSettingsRow(title: "Renderer", subtitle: rendererDescription(for: platformGPUAPI.wrappedValue)) {
             MidnightPicker(
                 title: "Renderer",
-                selection: $macosGPUAPI,
-                options: [GPUAPI.opengl, .metal, .pixelbuffer].map { (rendererName(for: $0), $0) }
+                selection: platformGPUAPI,
+                options: [GPUAPI.opengl, .metal, .pixelbuffer].map { (Self.rendererPickerLabel(rendererName(for: $0)), $0) }
             )
         }
         MacSettingsRow(
             title: "Event Log",
             subtitle: eventLog.events.isEmpty ? "No events recorded" : Self.count(eventLog.events.count, "event")
         ) {
-            Button("View") { showingMacEventLog = true }
+            Button("View") { showingEventLog = true }
                 .buttonStyle(MidnightOutlineButtonStyle())
         }
         #if DEBUG
@@ -2025,8 +1853,7 @@ extension SettingsView {
 }
 #endif
 
-#if os(macOS) || os(tvOS)
-// MARK: - Shared by macOS and tvOS Settings
+// MARK: - Shared by every platform's Settings
 
 extension SettingsView {
     // MARK: Summaries
@@ -2087,6 +1914,8 @@ extension SettingsView {
     private var rendererShortName: String {
         #if os(tvOS)
         let api = tvosGPUAPI
+        #elseif os(iOS)
+        let api = iosGPUAPI
         #else
         let api = macosGPUAPI
         #endif
@@ -2118,8 +1947,8 @@ extension SettingsView {
         saveTopics()
     }
 
-    /// Same save path as `KeywordsEditorView`: persist, then publish the list so
-    /// the sidebar's topic rows and counts follow.
+    /// Persist, then publish the list so the sidebar's topic rows and
+    /// counts follow.
     private func saveTopics() {
         var prefs = UserPreferences.load()
         prefs.keywords = topicList
@@ -2130,7 +1959,6 @@ extension SettingsView {
         }
     }
 }
-#endif
 
 #if os(tvOS)
 private struct TVSettingsPopupButtonStyle: ButtonStyle {

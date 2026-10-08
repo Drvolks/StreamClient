@@ -326,7 +326,6 @@ final class NexusPVRUITests: XCTestCase {
         navigateToTab("Topics", app: app)
         pause(1.0)
         #else
-        navigateToTab("Topics", app: app)
         openKeywordEditor(app: app)
 
         let keywordField = app.textFields["keyword-text-field"].firstMatch
@@ -455,7 +454,7 @@ final class NexusPVRUITests: XCTestCase {
     @MainActor
     func testSettingsCanUnlinkServer() throws {
         let app = launchApp()
-        navigateToTab("Settings", app: app)
+        openSettingsCategory("server", app: app)
 
         let unlinkButton = app.buttons["unlink-server-button"].firstMatch
         XCTAssertTrue(unlinkButton.waitForExistence(timeout: 5), "Settings should expose server unlinking")
@@ -836,40 +835,32 @@ final class NexusPVRUITests: XCTestCase {
         XCTFail("Expected program detail to open from search result '\(programName)'")
     }
 
-    private func openKeywordEditor(app: XCUIApplication) {
-        let editButton = app.buttons["edit-keywords-button"].firstMatch
-        if editButton.waitForExistence(timeout: 2) {
-            activate(editButton, app: app)
-            return
-        }
-
-        navigateToTab("Topics", app: app)
-
+    /// Opens Settings, then one of its category pages (iOS; e.g. "topics").
+    private func openSettingsCategory(_ name: String, app: XCUIApplication) {
+        navigateToTab("Settings", app: app)
         #if os(iOS)
-        // In current iOS navigation, selecting Topics opens the keyword editor view directly.
-        let keywordField = app.textFields["keyword-text-field"].firstMatch
-        if keywordField.waitForExistence(timeout: 3) {
-            return
-        }
+        let category = app.buttons["settings-category-\(name)"].firstMatch
+        XCTAssertTrue(category.waitForExistence(timeout: 5), "Settings should list the \(name) category")
+        activate(category, app: app)
+        pause(0.6)
         #endif
-
-        if editButton.waitForExistence(timeout: 2) {
-            activate(editButton, app: app)
-            return
-        }
-
-        let editByLabel = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Edit Keywords'")).firstMatch
-        XCTAssertTrue(editByLabel.waitForExistence(timeout: 5), "Expected a way to edit keywords")
-        activate(editByLabel, app: app)
     }
 
+    /// Topics are managed in Settings > Topics.
+    private func openKeywordEditor(app: XCUIApplication) {
+        openSettingsCategory("topics", app: app)
+    }
+
+    /// Back from the category page to the Settings index, where the menu
+    /// button is.
     private func dismissKeywordEditor(app: XCUIApplication) {
-        let doneButton = app.buttons["keywords-done-button"].firstMatch
-        if doneButton.waitForExistence(timeout: 2) {
-            activate(doneButton, app: app)
-            return
+        #if os(iOS)
+        let back = app.navigationBars.buttons.firstMatch
+        if back.waitForExistence(timeout: 2) {
+            activate(back, app: app)
+            pause(0.6)
         }
-        dismissPresentedDetail(app: app)
+        #endif
     }
 
     private func dismissPresentedDetail(app: XCUIApplication) {

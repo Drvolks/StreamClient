@@ -6,7 +6,7 @@
 //  on the left, refresh state and when it was last updated on the right.
 //
 
-#if os(macOS) && DISPATCHERPVR
+#if !os(tvOS) && DISPATCHERPVR
 import SwiftUI
 
 struct MacM3UAccountRow: View {

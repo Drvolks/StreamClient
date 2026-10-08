@@ -1,15 +1,15 @@
 //
-//  MacSeriesCard.swift
+//  SeriesCard.swift
 //  nextpvr-apple-client
 //
-//  A series in the macOS Series index (Midnight): its poster with the
+//  A series in the macOS and iOS Series index (Midnight): its poster with the
 //  unwatched count, then its name and episode counts.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
-struct MacSeriesCard: View {
+struct SeriesCard: View {
     let summary: RecordingsSeriesSummary
     let posterURL: URL?
     let action: () -> Void
@@ -55,7 +55,7 @@ struct MacSeriesCard: View {
                 CachedAsyncImage(url: posterURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    ProgressView().controlSize(.small)
+                    ProgressView()
                 } fallback: {
                     placeholderGlyph
                 }

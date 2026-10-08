@@ -3,10 +3,9 @@
 //  nextpvr-apple-client
 //
 //  A channel's logo on its plate. The name only shows when there is no logo.
-//  Used by the guide column and the channel cards (macOS, tvOS).
+//  Used by the guide column and the channel cards.
 //
 
-#if os(macOS) || os(tvOS)
 import SwiftUI
 
 struct MidnightChannelPlate: View {
@@ -49,4 +48,3 @@ struct MidnightChannelPlate: View {
         }
     }
 }
-#endif

@@ -1,5 +1,5 @@
 //
-//  MacCalendarBlock.swift
+//  CalendarBlock.swift
 //  nextpvr-apple-client
 //
 //  A program on the macOS Calendar timeline (Midnight), styled like a guide
@@ -7,10 +7,10 @@
 //  air. The leading bar carries the topic's own colour.
 //
 
-#if os(macOS)
+#if !os(tvOS)
 import SwiftUI
 
-struct MacCalendarBlock: View {
+struct CalendarBlock: View {
     let program: Program
     let channel: Channel
     let topicColor: Color
