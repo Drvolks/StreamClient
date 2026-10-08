@@ -111,14 +111,6 @@ struct MacProgramCell: View {
     /// the last ones rather than squashing them.
     private var badges: some View {
         HStack(spacing: 5) {
-            if isAiring && !isSelected {
-                Text("Live")
-                    .midnightBadge(8.5)
-                    .foregroundStyle(MidnightPalette.fieldInk)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .overlay { Rectangle().strokeBorder(MidnightPalette.fieldInk, lineWidth: 1) }
-            }
             if program.shouldShowNewBadge && !isCatchupAvailable {
                 NewBadge(compact: true)
             }

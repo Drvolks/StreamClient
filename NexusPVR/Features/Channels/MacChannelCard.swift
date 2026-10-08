@@ -3,7 +3,7 @@
 //  nextpvr-apple-client
 //
 //  A channel in the macOS Channels grid (Midnight): logo band, what's on now
-//  with its progress, and an action strip (watch, watch from the beginning,
+//  (always live, so it carries no LIVE badge) with its progress, and an action strip (watch, watch from the beginning,
 //  record, info). Double-clicking the logo band also watches.
 //
 
@@ -95,15 +95,8 @@ struct MacChannelCard: View {
     }
 
     private var chips: some View {
+        // Fixed height, so cards stay level whether or not they carry chips.
         HStack(spacing: 5) {
-            if currentProgram != nil {
-                Text("Live")
-                    .midnightBadge(8.5)
-                    .foregroundStyle(MidnightPalette.fieldInk)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(MidnightGradients.field(colorScheme))
-            }
             if currentProgram?.shouldShowNewBadge == true {
                 NewBadge(compact: false)
             }
