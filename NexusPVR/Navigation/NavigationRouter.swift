@@ -2115,7 +2115,6 @@ struct MacOSNavigation: View {
                         ForEach(appState.topicKeywords, id: \.self) { keyword in
                             macSidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
                         }
-                        macSidebarTopicManageRow()
                     } header: {
                         macSidebarHeader(icon: tab.icon, label: tab.label)
                     }
@@ -2477,29 +2476,6 @@ struct MacOSNavigation: View {
         .accessibilityIdentifier("channel-profile-\(profile.id)")
     }
     #endif
-
-    /// Opens Settings › Topics, where topics are added, ordered and removed.
-    private func macSidebarTopicManageRow() -> some View {
-        Button {
-            appState.requestedSettingsCategory = .topics
-            appState.selectedTab = .settings
-        } label: {
-            HStack {
-                Text("Manage")
-                    .font(.subheadline)
-                Spacer()
-            }
-            .foregroundStyle(Theme.textSecondary)
-            .padding(.leading, 36)
-            .padding(.trailing, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("topic-manage")
-    }
 
     private func macSidebarTopicSubRow(keyword: String, count: Int?) -> some View {
         let isSelected = appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
