@@ -23,15 +23,9 @@ struct StreamSelectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacingXS) {
-            #if os(macOS)
-            Text("Active stream")
-                .midnightKicker(9)
-                .foregroundStyle(MidnightPalette.inkFaint)
-            #else
             Text("Active Stream")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
-            #endif
 
             #if os(tvOS)
             tvOSPicker
@@ -84,13 +78,8 @@ struct StreamSelectorView: View {
             .padding(.horizontal, Theme.spacingSM)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            #if os(macOS)
-            .background { Rectangle().fill(MidnightPalette.inputBg) }
-            .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
-            #else
             .background(Theme.surfaceHighlight)
             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
-            #endif
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

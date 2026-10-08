@@ -44,13 +44,7 @@ struct MacStreamCard: View {
             }
 
             if let onSelectStream, !streams.isEmpty {
-                StreamSelectorView(
-                    streams: streams,
-                    activeStreamId: activeStreamId,
-                    isSwitching: isSwitchingStream,
-                    accountNameLookup: accountNameLookup,
-                    onSelect: onSelectStream
-                )
+                streamPicker(onSelect: onSelectStream)
             }
 
             if let clients = channel.clients, !clients.isEmpty {
@@ -90,6 +84,38 @@ struct MacStreamCard: View {
                 .midnightMeta(13.5, weight: .semibold)
                 .foregroundStyle(MidnightPalette.ink)
                 .lineLimit(1)
+        }
+    }
+
+    /// The source switcher (#116), as a Settings-style row: label on the left,
+    /// the Midnight menu picker on the right.
+    private func streamPicker(onSelect: @escaping (ChannelStream) -> Void) -> some View {
+        let selection = Binding<Int>(
+            get: { activeStreamId ?? -1 },
+            set: { id in
+                guard id != activeStreamId, let stream = streams.first(where: { $0.id == id }) else { return }
+                onSelect(stream)
+            }
+        )
+        return HStack(spacing: 10) {
+            Text("Active stream")
+                .font(.archivo(15, .extraBold))
+                .foregroundStyle(MidnightPalette.ink)
+            Spacer(minLength: Theme.spacingMD)
+            if isSwitchingStream {
+                ProgressView().controlSize(.small)
+            }
+            MidnightPicker(
+                title: "Active stream",
+                selection: selection,
+                options: streams.map { ($0.label(accountNameLookup: accountNameLookup), $0.id) }
+            )
+            .disabled(isSwitchingStream)
+            .accessibilityIdentifier("stats-stream-picker")
+        }
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
         }
     }
 
