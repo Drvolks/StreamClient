@@ -97,6 +97,9 @@ final class AppState: ObservableObject {
     @Published var tvosSettingsShowingEventLog = false
     @Published var tvosSettingsDismissPopupRequest = 0
     @Published var tvosSettingsDismissEventLogRequest = 0
+    /// A Settings category page is open (Back returns to the index).
+    @Published var tvosSettingsShowingCategory = false
+    @Published var tvosSettingsCloseCategoryRequest = 0
     @Published var tvosPlayerSettingsPanelOpen = false
     /// Incremented when the sidebar hands focus to the Channels page so the
     /// grid always starts on the first channel card (#111).

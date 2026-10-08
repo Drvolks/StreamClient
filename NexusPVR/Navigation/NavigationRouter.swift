@@ -1250,6 +1250,7 @@ struct TVOSNavigation: View {
                 appState.tvosBlocksSidebarExitCommand = false
                 appState.tvosSettingsHasPopup = false
                 appState.tvosSettingsShowingEventLog = false
+                appState.tvosSettingsShowingCategory = false
             }
         }
         .fullScreenCover(isPresented: $appState.isShowingPlayer) {
@@ -1278,6 +1279,7 @@ struct TVOSNavigation: View {
             sidebarHasFocus: focusedItem != nil,
             settingsHasPopup: appState.tvosSettingsHasPopup,
             settingsShowingEventLog: appState.tvosSettingsShowingEventLog,
+            settingsShowingCategory: appState.tvosSettingsShowingCategory,
             blocksSidebarExit: appState.tvosBlocksSidebarExitCommand
         )
     }
@@ -1295,6 +1297,8 @@ struct TVOSNavigation: View {
             appState.tvosSettingsDismissPopupRequest += 1
         case .dismissEventLog:
             appState.tvosSettingsDismissEventLogRequest += 1
+        case .closeSettingsCategory:
+            appState.tvosSettingsCloseCategoryRequest += 1
         case .focusSidebar:
             focusSidebar()
         case .ignore, .exitToSystem:

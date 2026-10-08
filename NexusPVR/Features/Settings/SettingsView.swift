@@ -65,6 +65,9 @@ struct SettingsView: View {
     @FocusState private var popupFocusedItemID: String?
     @State private var showingTVEventLog = false
     @FocusState private var isAddTopicFieldFocused: Bool
+    /// The open category page; nil shows the index, as on macOS.
+    @State private var tvCategory: SettingsCategory?
+    @FocusState private var focusedTVCategory: SettingsCategory?
     @State private var requestTopicKeyboard = false
     #endif
     #if DEBUG
@@ -142,84 +145,192 @@ struct SettingsView: View {
     private var tvOSContent: some View {
         ZStack {
             VStack(spacing: 0) {
-                TVPageHeader(kicker: nil, title: "Settings", readout: tvOSVersionText)
+                if let category = tvCategory {
+                    TVPageHeader(kicker: "Settings", title: category.title)
+                } else {
+                    TVPageHeader(kicker: nil, title: "Settings", readout: tvOSVersionText)
+                }
                 ScrollView {
-                    VStack(alignment: .leading, spacing: Theme.spacingXL) {
-                        tvSection(.server) {
-                            Button {
-                                activeTVPopup = .server
-                            } label: {
-                                TVSettingsRowLabel(
-                                    title: client.config.displayAddress.isEmpty ? "Not configured" : client.config.displayAddress,
-                                    subtitle: serverRowDetail
-                                ) {
-                                    if client.isAuthenticated {
-                                        MidnightFieldChip(text: "Connected", size: Theme.scaledFont(14))
-                                    } else {
-                                        Text("Not connected")
-                                            .midnightBadge(Theme.scaledFont(14))
-                                            .foregroundStyle(MidnightPalette.danger)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 4)
-                                            .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
-                                    }
-                                }
-                            }
-                            .buttonStyle(TVMidnightButtonStyle())
-                            .accessibilityIdentifier("settings-server-row")
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let category = tvCategory {
+                            tvOSCategoryRows(category)
+                            Text(categoryHint(for: category))
+                                .font(.archivo(Theme.scaledFont(17)))
+                                .foregroundStyle(MidnightPalette.inkSoft)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 12)
+                                .padding(.horizontal, 4)
+                        } else {
+                            tvOSCategoryIndex
                         }
+                    }
+                    .id(tvCategory)
+                    .padding(.vertical, Theme.spacingLG)
+                    .padding(.horizontal, Theme.spacingLG)
+                }
+            }
+            .background {
+                NavigationLink(isActive: $showingTVEventLog) {
+                    EventLogView()
+                } label: {
+                    EmptyView()
+                }
+                .hidden()
+            }
+            .allowsHitTesting(activeTVPopup == nil)
+            .opacity(activeTVPopup == nil ? 1 : 0.6)
 
-                        tvSection(.general) {
-                            tvRow("Landing Page", value: displayedLandingTab.label) { activeTVPopup = .landingTab }
-                            tvRow("Theme", value: theme.label) { activeTVPopup = .theme }
-                            tvRow("Text Size", value: uiFontSize.displayName, subtitle: "Scales text and rows across the app") {
-                                activeTVPopup = .uiFontSize
-                            }
+            if let activeTVPopup {
+                tvSettingsPopup(for: activeTVPopup)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .zIndex(10)
+            }
+        }
+        .animation(.easeInOut(duration: 0.16), value: activeTVPopup)
+        .onAppear {
+            appState.tvosBlocksSidebarExitCommand = activeTVPopup != nil || showingTVEventLog
+            appState.tvosSettingsHasPopup = activeTVPopup != nil
+            appState.tvosSettingsShowingEventLog = showingTVEventLog
+        }
+        .onChange(of: activeTVPopup) { _ in
+            appState.tvosBlocksSidebarExitCommand = activeTVPopup != nil || showingTVEventLog
+            appState.tvosSettingsHasPopup = activeTVPopup != nil
+        }
+        .onChange(of: showingTVEventLog) { _ in
+            appState.tvosBlocksSidebarExitCommand = activeTVPopup != nil || showingTVEventLog
+            appState.tvosSettingsShowingEventLog = showingTVEventLog
+        }
+        .onAppear {
+            topicList = UserPreferences.load().keywords
+            appState.tvosSettingsShowingCategory = tvCategory != nil
+            applyRequestedTVCategory()
+        }
+        .onChange(of: appState.requestedSettingsCategory) { _ in applyRequestedTVCategory() }
+        .onChange(of: appState.tvosSettingsDismissPopupRequest) { _ in
+            activeTVPopup = nil
+        }
+        .onChange(of: appState.tvosSettingsDismissEventLogRequest) { _ in
+            showingTVEventLog = false
+        }
+        .onChange(of: appState.tvosSettingsCloseCategoryRequest) { _ in
+            closeTVCategory()
+        }
+        .onExitCommand {
+            if activeTVPopup != nil {
+                activeTVPopup = nil
+            } else if showingTVEventLog {
+                showingTVEventLog = false
+            } else if tvCategory != nil {
+                closeTVCategory()
+            } else {
+                requestSidebarFocus()
+            }
+        }
+        .onMoveCommand { direction in
+            guard direction == .left,
+                  activeTVPopup == nil,
+                  !showingTVEventLog else { return }
+            requestSidebarFocus()
+        }
+    }
+
+    /// The categories, each with a one-line summary; selecting one opens
+    /// its page.
+    private var tvOSCategoryIndex: some View {
+        ForEach(SettingsCategory.allCases) { category in
+            Button {
+                openTVCategory(category)
+            } label: {
+                TVSettingsRowLabel(title: category.title, subtitle: categorySummary(for: category), value: "")
+            }
+            .buttonStyle(TVMidnightButtonStyle())
+            .focused($focusedTVCategory, equals: category)
+            .accessibilityIdentifier("settings-category-\(category.title.lowercased())")
+        }
+    }
+
+    @ViewBuilder
+    private func tvOSCategoryRows(_ category: SettingsCategory) -> some View {
+        switch category {
+        case .server:
+                Button {
+                    activeTVPopup = .server
+                } label: {
+                    TVSettingsRowLabel(
+                        title: client.config.displayAddress.isEmpty ? "Not configured" : client.config.displayAddress,
+                        subtitle: serverRowDetail
+                    ) {
+                        if client.isAuthenticated {
+                            MidnightFieldChip(text: "Connected", size: Theme.scaledFont(14))
+                        } else {
+                            Text("Not connected")
+                                .midnightBadge(Theme.scaledFont(14))
+                                .foregroundStyle(MidnightPalette.danger)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
                         }
+                    }
+                }
+                .buttonStyle(TVMidnightButtonStyle())
+                .accessibilityIdentifier("settings-server-row")
+        case .general:
+            tvRow("Landing Page", value: displayedLandingTab.label) { activeTVPopup = .landingTab }
+            tvRow("Theme", value: theme.label) { activeTVPopup = .theme }
+            tvRow("Text Size", value: uiFontSize.displayName, subtitle: "Scales text and rows across the app") {
+                activeTVPopup = .uiFontSize
+            }
+        case .playback:
+            #if !DISPATCHERPVR
+            tvRow("Live TV Quality", value: streamQuality.label) { activeTVPopup = .streamQuality }
+            #else
+            tvRow("Live TV Output Profile", value: outputProfileLabel) { activeTVPopup = .outputProfile }
+            #endif
+            tvRow("Seek Backward", value: "\(seekBackwardSeconds)s") { activeTVPopup = .seekBackward }
+            tvRow("Seek Forward", value: "\(seekForwardSeconds)s") { activeTVPopup = .seekForward }
+            tvRow("Audio Output", value: audioChannels == "stereo" ? "Stereo" : "Auto") { activeTVPopup = .audioOutput }
+        case .subtitles:
+            tvRow("Subtitles", value: subtitleMode == .auto ? "Auto" : "Manual") { activeTVPopup = .subtitleMode }
+            tvRow("Subtitle Size", value: subtitleSize.displayName) { activeTVPopup = .subtitleSize }
+            tvSwitchRow("Subtitle Background", isOn: subtitleBackground) {
+                subtitleBackground.toggle()
+                var prefs = UserPreferences.load()
+                prefs.subtitleBackground = subtitleBackground
+                prefs.save()
+            }
+        case .guide:
+            tvOSGuideRows
+        case .topics:
+            tvOSTopicsRows
+        case .recordings:
+            tvSwitchRow("Hide Recording Features", isOn: hideRecordings) {
+                saveHideRecordings(!hideRecordings)
+            }
+        case .advanced:
+            tvRow("Renderer", value: rendererName(for: tvosGPUAPI)) { activeTVPopup = .renderer }
+            tvRow("Deinterlacing", value: deinterlaceMode.label) { activeTVPopup = .deinterlace }
+            tvRow("Event Log", value: "\(eventLog.events.count)") { showingTVEventLog = true }
+            #if DEBUG
+            tvOSDebugSection
+            #endif
+        }
+    }
 
-                        tvSection(.playback, hint: tvOSPlaybackHint) {
-                            #if !DISPATCHERPVR
-                            tvRow("Live TV Quality", value: streamQuality.label) { activeTVPopup = .streamQuality }
-                            #else
-                            tvRow("Live TV Output Profile", value: outputProfileLabel) { activeTVPopup = .outputProfile }
-                            #endif
-                            tvRow("Seek Backward", value: "\(seekBackwardSeconds)s") { activeTVPopup = .seekBackward }
-                            tvRow("Seek Forward", value: "\(seekForwardSeconds)s") { activeTVPopup = .seekForward }
-                            tvRow("Audio Output", value: audioChannels == "stereo" ? "Stereo" : "Auto") { activeTVPopup = .audioOutput }
-                        }
+    private func openTVCategory(_ category: SettingsCategory) {
+        tvCategory = category
+        appState.tvosSettingsShowingCategory = true
+    }
 
-                        tvSection(.subtitles) {
-                            tvRow("Subtitles", value: subtitleMode == .auto ? "Auto" : "Manual") { activeTVPopup = .subtitleMode }
-                            tvRow("Subtitle Size", value: subtitleSize.displayName) { activeTVPopup = .subtitleSize }
-                            tvSwitchRow("Subtitle Background", isOn: subtitleBackground) {
-                                subtitleBackground.toggle()
-                                var prefs = UserPreferences.load()
-                                prefs.subtitleBackground = subtitleBackground
-                                prefs.save()
-                            }
-                        }
+    /// Back from a category page lands on its row in the index.
+    private func closeTVCategory() {
+        guard let category = tvCategory else { return }
+        tvCategory = nil
+        appState.tvosSettingsShowingCategory = false
+        DispatchQueue.main.async { focusedTVCategory = category }
+    }
 
-                        tvSection(.guide) {
-                            tvOSGuideRows
-                        }
-
-                        tvSection(.topics) {
-                            tvOSTopicsRows
-                        }
-
-                        tvSection(.recordings) {
-                            tvSwitchRow("Hide Recording Features", isOn: hideRecordings) {
-                                saveHideRecordings(!hideRecordings)
-                            }
-                        }
-
-                        tvSection(.advanced) {
-                            tvRow("Renderer", value: rendererName(for: tvosGPUAPI)) { activeTVPopup = .renderer }
-                            tvRow("Deinterlacing", value: deinterlaceMode.label) { activeTVPopup = .deinterlace }
-                            tvRow("Event Log", value: "\(eventLog.events.count)") { showingTVEventLog = true }
-                        }
-
-                        #if DEBUG
+    #if DEBUG
+    private var tvOSDebugSection: some View {
         TVSettingsSection(
             title: "Debug",
             icon: "ladybug"
@@ -269,90 +380,9 @@ struct SettingsView: View {
             }
         }
         .focusSection()
-                        #endif
-                    }
-                    .padding(.vertical, Theme.spacingLG)
-                    .padding(.horizontal, Theme.spacingLG)
-                }
-            }
-            .background {
-                NavigationLink(isActive: $showingTVEventLog) {
-                    EventLogView()
-                } label: {
-                    EmptyView()
-                }
-                .hidden()
-            }
-            .allowsHitTesting(activeTVPopup == nil)
-            .opacity(activeTVPopup == nil ? 1 : 0.6)
-
-            if let activeTVPopup {
-                tvSettingsPopup(for: activeTVPopup)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .zIndex(10)
-            }
-        }
-        .animation(.easeInOut(duration: 0.16), value: activeTVPopup)
-        .onAppear {
-            appState.tvosBlocksSidebarExitCommand = activeTVPopup != nil || showingTVEventLog
-            appState.tvosSettingsHasPopup = activeTVPopup != nil
-            appState.tvosSettingsShowingEventLog = showingTVEventLog
-        }
-        .onChange(of: activeTVPopup) { _ in
-            appState.tvosBlocksSidebarExitCommand = activeTVPopup != nil || showingTVEventLog
-            appState.tvosSettingsHasPopup = activeTVPopup != nil
-        }
-        .onChange(of: showingTVEventLog) { _ in
-            appState.tvosBlocksSidebarExitCommand = activeTVPopup != nil || showingTVEventLog
-            appState.tvosSettingsShowingEventLog = showingTVEventLog
-        }
-        .onAppear {
-            topicList = UserPreferences.load().keywords
-            applyRequestedTVCategory()
-        }
-        .onChange(of: appState.requestedSettingsCategory) { _ in applyRequestedTVCategory() }
-        .onChange(of: appState.tvosSettingsDismissPopupRequest) { _ in
-            activeTVPopup = nil
-        }
-        .onChange(of: appState.tvosSettingsDismissEventLogRequest) { _ in
-            showingTVEventLog = false
-        }
-        .onExitCommand {
-            if activeTVPopup != nil {
-                activeTVPopup = nil
-            } else if showingTVEventLog {
-                showingTVEventLog = false
-            } else {
-                requestSidebarFocus()
-            }
-        }
-        .onMoveCommand { direction in
-            guard direction == .left,
-                  activeTVPopup == nil,
-                  !showingTVEventLog else { return }
-            requestSidebarFocus()
-        }
+            .padding(.top, Theme.spacingLG)
     }
-
-    /// A Settings category: its header, its rows, then its one hint.
-    private func tvSection<Content: View>(
-        _ category: SettingsCategory,
-        hint: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            MidnightSectionHeader(title: category.title, meta: "")
-                .padding(.bottom, 6)
-            content()
-            Text(hint ?? category.hint)
-                .font(.archivo(Theme.scaledFont(16)))
-                .foregroundStyle(MidnightPalette.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 8)
-                .padding(.horizontal, 4)
-        }
-        .focusSection()
-    }
+    #endif
 
     /// A row showing its current value; selecting it opens the chooser.
     private func tvRow(
@@ -449,6 +479,7 @@ struct SettingsView: View {
     private func applyRequestedTVCategory() {
         guard let requested = appState.requestedSettingsCategory else { return }
         appState.requestedSettingsCategory = nil
+        openTVCategory(requested)
         if requested == .topics {
             DispatchQueue.main.async { isAddTopicFieldFocused = true }
         }
@@ -1638,8 +1669,8 @@ extension SettingsView {
     var macOSContent: some View {
         persistingPlaybackPreferences(
             HStack(spacing: 0) {
-                MacSettingsIndexView(selection: $macCategory, summary: macSummary(for:))
-                MacSettingsPaneView(category: macCategory, hint: macHint(for: macCategory)) {
+                MacSettingsIndexView(selection: $macCategory, summary: categorySummary(for:))
+                MacSettingsPaneView(category: macCategory, hint: categoryHint(for: macCategory)) {
                     macRows(for: macCategory)
                 }
                 .id(macCategory)
@@ -1672,65 +1703,6 @@ extension SettingsView {
         case .topics: macTopicsRows
         case .recordings: macRecordingRows
         case .advanced: macAdvancedRows
-        }
-    }
-
-    // MARK: Summaries
-
-    private func macSummary(for category: SettingsCategory) -> String {
-        switch category {
-        case .server:
-            return client.config.displayAddress.isEmpty ? "Not configured" : client.config.displayAddress
-        case .general:
-            return "\(displayedLandingTab.label) · \(theme.label)"
-        case .playback:
-            #if DISPATCHERPVR
-            let stream = outputProfileLabel
-            #else
-            let stream = streamQuality.label
-            #endif
-            return "\(stream) · \(seekBackwardSeconds)s / \(seekForwardSeconds)s"
-        case .subtitles:
-            let mode = subtitleMode == .manual ? "Manual" : "Auto"
-            let background = subtitleBackground ? "background" : "no background"
-            return "\(mode) · \(subtitleSize.displayName) · \(background)"
-        case .guide:
-            // Count only ticks that still match a listed group or profile: the
-            // saved ids can outlive one deleted on the server.
-            let groupCount = epgCache.populatedChannelGroups.filter { guideGroupIds.contains($0.id) }.count
-            var parts = [guideShowGroupsInSidebar ? Self.count(groupCount, "group") : "Groups off"]
-            #if DISPATCHERPVR
-            let profileCount = populatedProfiles.filter { guideProfileIds.contains($0.id) }.count
-            parts.append(guideShowProfilesInSidebar ? Self.count(profileCount, "profile") : "Profiles off")
-            #endif
-            return parts.joined(separator: " · ")
-        case .topics:
-            return topicList.isEmpty ? "None" : topicList.joined(separator: " · ")
-        case .recordings:
-            return hideRecordings ? "Hidden" : "Shown"
-        case .advanced:
-            return "\(macRendererShortName) · \(deinterlaceMode.label)"
-        }
-    }
-
-    private static func count(_ value: Int, _ noun: String) -> String {
-        "\(value) \(noun)\(value == 1 ? "" : "s")"
-    }
-
-    private func macHint(for category: SettingsCategory) -> String {
-        guard category == .playback else { return category.hint }
-        #if DISPATCHERPVR
-        return outputProfileDescription
-        #else
-        return streamQualityDescription
-        #endif
-    }
-
-    private var macRendererShortName: String {
-        switch macosGPUAPI {
-        case .pixelbuffer: "PixelBuffer"
-        case .metal: "Metal"
-        case .opengl: "OpenGL"
         }
     }
 
@@ -2055,9 +2027,77 @@ extension SettingsView {
 #endif
 
 #if os(macOS) || os(tvOS)
-// MARK: - Topics (macOS and tvOS Settings)
+// MARK: - Shared by macOS and tvOS Settings
 
 extension SettingsView {
+    // MARK: Summaries
+
+    /// One line under each category in the Settings index.
+    func categorySummary(for category: SettingsCategory) -> String {
+        switch category {
+        case .server:
+            return client.config.displayAddress.isEmpty ? "Not configured" : client.config.displayAddress
+        case .general:
+            return "\(displayedLandingTab.label) · \(theme.label)"
+        case .playback:
+            #if DISPATCHERPVR
+            let stream = outputProfileLabel
+            #else
+            let stream = streamQuality.label
+            #endif
+            return "\(stream) · \(seekBackwardSeconds)s / \(seekForwardSeconds)s"
+        case .subtitles:
+            let mode = subtitleMode == .manual ? "Manual" : "Auto"
+            let background = subtitleBackground ? "background" : "no background"
+            return "\(mode) · \(subtitleSize.displayName) · \(background)"
+        case .guide:
+            // Count only ticks that still match a listed group or profile: the
+            // saved ids can outlive one deleted on the server.
+            let groupCount = epgCache.populatedChannelGroups.filter { guideGroupIds.contains($0.id) }.count
+            var parts = [guideShowGroupsInSidebar ? Self.count(groupCount, "group") : "Groups off"]
+            #if DISPATCHERPVR
+            let profileCount = populatedProfiles.filter { guideProfileIds.contains($0.id) }.count
+            parts.append(guideShowProfilesInSidebar ? Self.count(profileCount, "profile") : "Profiles off")
+            #endif
+            return parts.joined(separator: " · ")
+        case .topics:
+            return topicList.isEmpty ? "None" : topicList.joined(separator: " · ")
+        case .recordings:
+            return hideRecordings ? "Hidden" : "Shown"
+        case .advanced:
+            return "\(rendererShortName) · \(deinterlaceMode.label)"
+        }
+    }
+
+    private static func count(_ value: Int, _ noun: String) -> String {
+        "\(value) \(noun)\(value == 1 ? "" : "s")"
+    }
+
+    /// The hint under a category's rows; Playback explains the selected
+    /// stream setting instead.
+    func categoryHint(for category: SettingsCategory) -> String {
+        guard category == .playback else { return category.hint }
+        #if DISPATCHERPVR
+        return outputProfileDescription
+        #else
+        return streamQualityDescription
+        #endif
+    }
+
+    /// The renderer this platform uses, without the "(Recommended)" note.
+    private var rendererShortName: String {
+        #if os(tvOS)
+        let api = tvosGPUAPI
+        #else
+        let api = macosGPUAPI
+        #endif
+        return switch api {
+        case .pixelbuffer: "PixelBuffer"
+        case .metal: "Metal"
+        case .opengl: "OpenGL"
+        }
+    }
+
     private func addTopic() {
         let trimmed = newTopic.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
