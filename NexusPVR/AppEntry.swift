@@ -33,6 +33,15 @@ struct PVRApp: App {
             } else {
                 demoPrefs.keywords = DemoDataProvider.keywords
             }
+            // `--demo-landing Channels` opens a given page, for UI tests and
+            // screenshots (values are LandingTabOption raw values). Demo
+            // preferences live in memory, so this never touches real settings.
+            let arguments = ProcessInfo.processInfo.arguments
+            if let index = arguments.firstIndex(of: "--demo-landing"),
+               arguments.indices.contains(index + 1),
+               let landing = UserPreferences.LandingTabOption(rawValue: arguments[index + 1]) {
+                demoPrefs.landingTab = landing
+            }
             UserPreferences.demoStore = demoPrefs
         }
 
