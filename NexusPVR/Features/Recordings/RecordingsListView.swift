@@ -618,8 +618,16 @@ private struct RecordingsListContentView: View {
                 in: appState.topicKeywords
             ),
             showsEpisodeTitle: showsEpisodeTitle,
+            // Resume a part-watched recording; start any other (new, or
+            // watched to the end) from the beginning.
+            onPlay: {
+                if recording.hasResumePosition && !recording.isWatched {
+                    playRecording(recording)
+                } else {
+                    playRecordingFromBeginning(recording)
+                }
+            },
             onPlayFromBeginning: { playRecordingFromBeginning(recording) },
-            onResume: { playRecording(recording) },
             onInfo: { selectedRecording = recording },
             onDelete: { pendingDelete = recording }
         )

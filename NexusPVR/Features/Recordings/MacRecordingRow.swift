@@ -16,8 +16,9 @@ struct MacRecordingRow: View {
     /// Inside a series section or page, lead with the episode title: the
     /// recording's own name is just the series name again.
     var showsEpisodeTitle = false
+    /// Resumes a part-watched recording, plays any other from the start.
+    let onPlay: () -> Void
     let onPlayFromBeginning: () -> Void
-    let onResume: () -> Void
     let onInfo: () -> Void
     let onDelete: () -> Void
 
@@ -199,21 +200,23 @@ struct MacRecordingRow: View {
 
     private var actionStrip: some View {
         let playable = status.isPlayable || status == .recording
+        // Starting over only means something once the recording has been played.
+        let canStartOver = playable && watchState != .new
         return HStack(spacing: 0) {
             MidnightActionCell(
-                systemImage: "gobackward",
-                help: "Play from the beginning",
+                systemImage: "play.fill",
+                help: resumeProgress != nil ? "Resume" : "Play",
                 isEnabled: playable,
                 isDimmed: !playable,
-                action: onPlayFromBeginning
+                action: onPlay
             )
             divider
             MidnightActionCell(
-                systemImage: "play.fill",
-                help: "Resume",
-                isEnabled: playable && resumeProgress != nil,
-                isDimmed: resumeProgress == nil,
-                action: onResume
+                systemImage: "gobackward",
+                help: "Play from the beginning",
+                isEnabled: canStartOver,
+                isDimmed: !canStartOver,
+                action: onPlayFromBeginning
             )
             divider
             MidnightActionCell(systemImage: "info.circle", help: "Info", action: onInfo)

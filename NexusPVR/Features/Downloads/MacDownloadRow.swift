@@ -183,10 +183,18 @@ struct MacDownloadRow: View {
         HStack(spacing: 0) {
             switch item.state {
             case .completed:
-                MidnightActionCell(systemImage: "gobackward", help: "Start over", action: playFromStart)
-                divider
+                // Play resumes a part-watched download and starts any other
+                // from the beginning; start over needs something to restart.
                 MidnightActionCell(systemImage: "play.fill", help: item.hasResumePosition ? "Resume" : "Play", action: play)
                     .accessibilityIdentifier("download-play-button")
+                divider
+                MidnightActionCell(
+                    systemImage: "gobackward",
+                    help: "Start over",
+                    isEnabled: watchState != .new,
+                    isDimmed: watchState == .new,
+                    action: playFromStart
+                )
                 divider
                 MidnightActionCell(systemImage: "folder", help: "Show in Finder", action: reveal)
                 divider
