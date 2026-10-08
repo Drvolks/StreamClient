@@ -22,7 +22,6 @@ struct TopicsView: View {
     #endif
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
-    @State private var newKeyword = ""
     #endif
 
     private var filteredPrograms: [MatchingProgram] {
@@ -127,8 +126,7 @@ struct TopicsView: View {
             syncTopicSelection(with: viewModel.keywords)
             #else
             appState.topicKeywords = viewModel.keywords
-            if !appState.showingKeywordsEditor,
-               (appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword)) {
+            if appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword) {
                 appState.selectedTopicKeyword = viewModel.keywords.first ?? ""
             }
             #endif
@@ -214,10 +212,8 @@ struct TopicsView: View {
             .onChange(of: viewModel.keywords) { _ in
                 #if os(tvOS)
                 appState.topicKeywords = viewModel.keywords
-                if !appState.showingKeywordsEditor {
-                    if appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword) {
-                        appState.selectedTopicKeyword = viewModel.keywords.first ?? ""
-                    }
+                if appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword) {
+                    appState.selectedTopicKeyword = viewModel.keywords.first ?? ""
                 }
                 #else
                 syncTopicSelection(with: viewModel.keywords)
@@ -229,9 +225,7 @@ struct TopicsView: View {
     @ViewBuilder
     private var contentView: some View {
         #if os(tvOS)
-        if appState.showingKeywordsEditor {
-            manageKeywordsView
-        } else if viewModel.isLoading && viewModel.matchingPrograms.isEmpty {
+        if viewModel.isLoading && viewModel.matchingPrograms.isEmpty {
             loadingView
         } else if let error = viewModel.error {
             errorView(error)
@@ -413,128 +407,6 @@ struct TopicsView: View {
     }
     #endif
 
-    #if os(tvOS)
-    private var manageKeywordsView: some View {
-        ScrollView {
-            VStack(spacing: Theme.spacingLG) {
-                HStack(spacing: Theme.spacingMD) {
-                    Image(systemName: "plus.circle")
-                        .foregroundStyle(Theme.accent)
-
-                    TextField("Add topic keyword", text: $newKeyword)
-                        .textFieldStyle(.plain)
-                        .font(.tvBody)
-                        .accessibilityIdentifier("keyword-text-field")
-                        .onSubmit { addKeyword() }
-                }
-                .padding(.horizontal, Theme.spacingMD)
-                .padding(.vertical, Theme.spacingMD)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                ForEach(viewModel.keywords, id: \.self) { keyword in
-                    HStack(spacing: Theme.spacingMD) {
-                        Text(keyword)
-                            .font(.tvHeadline)
-                            .foregroundStyle(.white.opacity(0.95))
-                        Spacer()
-                        Button(role: .destructive) {
-                            removeKeyword(keyword)
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.headline)
-                                .padding(.horizontal, Theme.spacingMD)
-                                .padding(.vertical, Theme.spacingSM)
-                        }
-                        .buttonStyle(TVManageDeleteButtonStyle())
-                    }
-                    .padding(.horizontal, Theme.spacingLG)
-                    .padding(.vertical, Theme.spacingMD)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.guideNowPlaying)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
-                }
-            }
-            .padding(Theme.spacingXL)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func addKeyword() {
-        let trimmed = newKeyword.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        var prefs = UserPreferences.load()
-        guard !prefs.keywords.contains(trimmed) else {
-            newKeyword = ""
-            return
-        }
-        prefs.keywords.append(trimmed)
-        prefs.save()
-        newKeyword = ""
-        Task {
-            await viewModel.loadData()
-        }
-    }
-
-    private func removeKeyword(_ keyword: String) {
-        var prefs = UserPreferences.load()
-        prefs.keywords.removeAll { $0 == keyword }
-        prefs.save()
-        if appState.selectedTopicKeyword == keyword {
-            appState.selectedTopicKeyword = prefs.keywords.first ?? ""
-        }
-        Task {
-            await viewModel.loadData()
-        }
-    }
-    #endif
-}
-
-private struct TVManageDeleteButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        TVManageDeleteFocusWrapper {
-            configuration.label
-        }
-    }
-}
-
-private struct TVManageDeleteFocusWrapper<Content: View>: View {
-    @Environment(\.isFocused) private var isFocused
-    let content: () -> Content
-
-    init(@ViewBuilder content: @escaping () -> Content) {
-        self.content = content
-    }
-
-    var body: some View {
-        content()
-            .background(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusLG)
-                    .fill(Theme.surface.opacity(0.65))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusLG)
-                    .stroke(isFocused ? Theme.accent.opacity(0.95) : Color.clear, lineWidth: 2)
-            )
-            .shadow(color: isFocused ? Theme.accent.opacity(0.2) : .clear, radius: 6, x: 0, y: 1)
-            .scaleEffect(isFocused ? 1.01 : 1.0)
-            .animation(.easeInOut(duration: 0.14), value: isFocused)
-            .modifier(TVFocusEffectDisabledCompat())
-    }
-}
-
-private struct TVFocusEffectDisabledCompat: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        #if os(tvOS)
-        if #available(tvOS 17.0, *) {
-            content.focusEffectDisabled()
-        } else {
-            content
-        }
-        #else
-        content
-        #endif
-    }
 }
 
 // Helper struct for sheet binding

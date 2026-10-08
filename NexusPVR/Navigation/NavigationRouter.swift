@@ -1329,9 +1329,6 @@ struct TVOSNavigation: View {
             }
             return .recordingsFilter(appState.recordingsFilter)
         case .topics, .calendar:
-            if appState.showingKeywordsEditor {
-                return .topicManage
-            }
             if !appState.selectedTopicKeyword.isEmpty,
                appState.topicKeywords.contains(appState.selectedTopicKeyword) {
                 return .topicKeyword(appState.selectedTopicKeyword)
@@ -1429,7 +1426,7 @@ struct TVOSNavigation: View {
                                     tvOSSidebarSubRow(
                                         label: keyword,
                                         item: .topicKeyword(keyword),
-                                        isSelected: appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
+                                        isSelected: appState.selectedTab == .topics && appState.selectedTopicKeyword == keyword
                                     ) {
                                         if let count = appState.topicKeywordMatchCounts[keyword] {
                                             Text("\(count)")
@@ -1438,11 +1435,15 @@ struct TVOSNavigation: View {
                                         }
                                     }
                                 }
-                                tvOSSidebarSubRow(
-                                    label: "Manage",
-                                    item: .topicManage,
-                                    isSelected: appState.selectedTab == .topics && appState.showingKeywordsEditor
-                                ) { EmptyView() }
+                                // Topics are managed in Settings; with none yet,
+                                // this row leads there so the section isn't empty.
+                                if appState.topicKeywords.isEmpty {
+                                    tvOSSidebarSubRow(
+                                        label: "Add topics",
+                                        item: .topicManage,
+                                        isSelected: false
+                                    ) { EmptyView() }
+                                }
                             }
                         } else if tab == .guide {
                             if guideSidebarPreferences.guideShowGroupsInSidebar || guideSidebarShowsProfiles {
@@ -1704,12 +1705,11 @@ struct TVOSNavigation: View {
                 appState.showRecordingsSeriesMenu(userInitiated: true)
                 appState.selectedTab = .recordings
             case .topicKeyword(let keyword):
-                appState.showingKeywordsEditor = false
                 appState.selectedTopicKeyword = keyword
                 appState.selectedTab = .topics
             case .topicManage:
-                appState.showingKeywordsEditor = true
-                appState.selectedTab = .topics
+                appState.requestedSettingsCategory = .topics
+                appState.selectedTab = .settings
             case .guideAll:
                 appState.guideGroupFilter = nil
                 appState.guideProfileFilter = nil

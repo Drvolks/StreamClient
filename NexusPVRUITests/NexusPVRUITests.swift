@@ -304,28 +304,29 @@ final class NexusPVRUITests: XCTestCase {
     func testTopicsCanAddKeywordAndRevealMatchingPrograms() throws {
         let app = launchApp()
         let keyword = "Ironing"
-        navigateToTab("Topics", app: app)
 
         #if os(tvOS)
+        // tvOS manages topics in Settings > Topics: an "Add a topic" row that
+        // opens the keyboard, then the new topic appears in the sidebar.
+        navigateToTab("Settings", app: app)
         let remote = XCUIRemote.shared
-        let keywordField = app.textFields["keyword-text-field"].firstMatch
+        let addTopicRow = app.buttons["keyword-text-field"].firstMatch
+        XCTAssertTrue(addTopicRow.waitForExistence(timeout: 5), "Add a topic row should exist in tvOS Settings")
 
-        for _ in 0..<6 {
-            remote.press(.right)
-            pause(0.4)
-        }
-        XCTAssertTrue(keywordField.waitForExistence(timeout: 5), "Manage keyword field should be reachable on tvOS")
-
-        for _ in 0..<8 where !keywordField.hasFocus {
+        for _ in 0..<40 where !addTopicRow.hasFocus {
             remote.press(.down)
-            pause(0.4)
+            pause(0.3)
         }
+        XCTAssertTrue(addTopicRow.hasFocus, "Add a topic row should be reachable on tvOS")
 
         remote.press(.select)
-        pause(0.8)
-        keywordField.typeText(keyword + "\n")
+        pause(1.0)
+        app.typeText(keyword + "\n")
         pause(2.5)
+        navigateToTab("Topics", app: app)
+        pause(1.0)
         #else
+        navigateToTab("Topics", app: app)
         openKeywordEditor(app: app)
 
         let keywordField = app.textFields["keyword-text-field"].firstMatch
@@ -777,7 +778,9 @@ final class NexusPVRUITests: XCTestCase {
         guard searchField.waitForExistence(timeout: 6) else { return nil }
 
         activate(searchField, app: app)
+        #if !os(tvOS)
         searchField.tap()
+        #endif
         if let currentValue = searchField.value as? String, !currentValue.isEmpty, currentValue.lowercased() != "search" {
             let deleteString = String(repeating: XCUIKeyboardKey.delete.rawValue, count: currentValue.count)
             searchField.typeText(deleteString)

@@ -11,7 +11,7 @@
 import SwiftUI
 
 struct TVPageHeader<Trailing: View>: View {
-    let kicker: String
+    let kicker: String?
     let title: String
     var readout: String?
     @ViewBuilder let trailing: Trailing
@@ -19,9 +19,11 @@ struct TVPageHeader<Trailing: View>: View {
     var body: some View {
         HStack(spacing: Theme.spacingMD) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(kicker)
-                    .midnightKicker(Theme.scaledFont(13))
-                    .foregroundStyle(MidnightPalette.accent)
+                if let kicker {
+                    Text(kicker)
+                        .midnightKicker(Theme.scaledFont(13))
+                        .foregroundStyle(MidnightPalette.accent)
+                }
                 Text(title)
                     .midnightDisplay(Theme.scaledFont(30))
                     .foregroundStyle(MidnightPalette.ink)
@@ -51,7 +53,7 @@ struct TVPageHeader<Trailing: View>: View {
 }
 
 extension TVPageHeader where Trailing == EmptyView {
-    init(kicker: String, title: String, readout: String? = nil) {
+    init(kicker: String?, title: String, readout: String? = nil) {
         self.init(kicker: kicker, title: title, readout: readout) { EmptyView() }
     }
 }
