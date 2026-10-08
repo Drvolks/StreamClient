@@ -1993,33 +1993,37 @@ struct MacOSNavigation: View {
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .modifier(MacOSDetailTopInsetModifier(tab: appState.selectedTab))
-
                         // Dismiss layer when dropdown showing
-                        if showSearchDropdown {
-                            Color.black.opacity(0.01)
-                                .ignoresSafeArea()
-                                .onTapGesture {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        showSearchDropdown = false
+                        .overlay {
+                            if showSearchDropdown {
+                                Color.black.opacity(0.01)
+                                    .onTapGesture {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            showSearchDropdown = false
+                                        }
+                                    }
+                            }
+                        }
+                        // Search field + dropdown in the guide header's
+                        // trailing slot (guide tab only). Applied before the
+                        // inset modifier so both move together in fullscreen.
+                        .overlay(alignment: .topTrailing) {
+                            if appState.selectedTab == .guide {
+                                VStack(alignment: .trailing, spacing: 6) {
+                                    macSearchBar
+                                        .frame(width: MacGuideHeaderMetrics.searchWidth)
+                                    if showSearchDropdown {
+                                        macSearchDropdown
+                                            .frame(width: 360)
+                                            .transition(.opacity.combined(with: .move(edge: .top)))
                                     }
                                 }
-                        }
-
-                        // Floating search bar + dropdown (guide tab only)
-                        if appState.selectedTab == .guide {
-                            VStack(spacing: 6) {
-                                if showSearchDropdown {
-                                    macSearchDropdown
-                                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                                }
-                                macSearchBar
+                                .padding(.top, (MacGuideHeaderMetrics.height - MacGuideHeaderMetrics.searchHeight) / 2)
+                                .padding(.trailing, MacGuideHeaderMetrics.horizontalPadding)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showSearchDropdown)
                             }
-                            .frame(maxWidth: 400)
-                            .padding(.bottom, 12)
-                            .padding(.horizontal, Theme.spacingLG)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showSearchDropdown)
                         }
+                        .modifier(MacOSDetailTopInsetModifier(tab: appState.selectedTab))
                     }
                 }
             }
@@ -2531,8 +2535,8 @@ struct MacOSNavigation: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textTertiary)
 
-            TextField("Search...", text: $searchText)
-                .font(.subheadline)
+            TextField("Search programmes", text: $searchText)
+                .font(.archivo(12.5))
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("global-search-field")
                 .submitLabel(.search)
@@ -2561,11 +2565,10 @@ struct MacOSNavigation: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Theme.surfaceElevated)
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
+        .padding(.horizontal, 10)
+        .frame(height: MacGuideHeaderMetrics.searchHeight)
+        .background(MidnightPalette.inputBg)
+        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
 
     // MARK: - macOS Search Dropdown
@@ -2655,8 +2658,8 @@ struct MacOSNavigation: View {
             .buttonStyle(.plain)
             .disabled(programMatchCount == 0)
         }
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(16)))
+        .background(MidnightPalette.railHead)
+        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
     }
 }

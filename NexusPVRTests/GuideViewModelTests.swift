@@ -435,6 +435,24 @@ struct GuideViewModelTests {
         #expect(vm.keywordMatchedProgramIds.isEmpty)
     }
 
+    @Test("Each keyword match records the topic it matched, as the user typed it")
+    func keywordMatchesRecordTheirTopic() async {
+        let cache = EPGCache()
+        await cache.loadData(using: PVRClient(config: ServerConfig(host: "demo", pin: "", useHTTPS: false)))
+        let vm = GuideViewModel()
+        vm.epgCache = cache
+        let keywords = DemoDataProvider.keywords.map { $0.uppercased() }
+
+        vm.updateKeywordMatches(keywords: keywords)
+
+        #expect(!vm.keywordMatchByProgramId.isEmpty)
+        #expect(Set(vm.keywordMatchByProgramId.keys) == vm.keywordMatchedProgramIds)
+        #expect(vm.keywordMatchByProgramId.values.allSatisfy { keywords.contains($0) })
+
+        vm.updateKeywordMatches(keywords: [])
+        #expect(vm.keywordMatchByProgramId.isEmpty)
+    }
+
     // MARK: - programWidth / programOffset math
 
     @Test("programWidth scales by hour-width for full-hour programs")

@@ -67,6 +67,9 @@ final class GuideViewModel: ObservableObject {
 
     // Keyword-matched program IDs (O(1) lookup per cell)
     @Published private(set) var keywordMatchedProgramIds: Set<Int> = []
+    /// The topic keyword each matching program matched first, as the user typed
+    /// it. The macOS guide labels topic matches with it.
+    @Published private(set) var keywordMatchByProgramId: [Int: String] = [:]
 
     // Reference to EPGCache (set during loadData)
     weak var epgCache: EPGCache?
@@ -252,10 +255,11 @@ final class GuideViewModel: ObservableObject {
     func updateKeywordMatches(keywords: [String]) {
         guard !keywords.isEmpty, let cache = epgCache else {
             keywordMatchedProgramIds = []
+            keywordMatchByProgramId = [:]
             return
         }
-        let lowercasedKeywords = keywords.map { $0.lowercased() }
-        var matched = Set<Int>()
+        let lowercasedKeywords = keywords.map { ($0, $0.lowercased()) }
+        var matches: [Int: String] = [:]
         for channel in channels {
             for program in cache.programs(for: channel.id, on: selectedDate) {
                 let searchText = [
@@ -263,12 +267,13 @@ final class GuideViewModel: ObservableObject {
                     program.subtitle ?? "",
                     program.desc ?? ""
                 ].joined(separator: " ").lowercased()
-                if lowercasedKeywords.contains(where: { searchText.contains($0) }) {
-                    matched.insert(program.id)
+                if let keyword = lowercasedKeywords.first(where: { searchText.contains($0.1) }) {
+                    matches[program.id] = keyword.0
                 }
             }
         }
-        keywordMatchedProgramIds = matched
+        keywordMatchByProgramId = matches
+        keywordMatchedProgramIds = Set(matches.keys)
     }
 
     func loadData(using client: PVRClient, epgCache: EPGCache) async {
