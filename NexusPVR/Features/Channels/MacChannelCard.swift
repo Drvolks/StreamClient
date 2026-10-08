@@ -79,7 +79,7 @@ struct MacChannelCard: View {
                     .foregroundStyle(MidnightPalette.cellRestSub)
                     .lineLimit(2, reservesSpace: true)
                 progressBar(program.progress(at: now))
-                Text("until \(program.endDate.formatted(date: .omitted, time: .shortened))")
+                Text("until \(GuideCellTimeLabel.time(program.endDate))")
                     .midnightMeta(9.5)
                     .foregroundStyle(MidnightPalette.inkFaint)
             } else {

@@ -2,47 +2,54 @@
 //  GuideCellTimeLabel.swift
 //  nextpvr-apple-client
 //
-//  The time range shown in a guide cell, shortened to fit its width
-//  (Midnight redesign, macOS).
+//  Program start and end times as the macOS guide and channel cards show
+//  them (Midnight redesign). Times on the hour drop their minutes, so a range
+//  reads "10 AM – 11 AM" or "10 AM – 10:30 AM".
 //
 
 import Foundation
 
 nonisolated enum GuideCellTimeLabel {
-    /// Cells at least this wide get "7:30 AM – 9:00 AM".
+    /// Width the detail bar passes to always get the full form.
     static let fullWidth: CGFloat = 200
-    /// Cells at least this wide get "7:30 – 9:00 AM", and keep their badges.
+    /// Cells narrower than this drop the meridiems ("10 – 10:30") and their
+    /// badges.
     static let mediumWidth: CGFloat = 132
 
-    /// The range for a cell `width` points wide: both meridiems when it fits,
-    /// the end one only when it nearly fits, and none below that.
+    /// The range for a cell `width` points wide.
     static func text(start: Date, end: Date, width: CGFloat, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
-        let full = formatter(withMeridiem: true, locale: locale, timeZone: timeZone)
-        let bare = formatter(withMeridiem: false, locale: locale, timeZone: timeZone)
-        if width >= fullWidth {
-            return "\(full.string(from: start)) – \(full.string(from: end))"
+        let withMeridiem = width >= mediumWidth
+        let startText = time(start, withMeridiem: withMeridiem, locale: locale, timeZone: timeZone)
+        let endText = time(end, withMeridiem: withMeridiem, locale: locale, timeZone: timeZone)
+        return "\(startText) – \(endText)"
+    }
+
+    /// One time: "10 AM" on the hour, "10:30 AM" otherwise. 24-hour locales
+    /// always keep the minutes ("10:00"), since a bare "10" reads ambiguously.
+    static func time(_ date: Date, withMeridiem: Bool = true, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        let hourTemplate = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale) ?? "h a"
+        let uses12Hour = hourTemplate.contains("a")
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let onTheHour = calendar.component(.minute, from: date) == 0
+
+        var format = uses12Hour && onTheHour
+            ? hourTemplate
+            : DateFormatter.dateFormat(fromTemplate: "j:mm", options: 0, locale: locale) ?? "h:mm a"
+        if !withMeridiem {
+            format = format.replacingOccurrences(of: "a", with: "").trimmingCharacters(in: .whitespaces)
         }
-        if width >= mediumWidth {
-            return "\(bare.string(from: start)) – \(full.string(from: end))"
-        }
-        return "\(bare.string(from: start)) – \(bare.string(from: end))"
+
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateFormat = format
+        return formatter.string(from: date)
     }
 
     /// Whether a cell this wide has room for its NEW / REC / catch-up badges.
     static func showsBadges(width: CGFloat) -> Bool {
         width >= mediumWidth
-    }
-
-    /// Short time, with or without the meridiem. 24-hour locales have no
-    /// meridiem, so both variants read the same there.
-    private static func formatter(withMeridiem: Bool, locale: Locale, timeZone: TimeZone) -> DateFormatter {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.timeZone = timeZone
-        let template = DateFormatter.dateFormat(fromTemplate: "j:mm", options: 0, locale: locale) ?? "h:mm a"
-        formatter.dateFormat = withMeridiem
-            ? template
-            : template.replacingOccurrences(of: "a", with: "").trimmingCharacters(in: .whitespaces)
-        return formatter
     }
 }
