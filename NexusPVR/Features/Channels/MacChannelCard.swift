@@ -13,7 +13,6 @@ import SwiftUI
 struct MacChannelCard: View {
     let channel: Channel
     let iconURL: URL?
-    let groupName: String?
     let currentProgram: Program?
     /// Re-read once a minute by the page, so progress and "until" stay current.
     let now: Date
@@ -35,7 +34,6 @@ struct MacChannelCard: View {
             MidnightChannelPlate(
                 channel: channel,
                 iconURL: iconURL,
-                groupName: groupName,
                 logoInsets: EdgeInsets(top: 10, leading: 26, bottom: 10, trailing: 26)
             )
             .frame(height: 62)
