@@ -11,7 +11,14 @@ import SwiftUI
 
 // MARK: - Constants
 
+#if os(macOS)
+// Taller hours on macOS so a 15-minute program still gets a readable line.
+private let hourHeight: CGFloat = 80
+#else
 private let hourHeight: CGFloat = 60
+#endif
+/// Shortest a block is drawn, unless the next program leaves less room.
+private let minimumBlockHeight: CGFloat = 20
 private let timeColumnWidth: CGFloat = 50
 private let startHour = 0
 private let endHour = 24
@@ -386,8 +393,8 @@ struct CalendarView: View {
                     // Program blocks overlaid
                     if availableWidth > 0 {
                         ForEach(dayPrograms) { item in
-                            let layout = columns[item.id] ?? (column: 0, totalColumns: 1)
-                            programBlock(item, columnOffset: timeColumnWidth, columnWidth: availableWidth, colIndex: layout.column, totalCols: layout.totalColumns)
+                            let layout = columns[item.id]
+                            programBlock(item, columnOffset: timeColumnWidth, columnWidth: availableWidth, slot: layout)
                         }
                         #if os(macOS)
                         if cal.isDateInToday(selectedDate) {
@@ -517,8 +524,8 @@ struct CalendarView: View {
                                 let columns = layoutColumns(for: dayPrograms)
 
                                 ForEach(dayPrograms) { item in
-                                    let layout = columns[item.id] ?? (column: 0, totalColumns: 1)
-                                    programBlock(item, columnOffset: xOffset + 1, columnWidth: columnWidth - 2, colIndex: layout.column, totalCols: layout.totalColumns)
+                                    let layout = columns[item.id]
+                                    programBlock(item, columnOffset: xOffset + 1, columnWidth: columnWidth - 2, slot: layout)
                                 }
                             }
                             #if os(macOS)
@@ -550,19 +557,25 @@ struct CalendarView: View {
     private var timelineVStack: some View {
         VStack(spacing: 0) {
             ForEach(startHour..<endHour, id: \.self) { hour in
+                #if os(macOS)
+                // The rule sits exactly on the hour, where the blocks are
+                // positioned; the label is centred on it.
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(MidnightPalette.lineSoft)
+                        .frame(height: 1)
+                        .padding(.leading, timeColumnWidth + 4)
+                    Text(hourLabel(hour))
+                        .midnightMeta(10)
+                        .foregroundStyle(MidnightPalette.inkSoft)
+                        .frame(width: timeColumnWidth, alignment: .trailing)
+                        .offset(y: hour == startHour ? 0 : -6)
+                }
+                .frame(height: hourHeight, alignment: .top)
+                .id(hour)
+                #else
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
-                        #if os(macOS)
-                        Text(hourLabel(hour))
-                            .midnightMeta(10)
-                            .foregroundStyle(MidnightPalette.inkSoft)
-                            .frame(width: timeColumnWidth, alignment: .trailing)
-                            .padding(.trailing, 4)
-
-                        Rectangle()
-                            .fill(MidnightPalette.lineSoft)
-                            .frame(height: 1)
-                        #else
                         Text(hourLabel(hour))
                             .font(.caption2)
                             .foregroundStyle(Theme.textTertiary)
@@ -572,72 +585,40 @@ struct CalendarView: View {
                         Rectangle()
                             .fill(Theme.textTertiary.opacity(0.3))
                             .frame(height: 0.5)
-                        #endif
                     }
                     Spacer()
                 }
                 .frame(height: hourHeight)
                 .id(hour)
+                #endif
             }
         }
     }
 
     // MARK: - Overlap Layout
 
-    /// Assigns each program a column index and total column count for side-by-side layout
-    private func layoutColumns(for programs: [MatchingProgram]) -> [String: (column: Int, totalColumns: Int)] {
-        let sorted = programs.sorted { $0.program.startDate < $1.program.startDate }
-        // Each item gets a column assignment
-        var assignments: [(id: String, column: Int, start: Date, end: Date)] = []
-
-        for item in sorted {
-            let start = item.program.startDate
-            let end = item.program.endDate
-            // Find the first column where this program doesn't overlap with any existing assignment
-            var col = 0
-            while assignments.contains(where: { $0.column == col && $0.end > start && $0.start < end }) {
-                col += 1
-            }
-            assignments.append((id: item.id, column: col, start: start, end: end))
-        }
-
-        // For each group of overlapping programs, determine the total column count
-        var result: [String: (column: Int, totalColumns: Int)] = [:]
-        for assignment in assignments {
-            // Find all assignments that overlap with this one
-            let overlapping = assignments.filter { $0.end > assignment.start && $0.start < assignment.end }
-            let totalColumns = (overlapping.map(\.column).max() ?? 0) + 1
-            result[assignment.id] = (column: assignment.column, totalColumns: totalColumns)
-        }
-
-        // Normalize: ensure all mutually overlapping items share the same totalColumns
-        for assignment in assignments {
-            let overlapping = assignments.filter { $0.end > assignment.start && $0.start < assignment.end }
-            let maxTotal = overlapping.compactMap { result[$0.id]?.totalColumns }.max() ?? 1
-            for ovl in overlapping {
-                if let existing = result[ovl.id], existing.totalColumns < maxTotal {
-                    result[ovl.id] = (column: existing.column, totalColumns: maxTotal)
-                }
-            }
-        }
-
-        return result
+    /// Column and height for each of a day's program blocks (see
+    /// `CalendarBlockLayout`).
+    private func layoutColumns(for programs: [MatchingProgram]) -> [String: CalendarBlockLayout.Slot] {
+        CalendarBlockLayout.layout(
+            programs.map { .init(id: $0.id, start: $0.program.startDate, end: $0.program.endDate) },
+            hourHeight: hourHeight,
+            minHeight: minimumBlockHeight
+        )
     }
 
     // MARK: - Program Block
 
-    private func programBlock(_ item: MatchingProgram, columnOffset: CGFloat, columnWidth: CGFloat?) -> some View {
-        programBlock(item, columnOffset: columnOffset, columnWidth: columnWidth, colIndex: 0, totalCols: 1)
-    }
-
-    private func programBlock(_ item: MatchingProgram, columnOffset: CGFloat, columnWidth: CGFloat?, colIndex: Int, totalCols: Int) -> some View {
+    private func programBlock(_ item: MatchingProgram, columnOffset: CGFloat, columnWidth: CGFloat?, slot: CalendarBlockLayout.Slot?) -> some View {
+        let colIndex = slot?.column ?? 0
+        let totalCols = slot?.totalColumns ?? 1
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: item.program.startDate)
         let startMinutes = cal.dateComponents([.hour, .minute], from: dayStart, to: item.program.startDate)
         let totalStartMinutes = CGFloat((startMinutes.hour ?? 0) * 60 + (startMinutes.minute ?? 0))
         let durationMinutes = CGFloat(item.program.durationMinutes)
         let yOffset = (totalStartMinutes / 60.0) * hourHeight
-        let blockHeight = max((durationMinutes / 60.0) * hourHeight, 20)
+        let blockHeight = slot?.height ?? max((durationMinutes / 60.0) * hourHeight, minimumBlockHeight)
         #if DISPATCHERPVR
         let catchupAvailable = CatchupAvailability.isAvailable(
             program: item.program,

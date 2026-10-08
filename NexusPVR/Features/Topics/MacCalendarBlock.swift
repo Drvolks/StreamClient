@@ -41,7 +41,8 @@ struct MacCalendarBlock: View {
         }
         .padding(.leading, 9)
         .padding(.trailing, 5)
-        .padding(.vertical, 4)
+        // Tight blocks (a short program right before another) keep their title line.
+        .padding(.vertical, height > 24 ? 4 : 2)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
         .background(fill)
         .overlay(alignment: .leading) {
