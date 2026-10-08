@@ -82,11 +82,9 @@ struct MacRecordingRow: View {
                 }
                 if let matchedTopic {
                     Text(matchedTopic)
-                        .midnightBadge(8.5)
-                        .foregroundStyle(MidnightPalette.topicInk)
                         .lineLimit(1)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
+                        .badgeLabel()
+                        .foregroundStyle(MidnightPalette.topicInk)
                         .background(MidnightPalette.topic)
                 }
             }

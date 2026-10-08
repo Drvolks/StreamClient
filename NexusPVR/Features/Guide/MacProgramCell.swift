@@ -123,11 +123,9 @@ struct MacProgramCell: View {
             }
             if let matchedTopic {
                 Text(matchedTopic)
-                    .midnightBadge(8.5)
-                    .foregroundStyle(MidnightPalette.topicInk)
                     .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
+                    .badgeLabel()
+                    .foregroundStyle(MidnightPalette.topicInk)
                     .background(MidnightPalette.topic)
             }
         }
