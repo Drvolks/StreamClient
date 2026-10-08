@@ -7,19 +7,6 @@
 
 import SwiftUI
 
-nonisolated enum GuideSportIconVisibility {
-    /// Short Guide cells intentionally stay text-only through this inclusive boundary.
-    static let maximumShortProgramDuration: TimeInterval = 30 * 60
-
-    static func shouldShow(
-        for program: Program,
-        cellWidth: CGFloat,
-        minimumCellWidth: CGFloat
-    ) -> Bool {
-        program.duration > maximumShortProgramDuration && cellWidth > minimumCellWidth
-    }
-}
-
 struct ProgramCell: View {
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -35,25 +22,7 @@ struct ProgramCell: View {
     /// (#119) — see `CatchupAvailability.isAvailable`.
     var isCatchupAvailable: Bool = false
     var matchesKeyword: Bool = false
-    var detectedSport: Sport? = nil
     var leadingPadding: CGFloat = 0 // Padding for portion that's off-screen to the left
-
-    private var showSportIcon: Bool {
-        guard detectedSport != nil else { return false }
-        #if os(tvOS)
-        return GuideSportIconVisibility.shouldShow(
-            for: program,
-            cellWidth: width,
-            minimumCellWidth: 200
-        )
-        #else
-        return GuideSportIconVisibility.shouldShow(
-            for: program,
-            cellWidth: width,
-            minimumCellWidth: 100
-        )
-        #endif
-    }
 
     /// tvOS runs the guide noticeably smaller than the platform's semantic
     /// `.caption` (~25pt), which crowded long program names out of a cell
@@ -98,10 +67,6 @@ struct ProgramCell: View {
 
             // Content - padded to align with visible portion
             HStack(spacing: 4) {
-                if showSportIcon, let sport = detectedSport {
-                    SportIconView(sport: sport, size: Theme.cellHeight - Theme.spacingXS * 2 - 2)
-                }
-
                 VStack(alignment: .leading, spacing: 2) {
                     Text(program.cleanName)
                         .font(titleFont)

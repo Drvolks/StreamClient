@@ -52,9 +52,6 @@ final class GuideViewModel: ObservableObject {
     // Fallback lookup by name + start time
     private var recordingsByNameAndStart: [String: Recording] = [:]
 
-    // Cached sport detection results (avoids re-running regex per render)
-    private var sportCache: [Int: Sport?] = [:]
-
     // Cached per-channel programs for the selected day (#141)
     private var programsCache: [Int: [Program]] = [:]
     private var programsCacheDayStart: Date?
@@ -67,6 +64,9 @@ final class GuideViewModel: ObservableObject {
 
     // Keyword-matched program IDs (O(1) lookup per cell)
     @Published private(set) var keywordMatchedProgramIds: Set<Int> = []
+    /// The topic keyword each matching program matched first, as the user typed
+    /// it. The macOS guide labels topic matches with it.
+    @Published private(set) var keywordMatchByProgramId: [Int: String] = [:]
 
     // Reference to EPGCache (set during loadData)
     weak var epgCache: EPGCache?
@@ -238,37 +238,24 @@ final class GuideViewModel: ObservableObject {
     }
     #endif
 
-    /// Returns cached sport detection result for a program
-    func detectedSport(for program: Program) -> Sport? {
-        if let cached = sportCache[program.id] {
-            return cached
-        }
-        let sport = SportDetector.detect(from: program)
-        sportCache[program.id] = sport
-        return sport
-    }
 
     /// Compute keyword matches for programs of a specific channel
     func updateKeywordMatches(keywords: [String]) {
         guard !keywords.isEmpty, let cache = epgCache else {
             keywordMatchedProgramIds = []
+            keywordMatchByProgramId = [:]
             return
         }
-        let lowercasedKeywords = keywords.map { $0.lowercased() }
-        var matched = Set<Int>()
+        var matches: [Int: String] = [:]
         for channel in channels {
             for program in cache.programs(for: channel.id, on: selectedDate) {
-                let searchText = [
-                    program.name,
-                    program.subtitle ?? "",
-                    program.desc ?? ""
-                ].joined(separator: " ").lowercased()
-                if lowercasedKeywords.contains(where: { searchText.contains($0) }) {
-                    matched.insert(program.id)
+                if let keyword = TopicMatcher.matchedKeyword(for: program, in: keywords) {
+                    matches[program.id] = keyword
                 }
             }
         }
-        keywordMatchedProgramIds = matched
+        keywordMatchByProgramId = matches
+        keywordMatchedProgramIds = Set(matches.keys)
     }
 
     func loadData(using client: PVRClient, epgCache: EPGCache) async {
@@ -278,7 +265,6 @@ final class GuideViewModel: ObservableObject {
 
         isLoading = true
         error = nil
-        sportCache = [:]
 
         // Wait for EPGCache channels to be ready (may already be loaded by ContentView)
         while !epgCache.hasLoaded && epgCache.error == nil {
@@ -315,7 +301,6 @@ final class GuideViewModel: ObservableObject {
     /// The grid keeps showing the current data while this runs.
     func refresh(using client: PVRClient) async {
         guard let cache = epgCache, client.isConfigured else { return }
-        sportCache = [:]
         await cache.refresh(using: client, profileId: selectedProfileId)
         showChannelSearch = cache.channels.count > 25
         error = cache.error
@@ -325,7 +310,6 @@ final class GuideViewModel: ObservableObject {
     /// Handle date navigation — ensure EPG data is cached for the new date
     func navigateToDate(using client: PVRClient) async {
         guard let cache = epgCache else { return }
-        sportCache = [:]
         await cache.ensureDay(selectedDate, using: client)
         // Prefetch adjacent days in background
         Task {

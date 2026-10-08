@@ -23,6 +23,57 @@ struct CustomHostSettingsRows: View {
     @FocusState private var isHostFocused: Bool
 
     var body: some View {
+        #if os(macOS)
+        midnightRows
+            .onAppear(perform: load)
+            .onChange(of: isHostFocused) { focused in
+                if !focused { apply() }
+            }
+            .onChange(of: mode) { _ in
+                apply()
+            }
+        #else
+        listRows
+        #endif
+    }
+
+    #if os(macOS)
+    /// The same controls laid out as Midnight Settings rows.
+    @ViewBuilder
+    private var midnightRows: some View {
+        MacSettingsRow(title: "Custom Host", subtitle: validationError) {
+            TextField("https://pvr.example.com", text: $hostText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(MidnightPalette.ink)
+                .multilineTextAlignment(.trailing)
+                .autocorrectionDisabled()
+                .focused($isHostFocused)
+                .onSubmit { apply() }
+                .frame(maxWidth: 340)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(MidnightPalette.inputBg)
+                .overlay {
+                    Rectangle().strokeBorder(isHostFocused ? MidnightPalette.accent : MidnightPalette.line, lineWidth: 1)
+                }
+                .accessibilityIdentifier("custom-host-field")
+        }
+        MacSettingsRow(title: "Use Custom Host", subtitle: description) {
+            MidnightPicker(
+                title: "Use Custom Host",
+                selection: $mode,
+                options: CustomHostMode.allCases.map { ($0.label, $0) }
+            )
+            .disabled(!hasHostText)
+            .opacity(hasHostText ? 1 : 0.45)
+            .accessibilityIdentifier("custom-host-mode-picker")
+        }
+    }
+    #endif
+
+    @ViewBuilder
+    private var listRows: some View {
         HStack {
             Text("Custom Host")
                 .foregroundStyle(Theme.textSecondary)

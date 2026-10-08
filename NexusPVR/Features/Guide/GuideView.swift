@@ -11,13 +11,6 @@ import UIKit
 #endif
 
 
-// Helper struct to hold both program and channel for sheet presentation
-private struct ProgramDetail: Identifiable {
-    var id: Int { program.id }
-    let program: Program
-    let channel: Channel
-}
-
 struct GuideView: View {
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var appState: AppState
@@ -50,9 +43,21 @@ struct GuideView: View {
     @StateObject private var calendarViewModel = TopicsViewModel()
     #endif
 
+    #if os(macOS)
+    // Midnight guide: 5pt per minute, so a half-hour cell (150pt) clears the
+    // width at which times keep AM/PM and badges show; a logo-first channel
+    // column.
+    private let hourWidth: CGFloat = 300
+    private let channelWidth: CGFloat = 194
+    private let rowHeight: CGFloat = 58
+    /// The program shown in the detail bar under the grid.
+    @State private var macSelection: ProgramDetail?
+    @Environment(\.colorScheme) private var colorScheme
+    #else
     private let hourWidth: CGFloat = Theme.hourColumnWidth
     private let channelWidth: CGFloat = Theme.channelColumnWidth
     private let rowHeight: CGFloat = Theme.cellHeight
+    #endif
 
     private var hasFilterData: Bool {
         !epgCache.channelProfiles.isEmpty || hasPopulatedGroups
@@ -77,7 +82,11 @@ struct GuideView: View {
     private func presentationLayer<Content: View>(_ content: Content) -> some View {
         content
             .accessibilityIdentifier("guide-view")
+            #if os(macOS)
+            .background(MidnightGradients.ground(colorScheme))
+            #else
             .background(.ultraThinMaterial)
+            #endif
             .sheet(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
                 programDetailSheet(detail)
             }
@@ -239,6 +248,13 @@ struct GuideView: View {
 
     private var contentView: some View {
         VStack(spacing: 0) {
+            #if os(macOS)
+            macOSGuideHeader
+            if viewModel.showFilters && hasFilterData {
+                filterPanel
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            #endif
             Group {
                 if let error = epgCache.error {
                     errorView(error)
@@ -252,13 +268,11 @@ struct GuideView: View {
                     guideContent
                 }
             }
+            .frame(maxHeight: .infinity)
+            #if os(macOS)
+            macOSDetailBar
+            #endif
         }
-        #if os(macOS)
-        .overlay(alignment: .top) {
-            macOSGuideNavBar
-                .offset(y: -50)
-        }
-        #endif
         #if os(iOS)
         .overlay(alignment: .top) {
             if viewModel.showFilters && hasFilterData {
@@ -387,114 +401,129 @@ struct GuideView: View {
     #endif
 
     #if os(macOS)
-    private var macOSGuideNavBar: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                HStack(spacing: 8) {
-                    Button {
-                        viewModel.previousDay()
-                        Task { await viewModel.navigateToDate(using: client) }
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(viewModel.canGoToPreviousDay ? Theme.accent : Theme.textTertiary)
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!viewModel.canGoToPreviousDay)
+    private var macOSGuideTitle: String {
+        if let groupId = viewModel.selectedGroupId,
+           let group = epgCache.channelGroups.first(where: { $0.id == groupId }) {
+            return group.name
+        }
+        if let profileId = viewModel.selectedProfileId,
+           let profile = epgCache.channelProfiles.first(where: { $0.id == profileId }) {
+            return profile.name
+        }
+        return "All Channels"
+    }
 
-                    Text(viewModel.selectedDate, format: .dateTime.month(.abbreviated).day())
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Theme.textPrimary)
-
-                    Button {
-                        viewModel.nextDay()
-                        Task { await viewModel.navigateToDate(using: client) }
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                Spacer()
-
-                // macOS has no pull-to-refresh gesture, so the guide gets an
-                // explicit refresh button next to the filter toggle (#118).
-                Button {
-                    Task { await refreshGuide() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 32, height: 32)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                }
-                .buttonStyle(.plain)
-                .disabled(epgCache.isRefreshing)
-                .accessibilityLabel("Refresh guide")
-                .accessibilityIdentifier("guide-refresh-button")
-                .padding(.trailing, Theme.spacingSM)
-
-                if hasFilterData {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            viewModel.showFilters.toggle()
-                        }
-                    } label: {
-                        Image(systemName: viewModel.hasActiveFilters
-                              ? "line.3.horizontal.decrease.circle.fill"
-                              : "line.3.horizontal.decrease")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(viewModel.hasActiveFilters ? Theme.accent : Theme.textPrimary)
-                            .frame(width: 32, height: 32)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, Theme.spacingSM)
+    private var macOSGuideHeader: some View {
+        MacGuideHeader(
+            title: macOSGuideTitle,
+            selectedDate: viewModel.selectedDate,
+            canGoToPreviousDay: viewModel.canGoToPreviousDay,
+            isRefreshing: epgCache.isRefreshing,
+            showsFilterButton: hasFilterData,
+            hasActiveFilters: viewModel.hasActiveFilters,
+            onPreviousDay: {
+                viewModel.previousDay()
+                Task { await viewModel.navigateToDate(using: client) }
+            },
+            onNextDay: {
+                viewModel.nextDay()
+                Task { await viewModel.navigateToDate(using: client) }
+            },
+            onNow: {
+                viewModel.scrollToNow()
+                Task { await viewModel.navigateToDate(using: client) }
+                updateScrollTarget()
+            },
+            onTopics: {
+                appState.showingKeywordsEditor = true
+            },
+            onRefresh: {
+                Task { await refreshGuide() }
+            },
+            onToggleFilters: {
+                withAnimation(.easeInOut(duration: Theme.animationDuration)) {
+                    viewModel.showFilters.toggle()
                 }
             }
-            .padding(.horizontal, Theme.spacingMD)
-            .padding(.vertical, Theme.spacingSM)
+        )
+    }
 
-            if viewModel.showFilters && hasFilterData {
-                filterPanel
-                    .transition(.move(edge: .top).combined(with: .opacity))
+    private var macOSDetailBar: some View {
+        let program = macSelection?.program
+        let channel = macSelection?.channel
+        return MacGuideDetailBar(
+            program: program,
+            channel: channel,
+            primaryAction: program.flatMap { program in channel.flatMap { macPrimaryAction(program: program, channel: $0) } },
+            recordTitle: program.flatMap(macRecordTitle(for:)),
+            onPrimary: {
+                guard let program, let channel else { return }
+                if program.isCurrentlyAiring {
+                    playLiveChannel(channel)
+                } else {
+                    playCatchup(program: program, channel: channel)
+                }
+            },
+            onRecord: {
+                guard let program, let channel else { return }
+                toggleRecording(program: program, channel: channel)
+            },
+            onDetails: {
+                guard let program, let channel else { return }
+                selectedProgramDetail = (program: program, channel: channel)
+            },
+            onClear: {
+                macSelection = nil
+            }
+        )
+    }
+
+    private func macPrimaryAction(program: Program, channel: Channel) -> MacGuideDetailBar.PrimaryAction? {
+        if program.isCurrentlyAiring { return .watchLive }
+        #if DISPATCHERPVR
+        if program.hasEnded && viewModel.isCatchupAvailable(program, on: channel) { return .watchReplay }
+        #endif
+        return nil
+    }
+
+    private func macRecordTitle(for program: Program) -> String? {
+        guard !appState.hideRecordings, !program.hasEnded else { return nil }
+        return viewModel.isScheduledRecording(program) ? "Cancel Recording" : "Record"
+    }
+
+    private func playCatchup(program: Program, channel: Channel) {
+        #if DISPATCHERPVR
+        Task {
+            do {
+                try await CatchupPlayback.start(
+                    program: program,
+                    channel: channel,
+                    client: client,
+                    appState: appState,
+                    guideReturnTime: program.startDate
+                )
+            } catch {
+                streamError = error.localizedDescription
             }
         }
+        #endif
     }
     #endif
 
     #if !os(tvOS)
 
     private var guideTopPadding: CGFloat {
+        // iOS overlays the filter panel on the grid, so the rows start below
+        // it; the macOS panel sits in the layout flow and needs no room here.
         #if os(iOS)
-        // Top bar is now a safeAreaInset in IOSNavigation, no extra offset needed
-        let base: CGFloat = 0
+        guard viewModel.showFilters && hasFilterData else { return 0 }
+        var extra: CGFloat = 8 // top/bottom padding
+        if !epgCache.channelProfiles.isEmpty { extra += 36 }
+        if hasPopulatedGroups { extra += 36 }
+        return extra
         #else
-        let base: CGFloat = 0
+        return 0
         #endif
-        var extra: CGFloat = 0
-        if viewModel.showFilters && hasFilterData {
-            // Add space for each filter row shown
-            extra += 8 // top/bottom padding
-            if !epgCache.channelProfiles.isEmpty { extra += 36 }
-            if hasPopulatedGroups { extra += 36 }
-        }
-        return base + extra
     }
     #endif
 
@@ -641,6 +670,12 @@ struct GuideView: View {
 
     @State private var currentTimelineHour: Date?
     @State private var scrollTargetId: String?
+    /// The time `scrollTargetId` stands for.
+    @State private var scrollTargetTime: Date?
+    #if os(macOS)
+    /// Drives the macOS grid's scroll by absolute offset (see `scrollGrid(to:)`).
+    @State private var gridScrollPosition = ScrollPosition()
+    #endif
     @State private var gridHorizontalOffset: CGFloat = 0
     #if os(iOS)
     @State private var lastScrollDirectionChangeY: CGFloat = 0
@@ -795,6 +830,12 @@ struct GuideView: View {
             hasCompletedInitialScroll = true
 
             guard let targetId = updateScrollTarget() else { return }
+            #if os(macOS)
+            _ = targetId
+            if let time = scrollTargetTime {
+                await scrollGrid(to: time)
+            }
+            #else
             let expectedOffset = GuideScrollHelper.expectedScrollOffsetX(
                 timelineStart: viewModel.timelineStart,
                 scrollTarget: currentTimelineHour ?? viewModel.timelineStart,
@@ -802,7 +843,7 @@ struct GuideView: View {
             )
 
             for attempt in 0..<8 {
-                proxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                proxy.scrollTo(targetId, anchor: gridScrollAnchor)
                 try? await Task.sleep(for: .milliseconds(attempt == 0 ? 150 : 300))
                 guard !Task.isCancelled else { return }
                 // `anchor` leaves the target inset from the leading edge, so
@@ -812,15 +853,56 @@ struct GuideView: View {
                     return
                 }
             }
+            #endif
         }
     }
+
+    #if os(macOS)
+    /// Scrolls the grid so `time` sits just past the pinned channel column.
+    ///
+    /// Uses an absolute content offset rather than a fractional anchor: an
+    /// anchor is resolved against the viewport width at the moment of the
+    /// request, and right after launch that width can still be settling, which
+    /// left the guide opened an hour or more short of "now". The scroll view
+    /// also clamps to the content laid out so far, so this retries until the
+    /// offset is exactly where it was asked to be.
+    private func scrollGrid(to time: Date) async {
+        let targetX = GuideScrollHelper.contentOffsetX(
+            timelineStart: viewModel.timelineStart,
+            target: time,
+            hourWidth: hourWidth,
+            inset: Theme.spacingLG
+        )
+        for attempt in 0..<8 {
+            gridScrollPosition.scrollTo(point: CGPoint(x: targetX, y: 0))
+            try? await Task.sleep(for: .milliseconds(attempt == 0 ? 150 : 300))
+            guard !Task.isCancelled else { return }
+            if abs(gridHorizontalOffset - targetX) <= 1 { return }
+        }
+    }
+    #endif
+
+    /// Where a scroll-to-time target lands in the viewport (iOS; macOS scrolls
+    /// by absolute offset, see `scrollGrid(to:)`).
+    private var gridScrollAnchor: UnitPoint {
+        UnitPoint(x: 0.10, y: 0)
+    }
+
+    #if os(macOS)
+    private var gridRowSpacing: CGFloat { 0 }
+    private var gridPinnedViews: PinnedScrollableViews { [.sectionHeaders] }
+    #else
+    private var gridRowSpacing: CGFloat { 1 }
+    private var gridPinnedViews: PinnedScrollableViews { [] }
+    #endif
 
     private var iOSMacOSGuideContent: some View {
         // Main grid — single LazyVStack for guaranteed lazy rendering
         // Channel cells pinned to left edge by counteracting horizontal scroll
         ScrollViewReader { programProxy in
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                LazyVStack(spacing: 1) {
+                LazyVStack(spacing: gridRowSpacing, pinnedViews: gridPinnedViews) {
+                  Section {
                     // Invisible scroll anchors for scroll-to-time
                     HStack(spacing: 0) {
                         Color.clear.frame(width: channelWidth, height: 1)
@@ -849,7 +931,13 @@ struct GuideView: View {
                                 Color.clear.frame(width: channelWidth, height: rowHeight)
                                 programsRow(channel)
                                     .frame(height: rowHeight)
+                                    #if os(macOS)
+                                    .overlay(alignment: .bottom) {
+                                        Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+                                    }
+                                    #else
                                     .background(Theme.surface)
+                                    #endif
                             }
 
                             // Channel cell pinned to visible left edge (after safe area)
@@ -860,10 +948,17 @@ struct GuideView: View {
                         }
                     }
 
+                  } header: {
                     #if os(macOS)
-                    // Bottom padding so last row isn't behind the floating search bar
-                    Color.clear.frame(height: 60)
+                    MacGuideTimeRuler(
+                        timelineStart: viewModel.timelineStart,
+                        hourCount: viewModel.hoursToShow.count,
+                        hourWidth: hourWidth,
+                        channelWidth: channelWidth,
+                        horizontalOffset: gridHorizontalOffset + rootLeadingSafeArea
+                    )
                     #endif
+                  }
                 }
                 .frame(minHeight: scrollViewHeight, alignment: .top)
                 #if os(iOS)
@@ -873,6 +968,9 @@ struct GuideView: View {
                 .modifier(MacScrollDirectionalLockModifier())
                 #endif
             }
+            #if os(macOS)
+            .scrollPosition($gridScrollPosition)
+            #endif
             .refreshable {
                 await refreshGuide()
             }
@@ -952,15 +1050,11 @@ struct GuideView: View {
 
                 await Task.yield()
                 guard !Task.isCancelled,
-                      let targetId = updateScrollTarget(preferredTime: catchupReturnTime) else { return }
+                      updateScrollTarget(preferredTime: catchupReturnTime) != nil,
+                      let time = scrollTargetTime else { return }
 
-                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
-                try? await Task.sleep(for: .milliseconds(250))
+                await scrollGrid(to: time)
                 guard !Task.isCancelled else { return }
-                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-                programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
 
                 appState.clearCatchupGuideReturnTime(ifMatching: catchupReturnTime)
             }
@@ -969,9 +1063,15 @@ struct GuideView: View {
                 updateScrollTarget()
             }
             .onChange(of: scrollTargetId) { _, newValue in
-                if let targetId = newValue {
-                    programProxy.scrollTo(targetId, anchor: UnitPoint(x: 0.10, y: 0))
+                #if os(macOS)
+                if newValue != nil, let time = scrollTargetTime {
+                    Task { await scrollGrid(to: time) }
                 }
+                #else
+                if let targetId = newValue {
+                    programProxy.scrollTo(targetId, anchor: gridScrollAnchor)
+                }
+                #endif
             }
         }
         .onChange(of: scenePhase) {
@@ -1173,7 +1273,7 @@ struct GuideView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .background(isFocused ? Theme.accent.opacity(0.3) : Color.clear)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: Theme.radius(4))
                                 .stroke(isFocused ? Theme.accent : Color.clear, lineWidth: 2)
                         )
                 } else {
@@ -1209,14 +1309,14 @@ struct GuideView: View {
         .padding(.trailing, 10)
         .frame(width: channelWidth, height: rowHeight - 10)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .fill(Theme.surfaceElevated.opacity(0.92))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(isSelected ? Theme.accent.opacity(0.6) : Theme.surfaceHighlight.opacity(0.55), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(10)))
     }
 
     private func tvOSProgramCell(program: Program, channel: Channel, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
@@ -1244,12 +1344,6 @@ struct GuideView: View {
             }
         }()
 
-        let showSport = GuideSportIconVisibility.shouldShow(
-            for: program,
-            cellWidth: cellWidth,
-            minimumCellWidth: 200
-        )
-        let sportIconSize = rowHeight - 10 - 16 // cell height minus padding
         // cellWidth already reflects the visible/clipped duration for a
         // currently-airing program (tvOSProgramPosition trims to
         // visibleStart/visibleEnd), so it alone tells us whether "NEW" /
@@ -1258,10 +1352,6 @@ struct GuideView: View {
 
         return ZStack {
             HStack(spacing: 6) {
-                if showSport, let sport = SportDetector.detect(from: program) {
-                    SportIconView(sport: sport, size: sportIconSize)
-                }
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text(program.cleanName)
                         .font(.tvScaled(size: 16, weight: .semibold))
@@ -1294,12 +1384,12 @@ struct GuideView: View {
             .padding(.vertical, 8)
         }
         .frame(width: max(cellWidth - 4, 80), height: rowHeight - 10, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(bgColor))
+        .background(RoundedRectangle(cornerRadius: Theme.radius(10)).fill(bgColor))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(isFocused ? Theme.accent.opacity(0.95) : Color.clear, lineWidth: 3)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(10)))
         .shadow(color: isFocused ? Theme.accent.opacity(0.22) : .clear, radius: 10, x: 0, y: 1)
         .scaleEffect(isFocused ? 1.015 : 1.0, anchor: .leading)
         .zIndex(isFocused ? 1 : 0)
@@ -1385,11 +1475,11 @@ struct GuideView: View {
         .padding(.horizontal, Theme.spacingLG)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .fill(Theme.surface.opacity(0.55))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .stroke(isFocused ? Theme.surfaceHighlight : Color.clear, lineWidth: 1)
         )
         .padding(.horizontal, 4)
@@ -1440,11 +1530,11 @@ struct GuideView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .fill(isActive ? Color.white : Theme.surfaceElevated.opacity(0.75))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .stroke(isActive ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
         )
         .scaleEffect(isActive ? 1.06 : 1.0)
@@ -1484,11 +1574,11 @@ struct GuideView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.75))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radius(8))
                 .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
         )
         .scaleEffect(isFocused ? 1.06 : 1.0)
@@ -1522,11 +1612,11 @@ struct GuideView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
+                            RoundedRectangle(cornerRadius: Theme.radius(10))
                                 .fill(isSelected ? Theme.surfaceElevated : Theme.surface.opacity(0.3))
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10)
+                            RoundedRectangle(cornerRadius: Theme.radius(10))
                                 .stroke(isSelected ? Theme.accent : Theme.surfaceHighlight.opacity(0.5), lineWidth: isSelected ? 2 : 1)
                         )
                     }
@@ -1536,7 +1626,7 @@ struct GuideView: View {
         .padding(.horizontal, Theme.spacingLG)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.radius(12))
                 .fill(.ultraThinMaterial)
         )
         .padding(.horizontal, 8)
@@ -1558,11 +1648,11 @@ struct GuideView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radius(8))
                     .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.8))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.radius(8))
                     .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
             )
             .scaleEffect(isFocused ? 1.06 : 1.0)
@@ -1821,15 +1911,22 @@ struct GuideView: View {
         .padding(Theme.spacingSM)
         .frame(width: channelWidth, height: rowHeight)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .fill(Theme.surfaceElevated.opacity(0.9))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radius(10))
                 .stroke(Theme.surfaceHighlight.opacity(0.55), lineWidth: 1)
         )
+        #elseif os(macOS)
+        MacGuideChannelCell(
+            channel: channel,
+            iconURL: try? client.channelIconURL(channelId: channel.id)
+        ) {
+            playLiveChannel(channel)
+        }
         #else
-        // iOS/macOS: tappable to play live
+        // iOS: tappable to play live
         Button {
             playLiveChannel(channel)
         } label: {
@@ -1891,7 +1988,6 @@ struct GuideView: View {
                 let status = viewModel.recordingStatus(program)
                 let isRecording = isScheduled && program.isCurrentlyAiring && status == .recording
                 let matchesKeywords = viewModel.keywordMatchedProgramIds.contains(program.id)
-                let sport = viewModel.detectedSport(for: program)
                 #if DISPATCHERPVR
                 let catchupAvailable = viewModel.isCatchupAvailable(program, on: channel)
                 #else
@@ -1905,12 +2001,36 @@ struct GuideView: View {
                     isCurrentlyAiring: program.isCurrentlyAiring
                 )
 
+                #if os(macOS)
+                MacProgramCell(
+                    program: program,
+                    width: viewModel.programWidth(for: program, hourWidth: hourWidth, startTime: timelineStart),
+                    height: rowHeight - 1,
+                    isScheduledRecording: isScheduled,
+                    isCurrentlyRecording: isRecording,
+                    isCatchupAvailable: catchupAvailable,
+                    matchedTopic: viewModel.keywordMatchByProgramId[program.id],
+                    isSelected: macSelection?.program.id == program.id && macSelection?.channel.id == channel.id,
+                    leadingPadding: leadingPad
+                )
+                .onTapGesture(count: 2) {
+                    selectedProgramDetail = (program: program, channel: channel)
+                }
+                .onTapGesture {
+                    macSelection = ProgramDetail(program: program, channel: channel)
+                }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction {
+                    macSelection = ProgramDetail(program: program, channel: channel)
+                }
+                .contextMenu {
+                    programContextMenu(program: program, channel: channel, isScheduled: isScheduled)
+                }
+                .accessibilityIdentifier("guide-program-\(program.id)")
+                .offset(x: viewModel.programOffset(for: program, hourWidth: hourWidth, startTime: timelineStart))
+                #else
                 Button {
-                    #if os(tvOS)
                     selectedProgramDetail = (program: program, channel: channel)
-                    #else
-                    selectedProgramDetail = (program: program, channel: channel)
-                    #endif
                 } label: {
                     ProgramCell(
                         program: program,
@@ -1919,7 +2039,6 @@ struct GuideView: View {
                         isCurrentlyRecording: isRecording,
                         isCatchupAvailable: catchupAvailable,
                         matchesKeyword: matchesKeywords,
-                        detectedSport: sport,
                         leadingPadding: leadingPad
                     )
                 }
@@ -1929,6 +2048,24 @@ struct GuideView: View {
                 #else
                 .buttonStyle(.plain)
                 .contextMenu {
+                    programContextMenu(program: program, channel: channel, isScheduled: isScheduled)
+                }
+                #endif
+                .accessibilityIdentifier("guide-program-\(program.id)")
+                .offset(x: viewModel.programOffset(for: program, hourWidth: hourWidth, startTime: timelineStart))
+                #endif
+            }
+
+            // Now indicator
+            nowIndicator(timelineStart: timelineStart)
+        }
+        .frame(width: hourWidth * CGFloat(viewModel.hoursToShow.count), height: rowHeight)
+    }
+
+    #if !os(tvOS)
+    /// Right-click actions on a guide program (iOS long-press, macOS context menu).
+    @ViewBuilder
+    private func programContextMenu(program: Program, channel: Channel, isScheduled: Bool) -> some View {
                     if program.isCurrentlyAiring, let recId = viewModel.activeRecordingId(for: program, channelId: channel.id) {
                         let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
                         Button {
@@ -1992,17 +2129,20 @@ struct GuideView: View {
                     } label: {
                         Label("Details", systemImage: "info.circle")
                     }
-                }
-                #endif
-                .accessibilityIdentifier("guide-program-\(program.id)")
-                .offset(x: viewModel.programOffset(for: program, hourWidth: hourWidth, startTime: timelineStart))
-            }
+                    }
 
-            // Now indicator
-            nowIndicator(timelineStart: timelineStart)
+    /// Schedules `program`, or cancels its recording when one is already set.
+    private func toggleRecording(program: Program, channel: Channel) {
+        Task {
+            if viewModel.isScheduledRecording(program), let recId = viewModel.recordingId(for: program) {
+                try? await client.cancelRecording(recordingId: recId)
+            } else {
+                try? await client.scheduleRecording(program: program, channel: channel)
+            }
+            await viewModel.reloadRecordings(client: client)
         }
-        .frame(width: hourWidth * CGFloat(viewModel.hoursToShow.count), height: rowHeight)
     }
+    #endif
 
     @ViewBuilder
     private func nowIndicator(timelineStart: Date) -> some View {
@@ -2035,6 +2175,7 @@ struct GuideView: View {
         // needs no initial scroll. Catch-up keeps the whole day and opens at
         // the current half-hour, leaving the earlier schedule to its left.
         if preferredTime == nil && isToday && !viewModel.allowsPastDates {
+            scrollTargetTime = nil
             scrollTargetId = nil
             return nil
         }
@@ -2045,9 +2186,12 @@ struct GuideView: View {
         let targetHourComponent = calendar.component(.hour, from: targetTime)
         if let targetHour = viewModel.hoursToShow.first(where: { calendar.component(.hour, from: $0) == targetHourComponent }) {
             let targetId = GuideScrollHelper.calculateScrollId(currentTime: targetTime, targetHour: targetHour)
+            // Set before the id: the id's onChange reads it.
+            scrollTargetTime = targetTime
             scrollTargetId = targetId
             return targetId
         }
+        scrollTargetTime = nil
         scrollTargetId = nil
         return nil
     }

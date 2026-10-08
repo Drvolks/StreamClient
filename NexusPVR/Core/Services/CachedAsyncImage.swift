@@ -11,6 +11,9 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let url: URL?
     let content: (Image) -> Content
     let placeholder: () -> Placeholder
+    /// Shown when there is no URL or the image can't be loaded. Nil keeps the
+    /// generic TV glyph.
+    let fallback: (() -> AnyView)?
 
     @State private var loadedImage: PlatformImage?
     @State private var isLoading = false
@@ -28,6 +31,21 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         self.imageCache = imageCache
         self.content = content
         self.placeholder = placeholder
+        self.fallback = nil
+    }
+
+    init<Fallback: View>(
+        url: URL?,
+        imageCache: any ImageCaching = Dependencies.imageCache,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder,
+        @ViewBuilder fallback: @escaping () -> Fallback
+    ) {
+        self.url = url
+        self.imageCache = imageCache
+        self.content = content
+        self.placeholder = placeholder
+        self.fallback = { AnyView(fallback()) }
     }
 
     var body: some View {
@@ -43,6 +61,8 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
                     .onAppear {
                         loadImage()
                     }
+            } else if let fallback {
+                fallback()
             } else {
                 // No URL provided — show static fallback instead of an infinite spinner
                 Image(systemName: "tv")

@@ -50,6 +50,11 @@ struct SettingsView: View {
     init(eventLog: NetworkEventLog = Dependencies.networkEventLog) {
         self._eventLog = ObservedObject(wrappedValue: eventLog)
     }
+    #if os(macOS)
+    @SceneStorage("settings.category") private var macCategory: SettingsCategory = .server
+    @State private var showingMacEventLog = false
+    @State private var showingKeywordsEditor = false
+    #endif
     #if os(tvOS)
     @State private var activeTVPopup: TVSettingsPopup?
     @FocusState private var popupFocusedItemID: String?
@@ -88,6 +93,8 @@ struct SettingsView: View {
         NavigationStack {
             #if os(tvOS)
             tvOSContent
+            #elseif os(macOS)
+            macOSContent
             #else
             List {
                 serverSection
@@ -107,16 +114,8 @@ struct SettingsView: View {
                     .padding(.vertical, Theme.spacingSM)
             }
             .navigationTitle("Settings")
-            #if os(macOS)
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .frame(maxWidth: 600)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor))
-            #elseif os(iOS)
             .listStyle(.insetGrouped)
             .sidebarMenuToolbar()
-            #endif
             #endif
         }
         .accessibilityIdentifier("settings-view")
@@ -139,7 +138,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: Theme.spacingXL) {
                     HStack(alignment: .center, spacing: Theme.spacingMD) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 14)
+                            RoundedRectangle(cornerRadius: Theme.radius(14))
                                 .fill(Theme.guideNowPlaying.opacity(0.95))
                                 .frame(width: 56, height: 56)
                             Image(systemName: "gearshape.fill")
@@ -1220,7 +1219,7 @@ struct SettingsView: View {
     }
 
     private var playbackSection: some View {
-        Section {
+        persistingPlaybackPreferences(Section {
             Picker("Seek Backward", selection: $seekBackwardSeconds) {
                 Text("5 seconds").tag(5)
                 Text("10 seconds").tag(10)
@@ -1318,7 +1317,13 @@ struct SettingsView: View {
             #endif
         } header: {
             Text("Playback")
-        }
+        })
+    }
+
+    /// Saves each playback and subtitle setting when it changes. Shared by the
+    /// iOS Playback section and the macOS Settings panes.
+    private func persistingPlaybackPreferences<Content: View>(_ content: Content) -> some View {
+        content
         .onChange(of: seekBackwardSeconds) { _ in
             var prefs = UserPreferences.load()
             prefs.seekBackwardSeconds = seekBackwardSeconds
@@ -1495,14 +1500,7 @@ struct SettingsView: View {
         Section {
             Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
                 .onChange(of: guideShowGroupsInSidebar) { newValue in
-                    var prefs = UserPreferences.load()
-                    prefs.guideShowGroupsInSidebar = newValue
-                    prefs.save()
-                    if !newValue {
-                        appState.guideGroupFilter = nil
-                        appState.guideChannelFilter = ""
-                    }
-                    NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                    saveGuideShowGroups(newValue)
                 }
             if guideShowGroupsInSidebar {
                 if epgCache.channelGroups.isEmpty {
@@ -1517,19 +1515,7 @@ struct SettingsView: View {
                         ForEach(populatedGroups) { group in
                             let isSelected = guideGroupIds.contains(group.id)
                             Button {
-                                if isSelected {
-                                    guideGroupIds.removeAll { $0 == group.id }
-                                } else {
-                                    guideGroupIds.append(group.id)
-                                }
-                                var prefs = UserPreferences.load()
-                                prefs.guideGroupIds = guideGroupIds
-                                prefs.save()
-                                if !guideGroupIds.isEmpty, appState.guideGroupFilter == group.id, !guideGroupIds.contains(group.id) {
-                                    appState.guideGroupFilter = nil
-                                    appState.guideChannelFilter = ""
-                                }
-                                NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                                toggleGuideGroup(group.id)
                             } label: {
                                 HStack {
                                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -1549,23 +1535,13 @@ struct SettingsView: View {
             #if DISPATCHERPVR
             Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
                 .onChange(of: guideShowProfilesInSidebar) { newValue in
-                    var prefs = UserPreferences.load()
-                    prefs.guideShowProfilesInSidebar = newValue
-                    prefs.save()
-                    if !newValue {
-                        appState.guideProfileFilter = nil
-                        appState.guideChannelFilter = ""
-                    }
-                    NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                    saveGuideShowProfiles(newValue)
                 }
             if guideShowProfilesInSidebar {
                 if epgCache.channelProfiles.isEmpty {
                     Text("No channel profiles available")
                         .foregroundStyle(Theme.textSecondary)
                 } else {
-                    let populatedProfiles = epgCache.channelProfiles.filter { profile in
-                        epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
-                    }
                     if populatedProfiles.isEmpty {
                         Text("No channels in any profile")
                             .foregroundStyle(Theme.textSecondary)
@@ -1573,19 +1549,7 @@ struct SettingsView: View {
                         ForEach(populatedProfiles) { profile in
                             let isSelected = guideProfileIds.contains(profile.id)
                             Button {
-                                if isSelected {
-                                    guideProfileIds.removeAll { $0 == profile.id }
-                                } else {
-                                    guideProfileIds.append(profile.id)
-                                }
-                                var prefs = UserPreferences.load()
-                                prefs.guideProfileIds = guideProfileIds
-                                prefs.save()
-                                if !guideProfileIds.isEmpty, appState.guideProfileFilter == profile.id, !guideProfileIds.contains(profile.id) {
-                                    appState.guideProfileFilter = nil
-                                    appState.guideChannelFilter = ""
-                                }
-                                NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+                                toggleGuideProfile(profile.id)
                             } label: {
                                 HStack {
                                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -1605,6 +1569,69 @@ struct SettingsView: View {
             Text("Guide")
         }
     }
+
+    private func saveGuideShowGroups(_ show: Bool) {
+        var prefs = UserPreferences.load()
+        prefs.guideShowGroupsInSidebar = show
+        prefs.save()
+        if !show {
+            appState.guideGroupFilter = nil
+            appState.guideChannelFilter = ""
+        }
+        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
+
+    private func toggleGuideGroup(_ id: Int) {
+        if guideGroupIds.contains(id) {
+            guideGroupIds.removeAll { $0 == id }
+        } else {
+            guideGroupIds.append(id)
+        }
+        var prefs = UserPreferences.load()
+        prefs.guideGroupIds = guideGroupIds
+        prefs.save()
+        if !guideGroupIds.isEmpty, appState.guideGroupFilter == id, !guideGroupIds.contains(id) {
+            appState.guideGroupFilter = nil
+            appState.guideChannelFilter = ""
+        }
+        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
+
+    #if DISPATCHERPVR
+    /// Profiles that hold at least one channel; empty ones aren't offered.
+    private var populatedProfiles: [ChannelProfile] {
+        epgCache.channelProfiles.filter { profile in
+            epgCache.guideSidebarChannels.contains { profile.channels.contains($0.id) }
+        }
+    }
+
+    private func saveGuideShowProfiles(_ show: Bool) {
+        var prefs = UserPreferences.load()
+        prefs.guideShowProfilesInSidebar = show
+        prefs.save()
+        if !show {
+            appState.guideProfileFilter = nil
+            appState.guideChannelFilter = ""
+        }
+        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
+
+    private func toggleGuideProfile(_ id: Int) {
+        if guideProfileIds.contains(id) {
+            guideProfileIds.removeAll { $0 == id }
+        } else {
+            guideProfileIds.append(id)
+        }
+        var prefs = UserPreferences.load()
+        prefs.guideProfileIds = guideProfileIds
+        prefs.save()
+        if !guideProfileIds.isEmpty, appState.guideProfileFilter == id, !guideProfileIds.contains(id) {
+            appState.guideProfileFilter = nil
+            appState.guideChannelFilter = ""
+        }
+        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+    }
+    #endif
 
     #if DISPATCHERPVR
     /// iOS / macOS row showing the server's public IP and geo location
@@ -1649,18 +1676,21 @@ struct SettingsView: View {
                     }
 
                 Button(debugStreamAsRecording ? "Play Test Recording" : "Play Test Stream") {
-                    if let url = URL(string: debugStreamURL) {
-                        appState.playStream(
-                            url: url,
-                            title: debugStreamAsRecording ? "Test Recording" : "Test Stream",
-                            recordingId: debugStreamAsRecording ? -1 : nil
-                        )
-                    }
+                    playDebugStream()
                 }
             }
         } header: {
             Text("Debug")
         }
+    }
+
+    private func playDebugStream() {
+        guard let url = URL(string: debugStreamURL) else { return }
+        appState.playStream(
+            url: url,
+            title: debugStreamAsRecording ? "Test Recording" : "Test Stream",
+            recordingId: debugStreamAsRecording ? -1 : nil
+        )
     }
     #endif
 
@@ -1681,6 +1711,396 @@ struct SettingsView: View {
 
 
 }
+
+#if os(macOS)
+// MARK: - macOS (Midnight)
+
+/// macOS Settings: a numbered category index beside one pane of rows. Only the
+/// layout differs from iOS — every row reads and saves the same state.
+extension SettingsView {
+    var macOSContent: some View {
+        persistingPlaybackPreferences(
+            HStack(spacing: 0) {
+                MacSettingsIndexView(selection: $macCategory, summary: macSummary(for:))
+                MacSettingsPaneView(category: macCategory, hint: macHint(for: macCategory)) {
+                    macRows(for: macCategory)
+                }
+                .id(macCategory)
+            }
+        )
+        .toggleStyle(MidnightToggleStyle())
+        .navigationDestination(isPresented: $showingMacEventLog) {
+            EventLogView()
+        }
+        .sheet(isPresented: $showingKeywordsEditor) {
+            KeywordsEditorView()
+                .frame(minWidth: 480, minHeight: 420)
+        }
+        .confirmationDialog("Unlink Server", isPresented: $showingUnlinkConfirm, titleVisibility: .visible) {
+            Button("Unlink", role: .destructive) {
+                unlinkServer()
+            }
+            .accessibilityIdentifier("confirm-unlink-button")
+        } message: {
+            Text("This will disconnect and forget the server. You'll need to set it up again.")
+        }
+    }
+
+    @ViewBuilder
+    private func macRows(for category: SettingsCategory) -> some View {
+        switch category {
+        case .server: macServerRows
+        case .general: macGeneralRows
+        case .playback: macPlaybackRows
+        case .subtitles: macSubtitleRows
+        case .guide: macGuideRows
+        case .recordings: macRecordingRows
+        case .advanced: macAdvancedRows
+        case .about: macAboutRows
+        }
+    }
+
+    // MARK: Summaries
+
+    private func macSummary(for category: SettingsCategory) -> String {
+        switch category {
+        case .server:
+            return client.config.displayAddress.isEmpty ? "Not configured" : client.config.displayAddress
+        case .general:
+            return "\(displayedLandingTab.label) · \(theme.label)"
+        case .playback:
+            #if DISPATCHERPVR
+            let stream = outputProfileLabel
+            #else
+            let stream = streamQuality.label
+            #endif
+            return "\(stream) · \(seekBackwardSeconds)s / \(seekForwardSeconds)s"
+        case .subtitles:
+            let mode = subtitleMode == .manual ? "Manual" : "Auto"
+            let background = subtitleBackground ? "background" : "no background"
+            return "\(mode) · \(subtitleSize.displayName) · \(background)"
+        case .guide:
+            // Count only ticks that still match a listed group or profile: the
+            // saved ids can outlive one deleted on the server.
+            let groupCount = epgCache.populatedChannelGroups.filter { guideGroupIds.contains($0.id) }.count
+            var parts = [guideShowGroupsInSidebar ? Self.count(groupCount, "group") : "Groups off"]
+            #if DISPATCHERPVR
+            let profileCount = populatedProfiles.filter { guideProfileIds.contains($0.id) }.count
+            parts.append(guideShowProfilesInSidebar ? Self.count(profileCount, "profile") : "Profiles off")
+            #endif
+            return parts.joined(separator: " · ")
+        case .recordings:
+            return hideRecordings ? "Hidden" : "Shown"
+        case .advanced:
+            return "\(macRendererShortName) · \(deinterlaceMode.label)"
+        case .about:
+            return appVersion
+        }
+    }
+
+    private static func count(_ value: Int, _ noun: String) -> String {
+        "\(value) \(noun)\(value == 1 ? "" : "s")"
+    }
+
+    private func macHint(for category: SettingsCategory) -> String {
+        guard category == .playback else { return category.hint }
+        #if DISPATCHERPVR
+        return outputProfileDescription
+        #else
+        return streamQualityDescription
+        #endif
+    }
+
+    private var macRendererShortName: String {
+        switch macosGPUAPI {
+        case .pixelbuffer: "PixelBuffer"
+        case .metal: "Metal"
+        case .opengl: "OpenGL"
+        }
+    }
+
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }
+
+    // MARK: Panes
+
+    @ViewBuilder
+    private var macServerRows: some View {
+        MacSettingsRow(title: "Host") {
+            Text(verbatim: client.config.displayAddress)
+                .midnightMeta(14, weight: .heavy)
+                .foregroundStyle(MidnightPalette.ink)
+                .textSelection(.enabled)
+        }
+        #if DISPATCHERPVR
+        MacSettingsRow(title: "Server Public IP") {
+            Text(verbatim: environmentServerValue)
+                .midnightMeta(13, weight: .semibold)
+                .foregroundStyle(MidnightPalette.ink)
+                .multilineTextAlignment(.trailing)
+                .accessibilityIdentifier("env-public-ip-and-location")
+        }
+        #endif
+        MacSettingsRow(title: "Status") {
+            if client.isAuthenticated {
+                MidnightFieldChip(text: "Connected")
+            } else {
+                Text("Not connected")
+                    .font(.archivo(12, .extraBold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(MidnightPalette.danger)
+            }
+        }
+        CustomHostSettingsRows()
+        MacSettingsRow(title: "Unlink this device", subtitle: "Forget this server on this Mac.") {
+            Button("Unlink") { showingUnlinkConfirm = true }
+                .buttonStyle(MidnightOutlineButtonStyle(isDestructive: true))
+                .accessibilityIdentifier("unlink-server-button")
+        }
+    }
+
+    @ViewBuilder
+    private var macGeneralRows: some View {
+        MacSettingsRow(title: "Landing Page") {
+            MidnightPicker(
+                title: "Landing Page",
+                selection: landingTabSelection,
+                options: availableLandingOptions.map { ($0.label, $0) }
+            )
+            .accessibilityIdentifier("settings-landing-page-picker")
+        }
+        MacSettingsRow(title: "Theme") {
+            MidnightPicker(
+                title: "Theme",
+                selection: themeSelection,
+                options: AppTheme.allCases.map { ($0.label, $0) }
+            )
+            .accessibilityIdentifier("settings-theme-picker")
+        }
+    }
+
+    @ViewBuilder
+    private var macPlaybackRows: some View {
+        MacSettingsRow(title: "Seek Backward") {
+            MidnightPicker(
+                title: "Seek Backward",
+                selection: $seekBackwardSeconds,
+                options: [5, 10, 15, 30].map { ("\($0) seconds", $0) }
+            )
+        }
+        MacSettingsRow(title: "Seek Forward") {
+            MidnightPicker(
+                title: "Seek Forward",
+                selection: $seekForwardSeconds,
+                options: [15, 30, 45, 60].map { ("\($0) seconds", $0) }
+            )
+        }
+        MacSettingsRow(title: "Audio Output") {
+            MidnightPicker(
+                title: "Audio Output",
+                selection: $audioChannels,
+                options: [("Auto", "auto"), ("Stereo", "stereo")]
+            )
+        }
+        #if DISPATCHERPVR
+        MacSettingsRow(title: "Live TV Output Profile") {
+            MidnightPicker(
+                title: "Live TV Output Profile",
+                selection: $outputProfileId,
+                options: outputProfileChoices.map { ($0.label, $0.id) }
+            )
+        }
+        #else
+        MacSettingsRow(title: "Live TV Quality") {
+            MidnightPicker(
+                title: "Live TV Quality",
+                selection: $streamQuality,
+                options: StreamQuality.allCases.map { ($0.label, $0) }
+            )
+        }
+        MacSettingsRow(title: "On Cellular", subtitle: cellularStreamQualityDescription) {
+            MidnightPicker(
+                title: "On Cellular",
+                selection: $cellularStreamQuality,
+                options: [("Same as usual", StreamQuality?.none)]
+                    + StreamQuality.allCases.map { ($0.label, StreamQuality?.some($0)) }
+            )
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var macSubtitleRows: some View {
+        MacSettingsRow(title: "Subtitles") {
+            MidnightPicker(
+                title: "Subtitles",
+                selection: $subtitleMode,
+                options: [("Manual", SubtitleMode.manual), ("Auto", SubtitleMode.auto)]
+            )
+        }
+        MacSettingsRow(title: "Subtitle Size") {
+            MidnightPicker(
+                title: "Subtitle Size",
+                selection: $subtitleSize,
+                options: SubtitleSize.allCases.map { ($0.displayName, $0) }
+            )
+        }
+        MacSettingsRow(title: "Subtitle Background") {
+            Toggle("Subtitle Background", isOn: $subtitleBackground)
+        }
+    }
+
+    @ViewBuilder
+    private var macGuideRows: some View {
+        MacSettingsRow(title: "Show Groups in Sidebar") {
+            Toggle("Show Groups in Sidebar", isOn: $guideShowGroupsInSidebar)
+                .onChange(of: guideShowGroupsInSidebar) { newValue in
+                    saveGuideShowGroups(newValue)
+                }
+        }
+        macGuideChoices(
+            emptyMessage: epgCache.channelGroups.isEmpty ? "No channel groups available" : "No channels in any group",
+            items: epgCache.populatedChannelGroups.map { ($0.id, $0.name) },
+            selectedIds: guideGroupIds,
+            isEnabled: guideShowGroupsInSidebar,
+            toggle: toggleGuideGroup
+        )
+        #if DISPATCHERPVR
+        MacSettingsRow(title: "Show Profiles in Sidebar") {
+            Toggle("Show Profiles in Sidebar", isOn: $guideShowProfilesInSidebar)
+                .onChange(of: guideShowProfilesInSidebar) { newValue in
+                    saveGuideShowProfiles(newValue)
+                }
+        }
+        macGuideChoices(
+            emptyMessage: epgCache.channelProfiles.isEmpty ? "No channel profiles available" : "No channels in any profile",
+            items: populatedProfiles.map { ($0.id, $0.name) },
+            selectedIds: guideProfileIds,
+            isEnabled: guideShowProfilesInSidebar,
+            toggle: toggleGuideProfile
+        )
+        #endif
+        MacSettingsRow(title: "Topic Keywords", subtitle: "Programmes matching these appear under Topics.") {
+            Button("Edit") { showingKeywordsEditor = true }
+                .buttonStyle(MidnightOutlineButtonStyle())
+        }
+    }
+
+    /// Checkbox rows under a Guide sidebar toggle, dimmed while it is off.
+    private func macGuideChoices(
+        emptyMessage: String,
+        items: [(id: Int, name: String)],
+        selectedIds: [Int],
+        isEnabled: Bool,
+        toggle: @escaping (Int) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if items.isEmpty {
+                Text(emptyMessage)
+                    .font(.archivo(12.5))
+                    .foregroundStyle(MidnightPalette.inkSoft)
+                    .padding(.leading, 22)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(items, id: \.id) { item in
+                    MacSettingsCheckboxRow(title: item.name, isChecked: selectedIds.contains(item.id)) {
+                        toggle(item.id)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .opacity(isEnabled ? 1 : 0.4)
+        .disabled(!isEnabled)
+    }
+
+    @ViewBuilder
+    private var macRecordingRows: some View {
+        MacSettingsRow(title: "Hide Recording Features") {
+            Toggle("Hide Recording Features", isOn: hideRecordingsSelection)
+                .accessibilityIdentifier("settings-hide-recordings-toggle")
+        }
+    }
+
+    @ViewBuilder
+    private var macAdvancedRows: some View {
+        MacSettingsRow(title: "Deinterlacing", subtitle: deinterlaceMode.summary) {
+            MidnightPicker(
+                title: "Deinterlacing",
+                selection: $deinterlaceMode,
+                options: DeinterlaceMode.allCases.map { ($0.label, $0) }
+            )
+        }
+        MacSettingsRow(title: "Renderer", subtitle: rendererDescription(for: macosGPUAPI)) {
+            MidnightPicker(
+                title: "Renderer",
+                selection: $macosGPUAPI,
+                options: [GPUAPI.opengl, .metal, .pixelbuffer].map { (rendererName(for: $0), $0) }
+            )
+        }
+        MacSettingsRow(
+            title: "Event Log",
+            subtitle: eventLog.events.isEmpty ? "No events recorded" : Self.count(eventLog.events.count, "event")
+        ) {
+            Button("View") { showingMacEventLog = true }
+                .buttonStyle(MidnightOutlineButtonStyle())
+        }
+        #if DEBUG
+        MacSettingsRow(title: "Test Stream Override") {
+            Toggle("Test Stream Override", isOn: $debugStreamEnabled)
+                .onChange(of: debugStreamEnabled) { newValue in
+                    UserDefaults.standard.set(newValue, forKey: "debugStreamEnabled")
+                }
+        }
+        if debugStreamEnabled {
+            MacSettingsRow(title: "Stream URL") {
+                TextField("Stream URL", text: $debugStreamURL)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(maxWidth: 320)
+                    .padding(6)
+                    .background(MidnightPalette.inputBg)
+                    .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                    .onChange(of: debugStreamURL) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: "debugStreamURL")
+                    }
+            }
+            MacSettingsRow(title: "Play as Recording") {
+                Toggle("Play as Recording", isOn: $debugStreamAsRecording)
+                    .onChange(of: debugStreamAsRecording) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: "debugStreamAsRecording")
+                    }
+            }
+            MacSettingsRow(title: "Test Playback") {
+                Button(debugStreamAsRecording ? "Play Recording" : "Play Stream") {
+                    playDebugStream()
+                }
+                .buttonStyle(MidnightOutlineButtonStyle())
+            }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var macAboutRows: some View {
+        MacSettingsRow(title: "Version") {
+            Text(appVersion)
+                .midnightMeta(14, weight: .heavy)
+                .foregroundStyle(MidnightPalette.ink)
+                .textSelection(.enabled)
+        }
+        MacSettingsRow(title: "Platform") {
+            Text("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+                .midnightMeta(13)
+                .foregroundStyle(MidnightPalette.ink)
+        }
+    }
+}
+#endif
 
 #if os(tvOS)
 private struct TVGuideSidebarToggleForegroundStyle: ViewModifier {

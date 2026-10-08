@@ -614,4 +614,22 @@ struct GuideScrollHelperTests {
         #expect(GuideScrollHelper.expectedScrollOffsetX(timelineStart: midnight, scrollTarget: target, hourWidth: 150) == 300)
         #expect(GuideScrollHelper.expectedScrollOffsetX(timelineStart: midnight, scrollTarget: target, hourWidth: 300) == 600)
     }
+
+    // MARK: - contentOffsetX (macOS absolute scroll)
+
+    @Test("contentOffsetX puts the target an inset past the timeline's leading edge")
+    func contentOffsetLeavesInset() {
+        let midnight = makeDate(hour: 0, minute: 0)
+        let target = makeDate(hour: 10, minute: 0)
+        // 10 hours at 300pt, minus a 24pt inset.
+        #expect(GuideScrollHelper.contentOffsetX(timelineStart: midnight, target: target, hourWidth: 300, inset: 24) == 2_976)
+    }
+
+    @Test("contentOffsetX never goes negative near the start of the timeline")
+    func contentOffsetClampsAtZero() {
+        let midnight = makeDate(hour: 0, minute: 0)
+        #expect(GuideScrollHelper.contentOffsetX(timelineStart: midnight, target: midnight, hourWidth: 300, inset: 24) == 0)
+        let earlier = makeDate(hour: 0, minute: 0).addingTimeInterval(-3600)
+        #expect(GuideScrollHelper.contentOffsetX(timelineStart: midnight, target: earlier, hourWidth: 300, inset: 24) == 0)
+    }
 }

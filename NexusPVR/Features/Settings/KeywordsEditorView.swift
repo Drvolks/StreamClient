@@ -153,7 +153,7 @@ struct KeywordsEditorView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Theme.accent)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                     }
                     .buttonStyle(.card)
@@ -225,7 +225,7 @@ struct KeywordsEditorView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Theme.accent)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                 }
                 .buttonStyle(.card)

@@ -1161,7 +1161,7 @@ struct IOSNavigation: View {
             .disabled(programMatchCount == 0)
         }
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(16)))
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
     }
 }
@@ -1614,7 +1614,7 @@ struct TVOSNavigation: View {
         return Button(action: action) {
             HStack(spacing: 14) {
                 // Selected indicator
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: Theme.radius(2))
                     .fill(isSelected ? Theme.accent : Color.clear)
                     .frame(width: 4, height: indicatorHeight)
 
@@ -1752,7 +1752,7 @@ struct TVOSNavigation: View {
         } label: {
             HStack(spacing: 10) {
                 // Selected indicator
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: Theme.radius(2))
                     .fill(isSelected ? Theme.accent : Color.clear)
                     .frame(width: 3, height: 22)
 
@@ -1812,7 +1812,7 @@ struct TVOSNavigation: View {
 
     private func tvOSSidebarStaticSubRow(label: String) -> some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)
+            RoundedRectangle(cornerRadius: Theme.radius(2))
                 .fill(Color.clear)
                 .frame(width: 3, height: 22)
             Text(label)
@@ -1993,33 +1993,37 @@ struct MacOSNavigation: View {
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .modifier(MacOSDetailTopInsetModifier(tab: appState.selectedTab))
-
                         // Dismiss layer when dropdown showing
-                        if showSearchDropdown {
-                            Color.black.opacity(0.01)
-                                .ignoresSafeArea()
-                                .onTapGesture {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        showSearchDropdown = false
+                        .overlay {
+                            if showSearchDropdown {
+                                Color.black.opacity(0.01)
+                                    .onTapGesture {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            showSearchDropdown = false
+                                        }
+                                    }
+                            }
+                        }
+                        // Search field + dropdown in the guide header's
+                        // trailing slot (guide tab only). Applied before the
+                        // inset modifier so both move together in fullscreen.
+                        .overlay(alignment: .topTrailing) {
+                            if appState.selectedTab == .guide {
+                                VStack(alignment: .trailing, spacing: 6) {
+                                    macSearchBar
+                                        .frame(width: MacGuideHeaderMetrics.searchWidth)
+                                    if showSearchDropdown {
+                                        macSearchDropdown
+                                            .frame(width: 360)
+                                            .transition(.opacity.combined(with: .move(edge: .top)))
                                     }
                                 }
-                        }
-
-                        // Floating search bar + dropdown (guide tab only)
-                        if appState.selectedTab == .guide {
-                            VStack(spacing: 6) {
-                                if showSearchDropdown {
-                                    macSearchDropdown
-                                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                                }
-                                macSearchBar
+                                .padding(.top, (MacGuideHeaderMetrics.height - MacGuideHeaderMetrics.searchHeight) / 2)
+                                .padding(.trailing, MacGuideHeaderMetrics.horizontalPadding)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showSearchDropdown)
                             }
-                            .frame(maxWidth: 400)
-                            .padding(.bottom, 12)
-                            .padding(.horizontal, Theme.spacingLG)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showSearchDropdown)
                         }
+                        .modifier(MacOSDetailTopInsetModifier(tab: appState.selectedTab))
                     }
                 }
             }
@@ -2195,7 +2199,8 @@ struct MacOSNavigation: View {
                 .font(.subheadline.weight(.semibold))
             Spacer()
         }
-        .foregroundStyle(Theme.textSecondary)
+        // Same ink as the plain top-level rows (Calendar, Downloads, …).
+        .foregroundStyle(Theme.textPrimary)
         .padding(.vertical, 2)
     }
 
@@ -2251,7 +2256,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2277,7 +2282,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2302,7 +2307,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2328,7 +2333,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2354,7 +2359,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2381,7 +2386,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2408,7 +2413,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2434,7 +2439,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2461,7 +2466,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2486,7 +2491,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2516,7 +2521,7 @@ struct MacOSNavigation: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2531,8 +2536,8 @@ struct MacOSNavigation: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textTertiary)
 
-            TextField("Search...", text: $searchText)
-                .font(.subheadline)
+            TextField("Search programmes", text: $searchText)
+                .font(.archivo(12.5))
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("global-search-field")
                 .submitLabel(.search)
@@ -2561,11 +2566,12 @@ struct MacOSNavigation: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Theme.surfaceElevated)
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
+        .padding(.horizontal, 10)
+        .frame(height: MacGuideHeaderMetrics.searchHeight)
+        // Closure form: a plain colour background would bleed up into the
+        // title bar's safe area.
+        .background { Rectangle().fill(MidnightPalette.inputBg) }
+        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
 
     // MARK: - macOS Search Dropdown
@@ -2655,8 +2661,8 @@ struct MacOSNavigation: View {
             .buttonStyle(.plain)
             .disabled(programMatchCount == 0)
         }
-        .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(MidnightPalette.railHead)
+        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
     }
 }

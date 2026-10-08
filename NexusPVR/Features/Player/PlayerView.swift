@@ -2072,7 +2072,7 @@ struct PlayerView: View {
                 .padding(.horizontal, Theme.spacingMD)
                 .padding(.vertical, 10)
                 .background(tvOSFocused(0) ? Color.white.opacity(0.2) : Color.clear)
-                .cornerRadius(6)
+                .cornerRadius(Theme.radius(6))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -2130,7 +2130,7 @@ struct PlayerView: View {
             .padding(.horizontal, Theme.spacingMD)
             .padding(.vertical, 10)
             .background(isTVFocused ? Color.white.opacity(0.2) : Color.clear)
-            .cornerRadius(6)
+            .cornerRadius(Theme.radius(6))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2352,7 +2352,7 @@ struct PlayerView: View {
                 .padding(.horizontal, Theme.spacingLG)
                 .padding(.vertical, Theme.spacingSM)
                 .background(Color.black.opacity(0.7))
-                .cornerRadius(4)
+                .cornerRadius(Theme.radius(4))
         } else {
             Text(text)
                 .font(.system(size: size.fontSize, weight: .medium))

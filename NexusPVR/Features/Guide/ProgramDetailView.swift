@@ -224,15 +224,8 @@ struct ProgramDetailView: View {
                     .keyboardShortcut(.cancelAction)
             }
             #endif
-            // Content area with sport icon behind
+            // Content area
             ZStack(alignment: .trailing) {
-                // Sport icon background
-                if let sport = SportDetector.detect(from: program) {
-                    Image(systemName: sport.sfSymbol)
-                        .font(.system(size: 200))
-                        .foregroundStyle(Theme.textTertiary.opacity(0.15))
-                }
-
                 VStack(alignment: .leading, spacing: Theme.spacingMD) {
                     headerSection
                     infoSection
@@ -338,13 +331,6 @@ struct ProgramDetailView: View {
                 }
                 .padding(Theme.spacingLG)
 
-                // Sport icon background
-                if let sport = SportDetector.detect(from: program) {
-                    Image(systemName: sport.sfSymbol)
-                        .font(.system(size: 250))
-                        .foregroundStyle(Theme.textTertiary.opacity(0.15))
-                        .padding(Theme.spacingLG)
-                }
                 }
             }
         }
@@ -907,32 +893,16 @@ struct ProgramDetailView: View {
     /// Errors (400/403/404/503 from the mint call) surface through the same
     /// `scheduleError` alert the recording actions use.
     private func watchCatchup() {
-        guard let channelUuid = client.channelUUID(forChannelId: channel.id) else {
-            scheduleError = "Catch-up isn't available for this channel."
-            return
-        }
         isStartingCatchup = true
         Task {
             defer { isStartingCatchup = false }
             do {
-                let service = CatchupService(client: client, baseURL: client.baseURL)
-                let startISO8601 = ISO8601DateFormatter().string(from: program.startDate)
-                let session = try await appState.preparingStream {
-                    try await service.startSession(channelUuid: channelUuid, startISO8601: startISO8601)
-                }
-                let url = try service.playbackURL(for: session)
-                appState.playStream(
-                    url: url,
-                    title: "\(channel.name) - \(program.name)",
-                    channelId: channel.id,
-                    channelName: channel.name,
-                    catchupSessionId: session.sessionId,
-                    catchupProgram: CatchupProgramContext(
-                        channelUuid: channelUuid,
-                        programStart: program.startDate,
-                        programEnd: program.endDate
-                    ),
-                    catchupGuideReturnTime: catchupGuideReturnTime
+                try await CatchupPlayback.start(
+                    program: program,
+                    channel: channel,
+                    client: client,
+                    appState: appState,
+                    guideReturnTime: catchupGuideReturnTime
                 )
                 dismiss()
             } catch {

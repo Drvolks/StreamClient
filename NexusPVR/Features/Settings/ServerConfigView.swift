@@ -208,7 +208,7 @@ struct ServerConfigView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(canSave && !isConnecting ? Theme.accent : Theme.textTertiary)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.textOnAccent)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
                     }
                     .buttonStyle(.card)
