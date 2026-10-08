@@ -10,22 +10,17 @@ import Testing
 
 struct SettingsCategoryTests {
 
-    @Test("Categories are numbered 01 to 09 in order")
-    func numbering() {
-        #expect(SettingsCategory.allCases.map(\.number) == ["01", "02", "03", "04", "05", "06", "07", "08", "09"])
-    }
-
     @Test("Category order matches the design")
     func order() {
         #expect(SettingsCategory.allCases.map(\.title) == [
-            "Server", "General", "Playback", "Subtitles", "Guide", "Topics", "Recordings", "Advanced", "About"
+            "Server", "General", "Playback", "Subtitles", "Guide", "Topics", "Recordings", "Advanced"
         ])
     }
 
     @Test("Raw values are stable, since the selection is saved by raw value")
     func rawValuesAreStable() {
         #expect(SettingsCategory.server.rawValue == 0)
-        #expect(SettingsCategory.about.rawValue == 8)
+        #expect(SettingsCategory.advanced.rawValue == 7)
         #expect(SettingsCategory(rawValue: 2) == .playback)
     }
 

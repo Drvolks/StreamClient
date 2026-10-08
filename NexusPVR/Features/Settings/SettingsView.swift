@@ -1756,7 +1756,6 @@ extension SettingsView {
         case .topics: macTopicsRows
         case .recordings: macRecordingRows
         case .advanced: macAdvancedRows
-        case .about: macAboutRows
         }
     }
 
@@ -1795,8 +1794,6 @@ extension SettingsView {
             return hideRecordings ? "Hidden" : "Shown"
         case .advanced:
             return "\(macRendererShortName) · \(deinterlaceMode.label)"
-        case .about:
-            return appVersion
         }
     }
 
@@ -1819,13 +1816,6 @@ extension SettingsView {
         case .metal: "Metal"
         case .opengl: "OpenGL"
         }
-    }
-
-    private var appVersion: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
     }
 
     // MARK: Panes
@@ -2176,21 +2166,6 @@ extension SettingsView {
             }
         }
         #endif
-    }
-
-    @ViewBuilder
-    private var macAboutRows: some View {
-        MacSettingsRow(title: "Version") {
-            Text(appVersion)
-                .midnightMeta(14, weight: .heavy)
-                .foregroundStyle(MidnightPalette.ink)
-                .textSelection(.enabled)
-        }
-        MacSettingsRow(title: "Platform") {
-            Text("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-                .midnightMeta(13)
-                .foregroundStyle(MidnightPalette.ink)
-        }
     }
 }
 #endif

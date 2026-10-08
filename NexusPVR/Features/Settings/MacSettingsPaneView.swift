@@ -18,13 +18,8 @@ struct MacSettingsPaneView<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Category \(category.number)")
-                    .midnightKicker(11)
-                    .opacity(0.85)
-                Text(category.title)
-                    .midnightDisplay(38)
-            }
+            Text(category.title)
+                .midnightDisplay(38)
             .foregroundStyle(MidnightPalette.fieldInk)
             .padding(.horizontal, 30)
             .padding(.vertical, 22)

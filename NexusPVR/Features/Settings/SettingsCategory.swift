@@ -16,14 +16,8 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
     case topics
     case recordings
     case advanced
-    case about
 
     var id: Int { rawValue }
-
-    /// Two-digit position shown in the index, "01", "02", …
-    var number: String {
-        String(format: "%02d", rawValue + 1)
-    }
 
     var title: String {
         switch self {
@@ -35,7 +29,6 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
         case .topics: "Topics"
         case .recordings: "Recordings"
         case .advanced: "Advanced"
-        case .about: "About"
         }
     }
 
@@ -67,8 +60,6 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
         case .advanced:
             "The defaults suit almost every setup. Change these only when a specific channel "
                 + "misbehaves — both apply to the next stream you play."
-        case .about:
-            "Include this version when you report a problem."
         }
     }
 }
