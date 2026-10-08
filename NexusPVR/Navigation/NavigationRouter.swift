@@ -2207,7 +2207,7 @@ struct MacOSNavigation: View {
                 if tab == .downloads, appState.activeDownloadCount > 0 {
                     Text("\(appState.activeDownloadCount)")
                         .font(.caption2.bold())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Theme.accent)
@@ -2222,7 +2222,7 @@ struct MacOSNavigation: View {
                     if appState.activeStreamCount > 0 {
                         Text("\(appState.activeStreamCount)")
                             .font(.caption2.bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.textOnAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Theme.accent)
