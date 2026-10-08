@@ -2202,6 +2202,10 @@ struct MacOSNavigation: View {
         // Same ink as the plain top-level rows (Calendar, Downloads, …).
         .foregroundStyle(Theme.textPrimary)
         .padding(.vertical, 2)
+        // Section headers sit shallower than list rows; this lines their icon
+        // and label up with the top-level rows' (whose 8pt highlight padding
+        // starts at the row edge).
+        .padding(.leading, 10)
     }
 
     private func macSidebarRow(tab: Tab) -> some View {
@@ -2214,12 +2218,14 @@ struct MacOSNavigation: View {
             }
             appState.selectedTab = tab
         } label: {
-            HStack(spacing: 10) {
+            // Same icon, type and spacing as `macSidebarHeader`, so top-level
+            // rows line up with the section headers above them.
+            HStack(spacing: 8) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 14))
+                    .font(.system(size: 13, weight: .semibold))
                     .frame(width: 20)
                 Text(tab.label)
-                    .font(.body)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 if tab == .recordings && appState.recordingsHasActive {
                     Circle().fill(Theme.recording).frame(width: 8, height: 8)
@@ -2277,7 +2283,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2302,7 +2308,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2328,7 +2334,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2354,7 +2360,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2381,7 +2387,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2408,7 +2414,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2434,7 +2440,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2461,7 +2467,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2486,7 +2492,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2516,7 +2522,7 @@ struct MacOSNavigation: View {
                 }
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
