@@ -49,6 +49,13 @@ final class EPGCache: ObservableObject {
     private var loadedDays: Set<String> = [] // "yyyy-MM-dd" keys
     private var backgroundLoadTask: Task<Void, Never>?
     private var isLoadInProgress = false
+    /// Bumped by `invalidate()` and by every `loadData`. A load or refresh
+    /// captures it before its first `await` and drops its results once it no
+    /// longer matches: an invalidated load that kept going would otherwise
+    /// start its background phase, leave `isLoadInProgress` set and make the
+    /// replacement `loadData` return early, so the pages waited on
+    /// `hasLoaded` forever (#179).
+    private var loadGeneration = 0
 
     nonisolated private static let dayFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -68,6 +75,8 @@ final class EPGCache: ObservableObject {
         }
 
         backgroundLoadTask?.cancel()
+        loadGeneration &+= 1
+        let generation = loadGeneration
         isLoadInProgress = true
         isLoading = true
         hasLoaded = false
@@ -92,6 +101,7 @@ final class EPGCache: ObservableObject {
             #else
             let loaded = try await client.getChannels()
             #endif
+            guard generation == loadGeneration else { return }
             let sorted = loaded.sorted { $0.number < $1.number }
             channels = sorted
             if profileId == nil || guideSidebarChannels.isEmpty {
@@ -109,6 +119,7 @@ final class EPGCache: ObservableObject {
             channelProfiles = (try? await client.getChannelProfiles()) ?? []
             channelGroups = (try? await client.getChannelGroups()) ?? []
             #endif
+            guard generation == loadGeneration else { return }
 
             hasLoaded = true
             isLoading = false
@@ -131,6 +142,7 @@ final class EPGCache: ObservableObject {
             do {
                 let fastStart = CFAbsoluteTimeGetCurrent()
                 let fastListings = try await client.getFastListings(for: channelsForEPG)
+                guard generation == loadGeneration else { return }
                 self.epg = fastListings
                 self.updateEarliestEPGDate()
                 let fastCount = fastListings.values.reduce(0) { $0 + $1.count }
@@ -138,10 +150,12 @@ final class EPGCache: ObservableObject {
             } catch {
                 print("[EPGCache] Fast EPG failed (\(error.localizedDescription)), falling back to full load")
             }
+            guard generation == loadGeneration else { return }
 
             startBackgroundFullLoad(using: client, channels: channelsForEPG, totalStart: totalStart)
 
         } catch {
+            guard generation == loadGeneration else { return }
             self.error = error.localizedDescription
             isLoading = false
             isLoadInProgress = false
@@ -224,6 +238,7 @@ final class EPGCache: ObservableObject {
 
         isRefreshing = true
         defer { isRefreshing = false }
+        let generation = loadGeneration
         let totalStart = CFAbsoluteTimeGetCurrent()
 
         do {
@@ -246,6 +261,7 @@ final class EPGCache: ObservableObject {
             // Fetch the fast window before publishing anything, so the grid never
             // shows a channel row without its programs.
             let fastListings = try? await client.getFastListings(for: sorted)
+            guard generation == loadGeneration else { return }
 
             channels = sorted
             if profileId == nil || guideSidebarChannels.isEmpty {
@@ -276,6 +292,7 @@ final class EPGCache: ObservableObject {
 
             startBackgroundFullLoad(using: client, channels: sorted, totalStart: totalStart)
         } catch {
+            guard generation == loadGeneration else { return }
             self.error = error.localizedDescription
             print("[EPGCache] Refresh failed after \(ms(since: totalStart))ms: \(error.localizedDescription)")
         }
@@ -628,6 +645,7 @@ final class EPGCache: ObservableObject {
     // MARK: - Invalidation
 
     func invalidate() {
+        loadGeneration &+= 1
         backgroundLoadTask?.cancel()
         backgroundLoadTask = nil
         channels = []
@@ -639,6 +657,7 @@ final class EPGCache: ObservableObject {
         epg = [:]
         earliestEPGDate = nil
         loadedDays = []
+        isLoading = false
         hasLoaded = false
         isFullyLoaded = false
         isLoadInProgress = false

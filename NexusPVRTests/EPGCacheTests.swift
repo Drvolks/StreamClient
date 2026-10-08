@@ -54,6 +54,31 @@ struct EPGCacheTests {
         #expect(cache.isFullyLoaded == false)
     }
 
+    @Test("A load that was invalidated in flight leaves the cache alone (#179)")
+    func invalidatedLoadIsDropped() async {
+        let cache = EPGCache()
+        // Nothing listens on port 1, so the load suspends on its sign-in and
+        // then fails — after the invalidate below.
+        let unreachable = PVRClient(config: ServerConfig(host: "127.0.0.1", port: 1, pin: "0000", useHTTPS: false))
+
+        let staleLoad = Task { await cache.loadData(using: unreachable) }
+        await Task.yield()
+        #expect(cache.isLoading)
+
+        cache.invalidate()
+        #expect(cache.isLoading == false)
+        await staleLoad.value
+
+        // The superseded failure must not mark the cache as loaded.
+        #expect(cache.hasLoaded == false)
+        #expect(cache.error == nil)
+
+        await cache.loadData(using: PVRClient(config: ServerConfig(host: "demo", pin: "", useHTTPS: false)))
+        #expect(cache.hasLoaded)
+        #expect(!cache.channels.isEmpty)
+        #expect(cache.error == nil)
+    }
+
     // MARK: - EPG generation (#141)
 
     @Test("epgGeneration starts at zero and advances when the EPG is replaced")
