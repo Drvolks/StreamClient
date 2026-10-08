@@ -140,9 +140,9 @@ struct MacChannelCard: View {
     private var actionStrip: some View {
         let hasProgram = currentProgram != nil
         return HStack(spacing: 0) {
-            MacChannelActionCell(systemImage: "play.fill", help: "Watch", action: onWatch)
+            MidnightActionCell(systemImage: "play.fill", help: "Watch", action: onWatch)
             divider
-            MacChannelActionCell(
+            MidnightActionCell(
                 systemImage: "gobackward",
                 help: "Watch from the beginning",
                 isEnabled: canWatchFromStart,
@@ -151,7 +151,7 @@ struct MacChannelCard: View {
             )
             if showsRecord {
                 divider
-                MacChannelActionCell(
+                MidnightActionCell(
                     systemImage: isScheduledRecording ? "record.circle.fill" : "record.circle",
                     help: isScheduledRecording ? "Cancel recording" : "Record",
                     isEnabled: hasProgram,
@@ -160,7 +160,7 @@ struct MacChannelCard: View {
                 )
             }
             divider
-            MacChannelActionCell(
+            MidnightActionCell(
                 systemImage: "info.circle",
                 help: "Info",
                 isEnabled: hasProgram,

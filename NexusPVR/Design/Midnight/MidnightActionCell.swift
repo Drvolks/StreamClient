@@ -1,16 +1,16 @@
 //
-//  MacChannelActionCell.swift
+//  MidnightActionCell.swift
 //  nextpvr-apple-client
 //
-//  One icon cell of a macOS card's action strip. Hovering fills it with the
-//  accent field and inverts the icon. A dimmed cell stays clickable only when
-//  `isEnabled`.
+//  One icon cell of a macOS action strip (channel cards, recording rows).
+//  Hovering fills it with the accent field (or `hoverFill`) and inverts the
+//  icon. A dimmed cell stays clickable only when `isEnabled`.
 //
 
 #if os(macOS)
 import SwiftUI
 
-struct MacChannelActionCell: View {
+struct MidnightActionCell: View {
     let systemImage: String
     let help: String
     var isEnabled = true

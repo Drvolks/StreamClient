@@ -39,6 +39,12 @@ private struct RecordingsListContentView: View {
     @State private var recurringRecordings: [RecurringRecording] = []
     @State private var filterSelection: RecordingsFilter = .completed
     @State private var suppressNextFilterSelectionChange = false
+    #if os(macOS)
+    @State private var macSearchText = ""
+    /// The recording waiting for the user to confirm its deletion.
+    @State private var pendingDelete: Recording?
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
     private static let seriesDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -110,6 +116,17 @@ private struct RecordingsListContentView: View {
     private var recordingsBody: some View {
             VStack(spacing: 0) {
                 // Filter selection on macOS is driven by the sidebar sub-rows.
+                #if os(macOS)
+                if !appState.showingRecordingsSeriesList && !appState.hasSelectedRecordingsSeries {
+                    let shown = macShownRecordings(viewModel)
+                    MacRecordingsHeader(
+                        title: appState.recordingsFilter == .recording ? "Active" : appState.recordingsFilter.rawValue,
+                        recordingCount: shown.count,
+                        totalBytes: shown.reduce(0) { $0 + ($1.size ?? 0) },
+                        searchText: $macSearchText
+                    )
+                }
+                #endif
 
                 // Content
                 Group {
@@ -235,6 +252,23 @@ private struct RecordingsListContentView: View {
             #endif
         #if os(tvOS)
         .background(.ultraThinMaterial)
+        #elseif os(macOS)
+        .background(MidnightGradients.ground(colorScheme))
+        .confirmationDialog(
+            pendingDelete?.recordingStatus.isScheduled == true ? "Cancel Recording" : "Delete Recording",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { recording in
+            Button(recording.recordingStatus.isScheduled ? "Cancel Recording" : "Delete", role: .destructive) {
+                deleteRecording(recording)
+                pendingDelete = nil
+            }
+        } message: { recording in
+            Text(recording.recordingStatus.isScheduled
+                 ? "\(recording.name) won't be recorded."
+                 : "\(recording.name) will be deleted from the server.")
+        }
         #else
         .background(Theme.background)
         #endif
@@ -526,6 +560,8 @@ private struct RecordingsListContentView: View {
         .onMoveCommand { direction in
             if direction == .left { requestSidebarFocus() }
         }
+        #elseif os(macOS)
+        macRecordingsList(vm)
         #else
         List {
             ForEach(vm.standaloneRecordings) { recording in
@@ -546,6 +582,70 @@ private struct RecordingsListContentView: View {
         }
         #endif
     }
+
+    #if os(macOS)
+    /// The current filter's recordings narrowed by the header search.
+    private func macShownRecordings(_ vm: RecordingsViewModel) -> [Recording] {
+        let query = macSearchText.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return vm.standaloneRecordings }
+        return vm.standaloneRecordings.filter { recording in
+            [recording.name, recording.subtitle ?? "", recording.desc ?? "", recording.channel ?? ""]
+                .contains { $0.lowercased().contains(query) }
+        }
+    }
+
+    /// Grouped by series, one-off recordings last (Midnight).
+    private func macRecordingsList(_ vm: RecordingsViewModel) -> some View {
+        let sections = RecordingSection.grouped(macShownRecordings(vm))
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if sections.isEmpty {
+                    Text("No recordings match \u{201C}\(macSearchText)\u{201D}.")
+                        .font(.archivo(12.5))
+                        .foregroundStyle(MidnightPalette.inkSoft)
+                        .padding(.top, Theme.spacingLG)
+                }
+                ForEach(sections) { section in
+                    MacRecordingSectionHeader(section: section)
+                    ForEach(section.recordings) { recording in
+                        macRecordingRow(recording)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, Theme.spacingLG)
+        }
+    }
+
+    private func macRecordingRow(_ recording: Recording) -> some View {
+        MacRecordingRow(
+            recording: recording,
+            matchedTopic: TopicMatcher.matchedKeyword(
+                name: recording.name,
+                subtitle: recording.subtitle,
+                desc: recording.desc,
+                in: appState.topicKeywords
+            ),
+            onPlayFromBeginning: { playRecordingFromBeginning(recording) },
+            onResume: { playRecording(recording) },
+            onInfo: { selectedRecording = recording },
+            onDelete: { pendingDelete = recording }
+        )
+        .onTapGesture(count: 2) {
+            selectSeriesRecording(recording)
+        }
+        .contextMenu {
+            recordingContextMenu(for: recording)
+            Divider()
+            Button(role: .destructive) {
+                pendingDelete = recording
+            } label: {
+                Label(recording.recordingStatus.isScheduled ? "Cancel Recording" : "Delete", systemImage: "trash")
+            }
+        }
+        .resumeDialog(recording: recording, resumeRecording: $resumeRecording, playRecording: playRecording, playFromBeginning: playRecordingFromBeginning)
+    }
+    #endif
 
     private func seriesDetailList(_ vm: RecordingsViewModel, seriesName: String) -> some View {
         let summary = vm.seriesSummary(named: seriesName)
