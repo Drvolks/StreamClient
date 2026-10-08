@@ -13,6 +13,9 @@ import SwiftUI
 struct MacRecordingRow: View {
     let recording: Recording
     var matchedTopic: String?
+    /// Inside a series section or page, lead with the episode title: the
+    /// recording's own name is just the series name again.
+    var showsEpisodeTitle = false
     let onPlayFromBeginning: () -> Void
     let onResume: () -> Void
     let onInfo: () -> Void
@@ -73,7 +76,7 @@ struct MacRecordingRow: View {
                         .padding(.vertical, 2)
                         .background(MidnightPalette.barSoft)
                 }
-                Text(recording.cleanName)
+                Text(title)
                     .font(.archivo(15.5, .extraBold))
                     .foregroundStyle(MidnightPalette.ink)
                     .lineLimit(1)
@@ -131,11 +134,19 @@ struct MacRecordingRow: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    private var title: String {
+        if showsEpisodeTitle, let episode = recording.episodeTitle { return episode }
+        return recording.cleanName
+    }
+
     private var description: String? {
-        let text = [recording.subtitle, recording.desc]
+        // The subtitle is already the title when the episode title leads.
+        let candidates = showsEpisodeTitle && recording.episodeTitle != nil
+            ? [recording.desc]
+            : [recording.subtitle, recording.desc]
+        return candidates
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
-        return text
     }
 
     // MARK: Right

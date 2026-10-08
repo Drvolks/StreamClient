@@ -51,6 +51,16 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
         EPGTitleMarkers.clean(name)
     }
 
+    /// The episode's own title: the subtitle without any "S01E02" pattern, or
+    /// nil when there isn't one. Series recordings are named after the series,
+    /// so this is what tells their episodes apart.
+    var episodeTitle: String? {
+        guard let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !subtitle.isEmpty else { return nil }
+        let cleaned = SeriesInfo.stripPattern(from: subtitle).trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
     var startDate: Date? {
         guard let startTime else { return nil }
         return Date(timeIntervalSince1970: TimeInterval(startTime))

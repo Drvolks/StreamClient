@@ -117,7 +117,11 @@ private struct RecordingsListContentView: View {
             VStack(spacing: 0) {
                 // Filter selection on macOS is driven by the sidebar sub-rows.
                 #if os(macOS)
-                if !appState.showingRecordingsSeriesList && !appState.hasSelectedRecordingsSeries {
+                if appState.showingRecordingsSeriesList {
+                    macSeriesIndexHeader(viewModel)
+                } else if appState.hasSelectedRecordingsSeries {
+                    macSeriesDetailHeader(viewModel)
+                } else {
                     let shown = macShownRecordings(viewModel)
                     MacRecordingsHeader(
                         title: appState.recordingsFilter == .recording ? "Active" : appState.recordingsFilter.rawValue,
@@ -161,25 +165,6 @@ private struct RecordingsListContentView: View {
                    let recurringId = selectedSeriesRecurringId,
                    appState.hasSelectedRecordingsSeries {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button(role: .destructive) {
-                            cancelSeries(recurringId: recurringId)
-                        } label: {
-                            if isCancellingSeries {
-                                ProgressView()
-                            } else {
-                                Text("Cancel Series")
-                            }
-                        }
-                        .disabled(isCancellingSeries)
-                    }
-                }
-            }
-            #elseif os(macOS)
-            .toolbar {
-                if canManageRecordings,
-                   let recurringId = selectedSeriesRecurringId,
-                   appState.hasSelectedRecordingsSeries {
-                    ToolbarItem(placement: .primaryAction) {
                         Button(role: .destructive) {
                             cancelSeries(recurringId: recurringId)
                         } label: {
@@ -613,7 +598,7 @@ private struct RecordingsListContentView: View {
                     ForEach(RecordingSection.grouped(recordings)) { section in
                         MacRecordingSectionHeader(section: section)
                         ForEach(section.recordings) { recording in
-                            macRecordingRow(recording)
+                            macRecordingRow(recording, showsEpisodeTitle: section.isSeries)
                         }
                     }
                 }
@@ -623,7 +608,7 @@ private struct RecordingsListContentView: View {
         }
     }
 
-    private func macRecordingRow(_ recording: Recording) -> some View {
+    private func macRecordingRow(_ recording: Recording, showsEpisodeTitle: Bool = false) -> some View {
         MacRecordingRow(
             recording: recording,
             matchedTopic: TopicMatcher.matchedKeyword(
@@ -632,6 +617,7 @@ private struct RecordingsListContentView: View {
                 desc: recording.desc,
                 in: appState.topicKeywords
             ),
+            showsEpisodeTitle: showsEpisodeTitle,
             onPlayFromBeginning: { playRecordingFromBeginning(recording) },
             onResume: { playRecording(recording) },
             onInfo: { selectedRecording = recording },
@@ -650,6 +636,130 @@ private struct RecordingsListContentView: View {
             }
         }
         .resumeDialog(recording: recording, resumeRecording: $resumeRecording, playRecording: playRecording, playFromBeginning: playRecordingFromBeginning)
+    }
+
+    // MARK: macOS series (Midnight)
+
+    private func seriesArtworkURL(_ summary: RecordingsSeriesSummary) -> URL? {
+        let representative = summary.active.first?.id ?? summary.completed.first?.id ?? summary.scheduled.first?.id
+        let string = representative.flatMap { client.recordingArtworkURL(recordingId: $0, fanart: false)?.absoluteString }
+            ?? summary.bannerURL
+        return string.flatMap(URL.init(string:))
+    }
+
+    private func macSeriesIndexHeader(_ vm: RecordingsViewModel) -> some View {
+        let summaries = vm.recordingsSeriesSummaries
+        let unwatched = summaries.reduce(0) { $0 + $1.unwatchedCount }
+        return MidnightPageHeader(
+            kicker: "Recordings",
+            title: "Series",
+            readout: "\(summaries.count) series · \(unwatched) unwatched"
+        )
+    }
+
+    private func macSeriesDetailHeader(_ vm: RecordingsViewModel) -> some View {
+        let name = appState.selectedRecordingsSeriesName
+        let summary = vm.seriesSummary(named: name)
+        return MidnightPageHeader(
+            kicker: "Series",
+            title: name,
+            readout: summary.map(macSeriesCounts)
+        ) {
+            Button {
+                appState.showRecordingsSeriesMenu(userInitiated: true)
+            } label: {
+                Label("All series", systemImage: "chevron.left")
+            }
+            .buttonStyle(MidnightOutlineButtonStyle())
+            .accessibilityIdentifier("series-back-button")
+
+            if canManageRecordings, let recurringId = selectedSeriesRecurringId {
+                Button {
+                    cancelSeries(recurringId: recurringId)
+                } label: {
+                    if isCancellingSeries {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Cancel series")
+                    }
+                }
+                .buttonStyle(MidnightOutlineButtonStyle(isDestructive: true))
+                .disabled(isCancellingSeries)
+                .help("Stop recording new episodes of this series")
+            }
+        }
+    }
+
+    private func macSeriesCounts(_ summary: RecordingsSeriesSummary) -> String {
+        var parts = ["\(summary.completed.count) recorded", "\(summary.unwatchedCount) unwatched"]
+        if !summary.active.isEmpty { parts.append("\(summary.active.count) recording now") }
+        if !summary.scheduled.isEmpty { parts.append("\(summary.scheduled.count) scheduled") }
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func macSeriesIndex(_ vm: RecordingsViewModel) -> some View {
+        let summaries = vm.recordingsSeriesSummaries
+        if summaries.isEmpty {
+            Text("No series recordings.")
+                .font(.archivo(12.5))
+                .foregroundStyle(MidnightPalette.inkSoft)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("recordings-series-list-empty")
+        } else {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 230), spacing: 16, alignment: .top)], spacing: 16) {
+                    ForEach(summaries) { summary in
+                        MacSeriesCard(summary: summary, posterURL: seriesArtworkURL(summary)) {
+                            appState.selectRecordingsSeries(named: summary.name, userInitiated: true)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
+            }
+            .accessibilityIdentifier("recordings-series-list")
+        }
+    }
+
+    private func macSeriesDetail(
+        summary: RecordingsSeriesSummary?,
+        seriesName: String,
+        posterURL: URL?,
+        fanartURL: URL?
+    ) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if let summary {
+                    MacSeriesHero(summary: summary, posterURL: posterURL, fanartURL: fanartURL)
+                        .padding(.top, 18)
+                    macSeriesSection("Recording now", summary.active)
+                    macSeriesSection("Completed", summary.completed)
+                    macSeriesSection("Scheduled", summary.scheduled)
+                    if summary.totalCount == 0 {
+                        emptySeriesView(seriesName: seriesName)
+                    }
+                } else {
+                    emptySeriesView(seriesName: seriesName)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, Theme.spacingLG)
+        }
+        .id(seriesName)
+    }
+
+    @ViewBuilder
+    private func macSeriesSection(_ title: String, _ recordings: [Recording]) -> some View {
+        if !recordings.isEmpty {
+            MidnightSectionHeader(
+                title: title,
+                meta: "\(recordings.count) episode\(recordings.count == 1 ? "" : "s")"
+            )
+            ForEach(recordings) { recording in
+                macRecordingRow(recording, showsEpisodeTitle: true)
+            }
+        }
     }
     #endif
 
@@ -770,6 +880,13 @@ private struct RecordingsListContentView: View {
                 }
             }
         }
+        #elseif os(macOS)
+        return macSeriesDetail(
+            summary: summary,
+            seriesName: seriesName,
+            posterURL: resolvedLeftArtworkURLString.flatMap(URL.init(string:)),
+            fanartURL: resolvedBannerURLString.flatMap(URL.init(string:))
+        )
         #else
         return List {
             Button {
@@ -1358,27 +1475,7 @@ private struct RecordingsListContentView: View {
             await reloadRecordings()
         }
         #else
-        let columns = [
-            GridItem(.adaptive(minimum: 320, maximum: 480), spacing: Theme.spacingMD)
-        ]
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
-                ForEach(vm.recordingsSeriesSummaries) { summary in
-                    Button {
-                        appState.selectRecordingsSeries(named: summary.name, userInitiated: true)
-                    } label: {
-                        seriesGridCard(summary: summary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, Theme.spacingLG)
-            .padding(.top, Theme.spacingMD)
-            .padding(.bottom, Theme.spacingLG)
-        }
-        .refreshable {
-            await reloadRecordings()
-        }
+        macSeriesIndex(vm)
         #endif
         #endif
     }
