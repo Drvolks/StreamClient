@@ -406,6 +406,13 @@ final class AppState: ObservableObject {
         if prefs.hideRecordings && prefs.landingTab == .completedRecordings {
             return .guide
         }
+        #if os(tvOS) && DISPATCHERPVR
+        // Status may be the landing page synced from another device; tvOS
+        // has no Status page for now.
+        if prefs.landingTab == .stats {
+            return .guide
+        }
+        #endif
         return tab(for: prefs.landingTab)
     }
 
@@ -441,7 +448,12 @@ final class AppState: ObservableObject {
             return userLevel >= 1 && !hideRecordings
         #if DISPATCHERPVR
         case .stats:
+            // tvOS has no Status page for now.
+            #if os(tvOS)
+            return false
+            #else
             return userLevel >= 1
+            #endif
         #endif
         }
     }
@@ -456,9 +468,15 @@ final class AppState: ObservableObject {
             selectedTab = .guide
         }
         #if DISPATCHERPVR
+        #if os(tvOS)
+        if selectedTab == .stats {
+            selectedTab = .guide
+        }
+        #else
         if selectedTab == .stats && userLevel < 1 {
             selectedTab = .guide
         }
+        #endif
         #endif
     }
 
