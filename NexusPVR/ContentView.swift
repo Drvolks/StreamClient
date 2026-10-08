@@ -24,6 +24,7 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var epgCache: EPGCache
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var discovery = ServerDiscoveryService()
     @State private var sheetConfig: SetupSheetConfig?
     @State private var isCheckingCloud = true
@@ -136,6 +137,18 @@ struct ContentView: View {
             startupTask?.cancel()
             startupTask = nil
             startupTaskConfig = nil
+            queueConfiguredStartupIfNeeded()
+        }
+        .onChange(of: scenePhase) { phase in
+            // The startup gives up after its sign-in retries (e.g. the Apple TV
+            // network is not up yet on launch), leaving the guide and channels
+            // waiting on an EPG that is never loaded (#179). Try again when the
+            // app comes back, and as soon as any sign-in succeeds.
+            guard phase == .active, !isCheckingCloud else { return }
+            queueConfiguredStartupIfNeeded()
+        }
+        .onChange(of: client.isAuthenticated) { isAuthenticated in
+            guard isAuthenticated, !isCheckingCloud else { return }
             queueConfiguredStartupIfNeeded()
         }
         .onChange(of: client.isConfigured) { isConfigured in
