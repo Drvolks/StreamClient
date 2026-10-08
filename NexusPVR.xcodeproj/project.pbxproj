@@ -147,9 +147,13 @@
 				Core/Models/WatchedChannel.swift,
 				Core/Models/WatchHistory.swift,
 				Core/NexusPVRBrand.swift,
+				Core/Services/DispatcharrSession.swift,
+				Core/Services/DispatcharrSessionStore.swift,
+				Core/Services/JWTExpiry.swift,
 				Core/Services/LiveProgramFetcher.swift,
 				Core/Services/RecordingFetcher.swift,
 				Core/Services/TopShelfProgram.swift,
+				Design/MidnightPalette.swift,
 				Design/Theme.swift,
 			);
 			target = 6EA347F22F48EF9C00E0A324 /* NexusPVR TopShelf */;
@@ -188,9 +192,13 @@
 				Core/Models/WatchedChannel.swift,
 				Core/Models/WatchHistory.swift,
 				Core/NexusPVRBrand.swift,
+				Core/Services/DispatcharrSession.swift,
+				Core/Services/DispatcharrSessionStore.swift,
+				Core/Services/JWTExpiry.swift,
 				Core/Services/LiveProgramFetcher.swift,
 				Core/Services/RecordingFetcher.swift,
 				Core/Services/TopShelfProgram.swift,
+				Design/MidnightPalette.swift,
 				Design/Theme.swift,
 			);
 			target = 6EA348062F48EFB600E0A324 /* DispatcherPVR TopShelf */;

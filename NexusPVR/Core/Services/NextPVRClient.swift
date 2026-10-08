@@ -342,6 +342,12 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
         try await authenticate()
     }
 
+    /// NextPVR signs in again on every return to the foreground: its SID
+    /// can expire while the app is in the background.
+    func resumeSession() async throws {
+        try await authenticate()
+    }
+
     func authenticate() async throws {
         guard !config.isDemoMode else { isAuthenticated = true; return }
 

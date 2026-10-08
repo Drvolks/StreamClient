@@ -88,14 +88,12 @@ enum Tab: String, Identifiable, Codable {
     #endif
 
     #if os(tvOS)
-    /// Tabs shown in the tvOS sidebar
+    /// Tabs shown in the tvOS sidebar. Status (Dispatcharr) is left out of
+    /// tvOS for now.
     static func tvOSTabs(userLevel: Int, hideRecordings: Bool = false) -> [Tab] {
         var cases: [Tab] = [.guide, .channels]
         if userLevel >= 1 && !hideRecordings { cases.append(.recordings) }
         cases.append(.topics)
-        #if DISPATCHERPVR
-        if userLevel >= 1 { cases.append(.stats) }
-        #endif
         cases.append(.settings)
         return cases
     }

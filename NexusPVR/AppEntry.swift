@@ -33,6 +33,15 @@ struct PVRApp: App {
             } else {
                 demoPrefs.keywords = DemoDataProvider.keywords
             }
+            // `--demo-landing Channels` opens a given page, for UI tests and
+            // screenshots (values are LandingTabOption raw values). Demo
+            // preferences live in memory, so this never touches real settings.
+            let arguments = ProcessInfo.processInfo.arguments
+            if let index = arguments.firstIndex(of: "--demo-landing"),
+               arguments.indices.contains(index + 1),
+               let landing = UserPreferences.LandingTabOption(rawValue: arguments[index + 1]) {
+                demoPrefs.landingTab = landing
+            }
             UserPreferences.demoStore = demoPrefs
         }
 
@@ -191,9 +200,17 @@ struct PVRApp: App {
                   ) else { return }
 
             do {
-                try await client.authenticate()
+                try await client.resumeSession()
                 return
             } catch {
+                // Retrying can't fix rejected credentials, and would only
+                // extend a server's sign-in limit.
+                if let pvr = error as? PVRClientError {
+                    switch pvr {
+                    case .authenticationFailed, .rateLimited: return
+                    default: break
+                    }
+                }
                 guard attempt < retryDelays.count else { return }
                 try? await Task.sleep(for: .seconds(retryDelays[attempt - 1]))
             }

@@ -202,7 +202,7 @@ struct RecordingDetailView: View {
 
     #if os(tvOS)
     private var tvOSContent: some View {
-        VStack(spacing: 0) {
+        TVDetailPanel {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.spacingMD) {
                     // Recording name
@@ -393,11 +393,6 @@ struct RecordingDetailView: View {
                 .padding(Theme.spacingLG)
             }
         }
-        .frame(width: 800)
-        .frame(maxHeight: 800)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Theme.background)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
     }
 
     private func tvOSDescriptionWithGenres(_ desc: String) -> String {

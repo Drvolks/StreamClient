@@ -110,7 +110,7 @@ struct MacProgramCell: View {
     private var badges: some View {
         HStack(spacing: 5) {
             if program.shouldShowLiveBadge {
-                LiveBadge(compact: false)
+                LiveBadge(compact: false, onAccentField: isAiring && !isSelected && !isCurrentlyRecording)
             }
             if program.shouldShowNewBadge && !isCatchupAvailable {
                 NewBadge(compact: true)

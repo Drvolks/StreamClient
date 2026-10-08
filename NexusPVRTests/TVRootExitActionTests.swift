@@ -15,6 +15,7 @@ struct TVRootExitActionTests {
         sidebarHasFocus: Bool = false,
         popup: Bool = false,
         eventLog: Bool = false,
+        category: Bool = false,
         blocks: Bool = false
     ) -> TVRootExitAction {
         TVRootExitAction.resolve(
@@ -22,6 +23,7 @@ struct TVRootExitActionTests {
             sidebarHasFocus: sidebarHasFocus,
             settingsHasPopup: popup,
             settingsShowingEventLog: eventLog,
+            settingsShowingCategory: category,
             blocksSidebarExit: blocks
         )
     }
@@ -50,6 +52,28 @@ struct TVRootExitActionTests {
     func settingsEventLogDismissed() {
         #expect(resolve(tab: .settings, sidebarHasFocus: true, eventLog: true) == .dismissEventLog)
         #expect(resolve(tab: .settings, eventLog: true, blocks: true) == .dismissEventLog)
+    }
+
+    @Test("Back from a Settings category page returns to the index")
+    func settingsCategoryClosesToIndex() {
+        #expect(resolve(tab: .settings, category: true) == .closeSettingsCategory)
+        #expect(resolve(tab: .settings, category: true, blocks: true) == .closeSettingsCategory)
+    }
+
+    @Test("Overlays close before the Settings category page")
+    func settingsOverlaysBeforeCategory() {
+        #expect(resolve(tab: .settings, popup: true, category: true) == .dismissSettingsPopup)
+        #expect(resolve(tab: .settings, eventLog: true, category: true) == .dismissEventLog)
+    }
+
+    @Test("Back from the sidebar leaves the app even with a category page open")
+    func settingsCategoryFromSidebarExits() {
+        #expect(resolve(tab: .settings, sidebarHasFocus: true, category: true) == .exitToSystem)
+    }
+
+    @Test("Other tabs ignore the Settings category flag")
+    func categoryFlagOnlyInSettings() {
+        #expect(resolve(tab: .guide, category: true) == .focusSidebar)
     }
 
     @Test("Settings ignores the sidebar block flag once overlays are closed")

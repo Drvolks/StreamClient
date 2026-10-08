@@ -50,11 +50,6 @@ struct MacRecordingRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 12)
         .background(isHovering ? MidnightPalette.hoverTint : .clear)
-        .overlay {
-            if matchedTopic != nil {
-                Rectangle().strokeBorder(MidnightPalette.topic, lineWidth: 2)
-            }
-        }
         .overlay(alignment: .bottom) {
             Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
         }
@@ -194,7 +189,7 @@ struct MacRecordingRow: View {
                 .padding(.vertical, 3)
                 .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
         default:
-            MacWatchStateChip(state: watchState)
+            WatchStateChip(state: watchState)
         }
     }
 

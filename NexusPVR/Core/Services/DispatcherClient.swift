@@ -22,6 +22,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     /// When true, use output/XC endpoints instead of REST API (for Streamer users)
     var useOutputEndpoints = false
     private var authInProgress: Task<Void, Error>?
+    /// Set when the token endpoint answered 429: no sign-in is attempted
+    /// before this time, so retries don't keep the server's limit tripped.
+    private var signInNotBefore: Date?
     private let session: URLSession
     /// Session for user-initiated connect attempts. Unlike `session` it never
     /// waits for connectivity, so an unreachable or unresolvable host surfaces a
@@ -95,6 +98,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         config = newConfig
         accessToken = nil
         refreshToken = nil
+        signInNotBefore = nil
         useApiKeyAuth = false
         useOutputEndpoints = false
         tvgIdToChannelIds = [:]
@@ -258,7 +262,13 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         return parts.joined(separator: " ")
     }
 
-    private func loggedData(for request: URLRequest, connecting: Bool = false) async throws -> (Data, URLResponse) {
+    /// - Parameter retriesRateLimit: false for sign-in requests: retrying a
+    ///   429 there only extends the server's sign-in limit.
+    private func loggedData(
+        for request: URLRequest,
+        connecting: Bool = false,
+        retriesRateLimit: Bool = true
+    ) async throws -> (Data, URLResponse) {
         let method = request.httpMethod ?? "GET"
         let path = sanitizePath(request.url)
         let session = connecting ? self.connectSession : self.session
@@ -277,7 +287,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 let status = (response as? HTTPURLResponse)?.statusCode
                 let ok = status.map { (200...399).contains($0) } ?? false
                 let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
-                let shouldRetryHTTP = status.map { Self.retryableHTTPStatusCodes.contains($0) } ?? false
+                let shouldRetryHTTP = status.map {
+                    Self.retryableHTTPStatusCodes.contains($0) && (retriesRateLimit || $0 != 429)
+                } ?? false
 
                 if shouldRetryHTTP && attempt < Self.maxAttempts {
                     logNetworkEvent(NetworkEvent(
@@ -340,6 +352,24 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         // Coalesce concurrent auth calls — only one in-flight at a time
         if let existing = authInProgress {
             return try await existing.value
+        }
+
+        if let notBefore = signInNotBefore {
+            let remaining = notBefore.timeIntervalSinceNow
+            if remaining > 0 {
+                logNetworkEvent(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/jwt",
+                    statusCode: nil,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: 0,
+                    errorDetail: "Sign-in skipped: server rate limit, retry in \(Int(remaining.rounded(.up)))s"
+                ))
+                throw PVRClientError.rateLimited(retryAfter: remaining)
+            }
+            signInNotBefore = nil
         }
 
         let task = Task {
@@ -505,6 +535,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             errorDetail: "Using server URL \(baseURL)"
         ))
 
+        if await resumeSavedSession() { return }
+
         guard let url = URL(string: "\(baseURL)/api/accounts/token/") else {
             logNetworkEvent(NetworkEvent(
                 timestamp: Date(),
@@ -530,7 +562,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         request.httpBody = try JSONEncoder().encode(body)
 
         do {
-            let (data, response) = try await loggedData(for: request, connecting: true)
+            let (data, response) = try await loggedData(for: request, connecting: true, retriesRateLimit: false)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 logNetworkEvent(NetworkEvent(
@@ -562,6 +594,22 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                 throw PVRClientError.authenticationFailed
             }
 
+            if httpResponse.statusCode == 429 {
+                let delay = RetryAfter.delay(from: httpResponse.value(forHTTPHeaderField: "Retry-After"))
+                signInNotBefore = Date().addingTimeInterval(delay)
+                logNetworkEvent(NetworkEvent(
+                    timestamp: Date(),
+                    method: "AUTH",
+                    path: "/dispatcharr/jwt",
+                    statusCode: 429,
+                    isSuccess: false,
+                    durationMs: 0,
+                    responseSize: data.count,
+                    errorDetail: "Server is limiting sign-ins; next attempt in \(Int(delay))s"
+                ))
+                throw PVRClientError.rateLimited(retryAfter: delay)
+            }
+
             guard httpResponse.statusCode == 200 else {
                 logNetworkEvent(NetworkEvent(
                     timestamp: Date(),
@@ -579,6 +627,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
             accessToken = tokenResponse.access
             refreshToken = tokenResponse.refresh
+            DispatcharrSessionStore.save(access: tokenResponse.access, refresh: tokenResponse.refresh, for: config)
             useApiKeyAuth = false
             isAuthenticated = true
             logNetworkEvent(NetworkEvent(
@@ -672,8 +721,63 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     func disconnect() {
         accessToken = nil
         refreshToken = nil
+        DispatcharrSessionStore.clear()
         useApiKeyAuth = false
         isAuthenticated = false
+    }
+
+    /// Uses the session saved by an earlier launch (or by the Top Shelf
+    /// extension) instead of signing in: the access token while it is valid,
+    /// else a renewal with the refresh token. False when a sign-in is needed.
+    private func resumeSavedSession() async -> Bool {
+        guard let saved = DispatcharrSessionStore.load(for: config) else { return false }
+        if JWTExpiry.isValid(saved.access) {
+            accessToken = saved.access
+            refreshToken = saved.refresh
+        } else if let refresh = saved.refresh {
+            refreshToken = refresh
+            guard (try? await refreshAccessToken()) != nil else {
+                refreshToken = nil
+                return false
+            }
+        } else {
+            return false
+        }
+        useApiKeyAuth = false
+        isAuthenticated = true
+        logNetworkEvent(NetworkEvent(
+            timestamp: Date(),
+            method: "AUTH",
+            path: "/dispatcharr/jwt",
+            statusCode: nil,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "Resumed the saved session; no sign-in needed"
+        ))
+        return true
+    }
+
+    /// Back in the foreground: keep the session when it is still good
+    /// instead of signing in again. A valid access token is kept as is; an
+    /// expired one is refreshed; only when that fails does it sign in.
+    /// Each sign-in counts against Dispatcharr's limit, and the app comes
+    /// to the foreground often (Apple TV wake, app switching).
+    func resumeSession() async throws {
+        guard !config.isDemoMode else { isAuthenticated = true; return }
+        // API keys and the XC fallback don't expire like a JWT.
+        if isAuthenticated && (useApiKeyAuth || useOutputEndpoints) { return }
+        guard isAuthenticated, let accessToken else {
+            try await authenticate()
+            return
+        }
+        if JWTExpiry.isValid(accessToken) { return }
+        do {
+            try await refreshAccessToken()
+        } catch {
+            isAuthenticated = false
+            try await authenticate()
+        }
     }
 
     // MARK: - User Info
@@ -699,6 +803,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
     private func refreshAccessToken() async throws {
         guard let refreshToken else {
+            DispatcharrSessionStore.clear()
             throw PVRClientError.sessionExpired
         }
 
@@ -713,16 +818,22 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         let body = ["refresh": refreshToken]
         request.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response) = try await loggedData(for: request)
+        let (data, response) = try await loggedData(for: request, retriesRateLimit: false)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             // Refresh failed, need full re-auth
             self.refreshToken = nil
+            DispatcharrSessionStore.clear()
             throw PVRClientError.sessionExpired
         }
 
         let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
         accessToken = tokenResponse.access
+        // Servers that rotate refresh tokens send a new one.
+        if let rotated = tokenResponse.refresh {
+            self.refreshToken = rotated
+        }
+        DispatcharrSessionStore.save(access: tokenResponse.access, refresh: self.refreshToken, for: config)
     }
 
     // MARK: - Authenticated Requests
@@ -776,7 +887,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     try await refreshAccessToken()
                     return try await authenticatedRequestData(url, method: method, body: body)
                 } catch {
-                    // Refresh failed, full re-auth
+                    // Refresh failed, full re-auth. Drop the saved session
+                    // first, or sign-in would resume the rejected token.
+                    DispatcharrSessionStore.clear()
                     isAuthenticated = false
                     try await authenticate()
                     return try await authenticatedRequestData(url, method: method, body: body)
@@ -853,6 +966,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     try await authenticatedRequestNoContent(url, method: method)
                     return
                 } catch {
+                    DispatcharrSessionStore.clear()
                     isAuthenticated = false
                     try await authenticate()
                     try await authenticatedRequestNoContent(url, method: method)
@@ -2376,6 +2490,7 @@ private nonisolated struct TokenResponse: Decodable {
 
 private nonisolated struct TokenRefreshResponse: Decodable {
     let access: String
+    let refresh: String?
 }
 
 private nonisolated struct DispatcharrAPIErrorResponse: Decodable {

@@ -20,7 +20,7 @@ struct ChannelCatchupResultsView: View {
 
     var body: some View {
         resultsList
-            .sheet(item: $selectedProgram) { program in
+            .detailCover(item: $selectedProgram) { program in
                 ProgramDetailView(
                     program: program,
                     channel: channel,

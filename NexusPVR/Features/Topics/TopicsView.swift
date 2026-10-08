@@ -16,13 +16,14 @@ struct TopicsView: View {
     @State private var refreshTrigger = UUID()
     @State private var selectedKeyword: String = ""
     @Environment(\.scenePhase) private var scenePhase
-    #if os(macOS)
+    #if os(macOS) || os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
+    #endif
+    #if os(macOS)
     @State private var streamError: String?
     #endif
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
-    @State private var newKeyword = ""
     #endif
 
     private var filteredPrograms: [MatchingProgram] {
@@ -82,7 +83,7 @@ struct TopicsView: View {
             #endif
         }
         #if os(tvOS)
-        .background(.ultraThinMaterial)
+        .background(MidnightGradients.ground(colorScheme))
         .onMoveCommand { direction in
             if direction == .left { requestSidebarFocus() }
         }
@@ -127,8 +128,7 @@ struct TopicsView: View {
             syncTopicSelection(with: viewModel.keywords)
             #else
             appState.topicKeywords = viewModel.keywords
-            if !appState.showingKeywordsEditor,
-               (appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword)) {
+            if appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword) {
                 appState.selectedTopicKeyword = viewModel.keywords.first ?? ""
             }
             #endif
@@ -159,6 +159,17 @@ struct TopicsView: View {
                 }
             }
         }
+        // Opened before the EPG finished loading: `loadData` found nothing
+        // to match against, so match again once it has.
+        .onChange(of: epgCache.hasLoaded) { _ in
+            guard epgCache.hasLoaded else { return }
+            Task {
+                await viewModel.loadData()
+                #if os(iOS)
+                updateKeywordsWithMatches()
+                #endif
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .recordingsDidChange)) { _ in
             Task {
                 await viewModel.loadData()
@@ -186,6 +197,12 @@ struct TopicsView: View {
                 title: selectedKeyword.isEmpty ? "Topics" : selectedKeyword,
                 programCount: filteredPrograms.count
             )
+            #elseif os(tvOS)
+            TVPageHeader(
+                kicker: "Topics",
+                title: appState.selectedTopicKeyword.isEmpty ? "Topics" : appState.selectedTopicKeyword,
+                readout: "\(filteredPrograms.count) program\(filteredPrograms.count == 1 ? "" : "s")"
+            )
             #endif
 
             // Content
@@ -198,7 +215,7 @@ struct TopicsView: View {
             .navigationTitle(appState.selectedTopicKeyword.isEmpty ? "Topics" : appState.selectedTopicKeyword)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .sheet(item: $selectedProgramDetail) { detail in
+            .detailCover(item: $selectedProgramDetail) { detail in
                 ProgramDetailView(
                     program: detail.program,
                     channel: detail.channel,
@@ -214,10 +231,8 @@ struct TopicsView: View {
             .onChange(of: viewModel.keywords) { _ in
                 #if os(tvOS)
                 appState.topicKeywords = viewModel.keywords
-                if !appState.showingKeywordsEditor {
-                    if appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword) {
-                        appState.selectedTopicKeyword = viewModel.keywords.first ?? ""
-                    }
+                if appState.selectedTopicKeyword.isEmpty || !viewModel.keywords.contains(appState.selectedTopicKeyword) {
+                    appState.selectedTopicKeyword = viewModel.keywords.first ?? ""
                 }
                 #else
                 syncTopicSelection(with: viewModel.keywords)
@@ -229,9 +244,7 @@ struct TopicsView: View {
     @ViewBuilder
     private var contentView: some View {
         #if os(tvOS)
-        if appState.showingKeywordsEditor {
-            manageKeywordsView
-        } else if viewModel.isLoading && viewModel.matchingPrograms.isEmpty {
+        if viewModel.isLoading && viewModel.matchingPrograms.isEmpty {
             loadingView
         } else if let error = viewModel.error {
             errorView(error)
@@ -310,25 +323,27 @@ struct TopicsView: View {
     private var programsList: some View {
         #if os(tvOS)
         ScrollView {
-            LazyVStack(spacing: Theme.spacingMD) {
-                ForEach(filteredPrograms) { item in
-                    TopicProgramRowTV(
-                        program: item.program,
-                        channel: item.channel,
-                        matchedKeyword: item.matchedKeyword,
-                        onRecordingChanged: {
-                            refreshTrigger = UUID()
-                        },
-                        onShowDetails: {
-                            selectedProgramDetail = ProgramTopicDetail(program: item.program, channel: item.channel)
-                        }
+            LazyVStack(alignment: .leading, spacing: 10) {
+                ForEach(TopicDaySection.grouped(filteredPrograms)) { section in
+                    MidnightSectionHeader(
+                        title: section.title,
+                        meta: "\(section.programs.count) program\(section.programs.count == 1 ? "" : "s")"
                     )
-                    .environmentObject(client)
-                    .environmentObject(appState)
-                    .id("\(item.id)-\(refreshTrigger)")
+                    ForEach(section.programs) { item in
+                        TVTopicProgramRow(
+                            program: item.program,
+                            channel: item.channel,
+                            onRecordingChanged: { refreshTrigger = UUID() },
+                            onShowDetails: {
+                                selectedProgramDetail = ProgramTopicDetail(program: item.program, channel: item.channel)
+                            }
+                        )
+                        .id("\(item.id)-\(refreshTrigger)")
+                    }
                 }
             }
-            .padding()
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.vertical, Theme.spacingMD)
         }
         #elseif os(macOS)
         ScrollView {
@@ -413,128 +428,6 @@ struct TopicsView: View {
     }
     #endif
 
-    #if os(tvOS)
-    private var manageKeywordsView: some View {
-        ScrollView {
-            VStack(spacing: Theme.spacingLG) {
-                HStack(spacing: Theme.spacingMD) {
-                    Image(systemName: "plus.circle")
-                        .foregroundStyle(Theme.accent)
-
-                    TextField("Add topic keyword", text: $newKeyword)
-                        .textFieldStyle(.plain)
-                        .font(.tvBody)
-                        .accessibilityIdentifier("keyword-text-field")
-                        .onSubmit { addKeyword() }
-                }
-                .padding(.horizontal, Theme.spacingMD)
-                .padding(.vertical, Theme.spacingMD)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                ForEach(viewModel.keywords, id: \.self) { keyword in
-                    HStack(spacing: Theme.spacingMD) {
-                        Text(keyword)
-                            .font(.tvHeadline)
-                            .foregroundStyle(.white.opacity(0.95))
-                        Spacer()
-                        Button(role: .destructive) {
-                            removeKeyword(keyword)
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.headline)
-                                .padding(.horizontal, Theme.spacingMD)
-                                .padding(.vertical, Theme.spacingSM)
-                        }
-                        .buttonStyle(TVManageDeleteButtonStyle())
-                    }
-                    .padding(.horizontal, Theme.spacingLG)
-                    .padding(.vertical, Theme.spacingMD)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.guideNowPlaying)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
-                }
-            }
-            .padding(Theme.spacingXL)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func addKeyword() {
-        let trimmed = newKeyword.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        var prefs = UserPreferences.load()
-        guard !prefs.keywords.contains(trimmed) else {
-            newKeyword = ""
-            return
-        }
-        prefs.keywords.append(trimmed)
-        prefs.save()
-        newKeyword = ""
-        Task {
-            await viewModel.loadData()
-        }
-    }
-
-    private func removeKeyword(_ keyword: String) {
-        var prefs = UserPreferences.load()
-        prefs.keywords.removeAll { $0 == keyword }
-        prefs.save()
-        if appState.selectedTopicKeyword == keyword {
-            appState.selectedTopicKeyword = prefs.keywords.first ?? ""
-        }
-        Task {
-            await viewModel.loadData()
-        }
-    }
-    #endif
-}
-
-private struct TVManageDeleteButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        TVManageDeleteFocusWrapper {
-            configuration.label
-        }
-    }
-}
-
-private struct TVManageDeleteFocusWrapper<Content: View>: View {
-    @Environment(\.isFocused) private var isFocused
-    let content: () -> Content
-
-    init(@ViewBuilder content: @escaping () -> Content) {
-        self.content = content
-    }
-
-    var body: some View {
-        content()
-            .background(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusLG)
-                    .fill(Theme.surface.opacity(0.65))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusLG)
-                    .stroke(isFocused ? Theme.accent.opacity(0.95) : Color.clear, lineWidth: 2)
-            )
-            .shadow(color: isFocused ? Theme.accent.opacity(0.2) : .clear, radius: 6, x: 0, y: 1)
-            .scaleEffect(isFocused ? 1.01 : 1.0)
-            .animation(.easeInOut(duration: 0.14), value: isFocused)
-            .modifier(TVFocusEffectDisabledCompat())
-    }
-}
-
-private struct TVFocusEffectDisabledCompat: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        #if os(tvOS)
-        if #available(tvOS 17.0, *) {
-            content.focusEffectDisabled()
-        } else {
-            content
-        }
-        #else
-        content
-        #endif
-    }
 }
 
 // Helper struct for sheet binding

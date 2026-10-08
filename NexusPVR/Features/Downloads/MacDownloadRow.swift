@@ -157,7 +157,7 @@ struct MacDownloadRow: View {
         case .queued, .running:
             MidnightFieldChip(text: "Downloading", size: 9)
         case .completed:
-            MacWatchStateChip(state: watchState)
+            WatchStateChip(state: watchState)
         case .failed:
             Text("Failed")
                 .badgeLabel()

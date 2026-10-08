@@ -189,21 +189,9 @@ enum LiveProgramFetcher {
 
     #if DISPATCHERPVR
 
+    /// The session shared with the app; signs in only when it has to.
     private static func authenticateDispatcharr(config: ServerConfig, session: URLSession) async throws -> String {
-        guard let tokenURL = URL(string: "\(config.baseURL)/api/accounts/token/") else {
-            throw URLError(.badURL)
-        }
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["username": config.username, "password": config.password])
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw URLError(.userAuthenticationRequired)
-        }
-        struct TokenResponse: Decodable { let access: String }
-        return try JSONDecoder().decode(TokenResponse.self, from: data).access
+        try await DispatcharrSessionStore.accessToken(config: config, session: session)
     }
 
     private nonisolated struct SimpleChannel: Decodable {

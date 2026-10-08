@@ -58,6 +58,9 @@ struct GuideView: View {
     private let channelWidth: CGFloat = Theme.channelColumnWidth
     private let rowHeight: CGFloat = Theme.cellHeight
     #endif
+    #if os(tvOS)
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
 
     private var hasFilterData: Bool {
         !epgCache.channelProfiles.isEmpty || hasPopulatedGroups
@@ -82,12 +85,12 @@ struct GuideView: View {
     private func presentationLayer<Content: View>(_ content: Content) -> some View {
         content
             .accessibilityIdentifier("guide-view")
-            #if os(macOS)
+            #if os(macOS) || os(tvOS)
             .background(MidnightGradients.ground(colorScheme))
             #else
             .background(.ultraThinMaterial)
             #endif
-            .sheet(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
+            .detailCover(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
                 programDetailSheet(detail)
             }
             .alert("Error", isPresented: .constant(streamError != nil)) {
@@ -1144,10 +1147,11 @@ struct GuideView: View {
             let filterRowHeight: CGFloat = 70
             let drawerContentHeight = 60 + CGFloat(currentDrawerItems.count) * 52
             let drawerHeight: CGFloat = isHeaderDrawerOpen ? min(320, max(170, drawerContentHeight)) : 0
+            let rulerHeight = TVGuideTimeRuler.height
 
             // Grid — manual offset driven by scrollTopRow (keep-in-view scrolling)
             let totalRows = viewModel.channels.count
-            let visibleRows = Int((geometry.size.height - filterRowHeight - drawerHeight) / rowHeight)
+            let visibleRows = Int((geometry.size.height - filterRowHeight - drawerHeight - rulerHeight) / rowHeight)
             let scrollOffset = CGFloat(scrollTopRow) * rowHeight
 
             // Virtualization: only render visible rows + buffer
@@ -1168,6 +1172,13 @@ struct GuideView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                TVGuideTimeRuler(
+                    windowStart: visibleStart,
+                    windowMinutes: visibleMinutes,
+                    channelWidth: channelWidth,
+                    gridWidth: gridWidth
+                )
+
                 // Channel rows
                 VStack(spacing: 0) {
                     if totalRows > 0 {
@@ -1186,6 +1197,11 @@ struct GuideView: View {
                 }
                 .offset(y: -scrollOffset)
                 .animation(.easeInOut(duration: 0.15), value: scrollTopRow)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .clipped()
+                .overlay(alignment: .topLeading) {
+                    tvOSNowLine(channelWidth: channelWidth, pxPerMinute: pxPerMinute)
+                }
             }
             .contentShape(Rectangle())
             .focusable(true)
@@ -1253,22 +1269,15 @@ struct GuideView: View {
 
             // Programs row
             ZStack(alignment: .leading) {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-
                 if programs.isEmpty {
                     // Show channel name as tappable placeholder so user can still play
                     let isFocused = isRowFocused && focusedColumn == 0
                     Text(channel.name)
-                        .font(.headline)
-                        .foregroundStyle(Theme.textTertiary)
+                        .font(.archivo(Theme.scaledFont(19), .extraBold))
+                        .foregroundStyle(isFocused ? MidnightPalette.selectedInk : MidnightPalette.inkFaint)
                         .padding(.leading, 16)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .background(isFocused ? Theme.accent.opacity(0.3) : Color.clear)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.radius(4))
-                                .stroke(isFocused ? Theme.accent : Color.clear, lineWidth: 2)
-                        )
+                        .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
                 } else {
                     ForEach(Array(programs.enumerated()), id: \.element.id) { colIndex, program in
                         let isFocused = isRowFocused && colIndex == focusedColumn
@@ -1282,34 +1291,48 @@ struct GuideView: View {
                     }
                 }
             }
-            .frame(width: gridWidth, height: rowHeight)
+            // Leading-aligned: cells are positioned by offset from the row start.
+            .frame(width: gridWidth, height: rowHeight, alignment: .leading)
             .clipped()
         }
         .frame(height: rowHeight)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+        }
+    }
+
+    /// The accent now-line through the rows, while now is in the window.
+    private func tvOSNowLine(channelWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
+        TimelineView(.everyMinute) { context in
+            let minutes = context.date.timeIntervalSince(visibleStart) / 60
+            if minutes >= 0, minutes < visibleMinutes {
+                Rectangle()
+                    .fill(MidnightPalette.accent)
+                    .frame(width: 3)
+                    .frame(maxHeight: .infinity)
+                    .offset(x: channelWidth + CGFloat(minutes) * pxPerMinute - 1)
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private func tvOSChannelCell(channel: Channel, isSelected: Bool) -> some View {
-        CachedAsyncImage(url: try? client.channelIconURL(channelId: channel.id)) { image in
-            image
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-        } placeholder: {
-            Image(systemName: "tv")
-                .font(.title)
-                .foregroundStyle(Theme.textTertiary)
+        MidnightChannelPlate(
+            channel: channel,
+            iconURL: try? client.channelIconURL(channelId: channel.id),
+            logoInsets: EdgeInsets(top: 14, leading: 30, bottom: 14, trailing: 24),
+            nameSize: Theme.scaledFont(20)
+        )
+        .frame(width: channelWidth, height: rowHeight)
+        // The focused row's channel gets the accent bar.
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Rectangle().fill(MidnightPalette.accent).frame(width: 6)
+            }
         }
-        .padding(.leading, 40)
-        .padding(.trailing, 10)
-        .frame(width: channelWidth, height: rowHeight - 10)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radius(10))
-                .fill(Theme.surfaceElevated.opacity(0.92))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radius(10))
-                .stroke(isSelected ? Theme.accent.opacity(0.6) : Theme.surfaceHighlight.opacity(0.55), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(10)))
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(MidnightPalette.line).frame(width: 1)
+        }
     }
 
     private func tvOSProgramCell(program: Program, channel: Channel, isFocused: Bool, gridWidth: CGFloat, pxPerMinute: CGFloat) -> some View {
@@ -1327,71 +1350,17 @@ struct GuideView: View {
         let catchupAvailable = false
         #endif
 
-        let bgColor: Color = {
-            if isRecording {
-                return Theme.recording.opacity(0.3)
-            } else if isAiring {
-                return Theme.guideNowPlaying
-            } else {
-                return Theme.surfaceElevated
-            }
-        }()
-
-        // cellWidth already reflects the visible/clipped duration for a
-        // currently-airing program (tvOSProgramPosition trims to
-        // visibleStart/visibleEnd), so it alone tells us whether "NEW" /
-        // "REC" would wrap next to the time text.
-        let useCompactBadges = cellWidth < 300
-
-        return ZStack {
-            HStack(spacing: 6) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(program.cleanName)
-                        .font(.tvScaled(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-
-                    HStack(spacing: 4) {
-                        Text("\(program.startDate, format: .dateTime.hour().minute()) - \(program.endDate, format: .dateTime.hour().minute())")
-                            .font(.tvScaled(size: 14))
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
-
-                        if program.shouldShowLiveBadge {
-                            LiveBadge(compact: useCompactBadges)
-                        }
-
-                        if program.shouldShowNewBadge && !catchupAvailable {
-                            NewBadge(compact: useCompactBadges)
-                        }
-
-                        if isScheduled {
-                            RecBadge(isActive: isRecording, compact: useCompactBadges)
-                        }
-
-                        if catchupAvailable {
-                            CatchupBadge(compact: useCompactBadges)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-        .frame(width: max(cellWidth - 4, 80), height: rowHeight - 10, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: Theme.radius(10)).fill(bgColor))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radius(10))
-                .stroke(isFocused ? Theme.accent.opacity(0.95) : Color.clear, lineWidth: 3)
+        return TVProgramCell(
+            program: program,
+            width: cellWidth,
+            height: rowHeight - 1,
+            isFocused: isFocused,
+            isScheduled: isScheduled,
+            isRecording: isRecording,
+            isCatchupAvailable: catchupAvailable,
+            matchedTopic: viewModel.keywordMatchByProgramId[program.id]
         )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(10)))
-        .shadow(color: isFocused ? Theme.accent.opacity(0.22) : .clear, radius: 10, x: 0, y: 1)
-        .scaleEffect(isFocused ? 1.015 : 1.0, anchor: .leading)
-        .zIndex(isFocused ? 1 : 0)
-        .animation(.easeInOut(duration: 0.14), value: isFocused)
-        .offset(x: xPos + 2)
+        .offset(x: xPos + 1)
     }
 
     private func tvOSProgramPosition(program: Program, pxPerMinute: CGFloat) -> (x: CGFloat, width: CGFloat) {
@@ -1418,7 +1387,19 @@ struct GuideView: View {
 
     /// Filter row rendered as the first row in the grid (focusedRow == -1)
     private func tvOSFilterRow(isFocused: Bool, focusedItem: TVGuideHeaderItem) -> some View {
-        HStack(spacing: Theme.spacingLG) {
+        HStack(spacing: Theme.spacingMD) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Guide")
+                    .midnightKicker(Theme.scaledFont(13))
+                    .foregroundStyle(MidnightPalette.accent)
+                Text(tvOSGuideTitle)
+                    .midnightDisplay(Theme.scaledFont(30))
+                    .foregroundStyle(MidnightPalette.ink)
+                    .lineLimit(1)
+            }
+            .fixedSize()
+            .padding(.trailing, Theme.spacingSM)
+
             // Date
             tvOSHeaderField(
                 imageName: "chevron.left",
@@ -1427,8 +1408,9 @@ struct GuideView: View {
             )
 
             Text(viewModel.selectedDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
-                .font(.headline)
-                .foregroundStyle(isFocused ? .white : Theme.textPrimary)
+                .font(.archivo(Theme.scaledFont(19), .extraBold))
+                .textCase(.uppercase)
+                .foregroundStyle(MidnightPalette.ink)
 
             tvOSHeaderField(
                 imageName: "chevron.right",
@@ -1436,7 +1418,7 @@ struct GuideView: View {
                 isEnabled: true
             )
 
-            Rectangle().fill(Theme.surfaceHighlight).frame(width: 1, height: 30)
+            Rectangle().fill(MidnightPalette.line).frame(width: 1, height: 30)
 
             // Search / active filter
             tvOSSearchField(isFocused: isFocused && focusedItem == .search)
@@ -1471,16 +1453,25 @@ struct GuideView: View {
         }
         .padding(.horizontal, Theme.spacingLG)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radius(12))
-                .fill(Theme.surface.opacity(0.55))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radius(12))
-                .stroke(isFocused ? Theme.surfaceHighlight : Color.clear, lineWidth: 1)
-        )
-        .padding(.horizontal, 4)
-        .padding(.vertical, 4)
+        .background(MidnightPalette.railHead.opacity(0.55))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.line).frame(height: 1)
+        }
+    }
+
+    /// The selected group or profile, or "All Channels".
+    private var tvOSGuideTitle: String {
+        if let groupId = viewModel.selectedGroupId,
+           let group = epgCache.channelGroups.first(where: { $0.id == groupId }) {
+            return group.name
+        }
+        #if DISPATCHERPVR
+        if let profileId = viewModel.selectedProfileId,
+           let profile = epgCache.channelProfiles.first(where: { $0.id == profileId }) {
+            return profile.name
+        }
+        #endif
+        return "All Channels"
     }
 
     private var selectedGroupLabel: String {
@@ -1505,7 +1496,7 @@ struct GuideView: View {
         let isActive = isFocused || isTVSearchFieldFocused
         return HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(isActive ? Color(white: 0.1) : Theme.textTertiary)
+                .foregroundStyle(isActive ? MidnightPalette.selectedInk : MidnightPalette.inkFaint)
             TVImmediateSearchField(
                 text: $viewModel.channelSearchText,
                 placeholder: "Search channels...",
@@ -1526,15 +1517,11 @@ struct GuideView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radius(8))
-                .fill(isActive ? Color.white : Theme.surfaceElevated.opacity(0.75))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radius(8))
-                .stroke(isActive ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
-        )
-        .scaleEffect(isActive ? 1.06 : 1.0)
+        .background(isActive ? MidnightPalette.selectedBg : MidnightPalette.inputBg)
+        .overlay {
+            Rectangle().strokeBorder(isActive ? Color.clear : MidnightPalette.line, lineWidth: 1)
+        }
+        .scaleEffect(isActive ? 1.04 : 1.0)
         .animation(.easeInOut(duration: 0.14), value: isActive)
     }
 
@@ -1562,72 +1549,57 @@ struct GuideView: View {
             Text("\(title): \(value)")
                 .lineLimit(1)
         }
-        .font(.subheadline)
+        .font(.archivo(Theme.scaledFont(17), .extraBold))
         .foregroundStyle(
             isFocused
-            ? Color(white: 0.1)
-            : (value.hasPrefix("All ") ? Theme.textTertiary : Theme.accent)
+            ? MidnightPalette.selectedInk
+            : (value.hasPrefix("All ") ? MidnightPalette.inkSoft : MidnightPalette.accentSoft)
         )
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radius(8))
-                .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.75))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radius(8))
-                .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
-        )
-        .scaleEffect(isFocused ? 1.06 : 1.0)
+        .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
+        .overlay {
+            Rectangle().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
+        }
+        .scaleEffect(isFocused ? 1.04 : 1.0)
         .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 
     private var tvOSHeaderDrawer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(headerDrawerKind == .group ? "Select Group" : "Select Profile")
-                .font(.headline)
-                .foregroundStyle(Theme.textSecondary)
+            Text(headerDrawerKind == .group ? "Select group" : "Select profile")
+                .midnightKicker(Theme.scaledFont(13))
+                .foregroundStyle(MidnightPalette.accent)
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(currentDrawerItems.enumerated()), id: \.element.id) { index, item in
                         let isSelected = index == drawerSelectionIndex
                         HStack(spacing: 10) {
-                            if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Theme.accent)
-                            } else {
-                                Image(systemName: "circle")
-                                    .foregroundStyle(Theme.textTertiary)
-                            }
                             Text(item.label)
                                 .lineLimit(1)
                             Spacer()
                         }
-                        .font(.subheadline)
-                        .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
-                        .padding(.horizontal, 12)
+                        .font(.archivo(Theme.scaledFont(18), .extraBold))
+                        .foregroundStyle(isSelected ? MidnightPalette.selectedInk : MidnightPalette.ink)
+                        .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: Theme.radius(10))
-                                .fill(isSelected ? Theme.surfaceElevated : Theme.surface.opacity(0.3))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.radius(10))
-                                .stroke(isSelected ? Theme.accent : Theme.surfaceHighlight.opacity(0.5), lineWidth: isSelected ? 2 : 1)
-                        )
+                        .background(isSelected ? MidnightPalette.selectedBg : MidnightPalette.cellRest)
+                        .overlay(alignment: .leading) {
+                            if isSelected {
+                                Rectangle().fill(MidnightPalette.accent).frame(width: 5)
+                            }
+                        }
                     }
                 }
             }
         }
         .padding(.horizontal, Theme.spacingLG)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radius(12))
-                .fill(.ultraThinMaterial)
-        )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 6)
+        .background(MidnightPalette.railHead)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MidnightPalette.line).frame(height: 1)
+        }
     }
 
     private func tvOSHeaderField(
@@ -1639,20 +1611,16 @@ struct GuideView: View {
             .font(.tvScaled(size: 16, weight: .semibold))
             .foregroundStyle(
                 isEnabled
-                ? (isFocused ? Color(white: 0.1) : Theme.textSecondary)
-                : Theme.textTertiary.opacity(0.3)
+                ? (isFocused ? MidnightPalette.selectedInk : MidnightPalette.ink)
+                : MidnightPalette.inkFaint.opacity(0.4)
             )
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radius(8))
-                    .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.8))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radius(8))
-                    .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
-            )
-            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
+            .overlay {
+                Rectangle().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
+            }
+            .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 
@@ -2254,8 +2222,10 @@ private struct TVImmediateSearchField: UIViewRepresentable {
         field.delegate = context.coordinator
         field.placeholder = placeholder
         field.text = text
-        field.textColor = UIColor.white
-        field.tintColor = UIColor.white
+        field.textColor = UIColor(MidnightPalette.ink)
+        field.tintColor = UIColor(MidnightPalette.accent)
+        // Header-sized, not the tvOS text field default.
+        field.font = UIFont.systemFont(ofSize: Theme.scaledFont(22), weight: .semibold)
         field.borderStyle = .none
         field.clearButtonMode = .whileEditing
         field.returnKeyType = .search
@@ -2271,13 +2241,11 @@ private struct TVImmediateSearchField: UIViewRepresentable {
             uiView.text = text
         }
         uiView.placeholder = placeholder
-        uiView.textColor = useFocusedStyle ? UIColor(white: 0.1, alpha: 1.0) : UIColor.white
+        uiView.textColor = UIColor(useFocusedStyle ? MidnightPalette.selectedInk : MidnightPalette.ink)
         uiView.attributedPlaceholder = NSAttributedString(
             string: placeholder,
             attributes: [
-                .foregroundColor: useFocusedStyle
-                    ? UIColor(white: 0.35, alpha: 1.0)
-                    : UIColor(white: 0.62, alpha: 1.0)
+                .foregroundColor: UIColor(useFocusedStyle ? MidnightPalette.selectedSub : MidnightPalette.inkFaint)
             ]
         )
 

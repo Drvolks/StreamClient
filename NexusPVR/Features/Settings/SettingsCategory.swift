@@ -53,7 +53,7 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
                 + "stays one click away under All Channels."
         case .topics:
             "Programs whose title, subtitle or description contains a topic are listed under "
-                + "Topics in the sidebar and outlined in the guide. The first topic opens by default."
+                + "Topics in the sidebar and outlined in the guide."
         case .recordings:
             "Hiding recording features removes every recording menu, button and tab across "
                 + "the app. Scheduled recordings keep running on the server."

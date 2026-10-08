@@ -15,6 +15,8 @@ nonisolated enum TVRootExitAction: Equatable {
     case dismissSettingsPopup
     /// Close the Settings event log.
     case dismissEventLog
+    /// Go back from a Settings category page to the category index.
+    case closeSettingsCategory
     /// Move focus from the content area back to the sidebar.
     case focusSidebar
     /// Consume the press without doing anything (a child view owns it).
@@ -33,6 +35,8 @@ nonisolated enum TVRootExitAction: Equatable {
     ///   - sidebarHasFocus: whether a sidebar item currently holds focus.
     ///   - settingsHasPopup: whether the Settings option popup is open.
     ///   - settingsShowingEventLog: whether the Settings event log is open.
+    ///   - settingsShowingCategory: whether a Settings category page is open
+    ///     (rather than the category index).
     ///   - blocksSidebarExit: whether a child view asked the root to leave the
     ///     press alone (`AppState.tvosBlocksSidebarExitCommand`).
     static func resolve(
@@ -40,11 +44,14 @@ nonisolated enum TVRootExitAction: Equatable {
         sidebarHasFocus: Bool,
         settingsHasPopup: Bool,
         settingsShowingEventLog: Bool,
+        settingsShowingCategory: Bool = false,
         blocksSidebarExit: Bool
     ) -> TVRootExitAction {
         if selectedTab == .settings {
             if settingsHasPopup { return .dismissSettingsPopup }
             if settingsShowingEventLog { return .dismissEventLog }
+            // From the sidebar, Back still leaves the app.
+            if settingsShowingCategory && !sidebarHasFocus { return .closeSettingsCategory }
         } else if blocksSidebarExit {
             return .ignore
         }

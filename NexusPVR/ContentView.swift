@@ -240,7 +240,13 @@ struct ContentView: View {
                     return
                 }
                 guard attempt < retryDelays.count else { return }
-                try? await Task.sleep(for: .seconds(retryDelays[attempt - 1]))
+                // Rate-limited: wait as long as the server asked, once,
+                // rather than retrying into the limit.
+                if case PVRClientError.rateLimited(let retryAfter) = error {
+                    try? await Task.sleep(for: .seconds(retryAfter + 1))
+                } else {
+                    try? await Task.sleep(for: .seconds(retryDelays[attempt - 1]))
+                }
             }
         }
     }

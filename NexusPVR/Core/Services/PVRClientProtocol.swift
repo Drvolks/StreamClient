@@ -15,6 +15,9 @@ protocol PVRClientProtocol: ObservableObject {
     var config: ServerConfig { get }
 
     func authenticate() async throws
+    /// Called when the app returns to the foreground: make sure the session
+    /// is usable, signing in again only when it has to.
+    func resumeSession() async throws
     func disconnect()
     func updateConfig(_ newConfig: ServerConfig)
     /// Changes only the custom host settings, keeping the session (#165).

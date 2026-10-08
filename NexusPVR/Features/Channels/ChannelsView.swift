@@ -32,6 +32,8 @@ struct ChannelsView: View {
     #if os(macOS)
     /// The current program whose detail sheet is open (card "Info" action).
     @State private var macDetail: ProgramDetail?
+    #endif
+    #if os(macOS) || os(tvOS)
     @Environment(\.colorScheme) private var colorScheme
     #endif
     #if os(tvOS)
@@ -149,7 +151,7 @@ struct ChannelsView: View {
             } message: {
                 if let error = streamError { Text(error) }
             }
-            .background(.ultraThinMaterial)
+            .background(MidnightGradients.ground(colorScheme))
             .onMoveCommand { direction in
                 if headerDrawerKind != nil {
                     // Up/down navigates the drawer list (handled by the focus
@@ -547,12 +549,24 @@ struct ChannelsView: View {
                 } label: {
                     let program = epgCache.currentProgram(for: channel, at: now)
                     let rec = program.flatMap { recording(for: $0) }
+                    #if os(tvOS)
+                    TVChannelCard(
+                        channel: channel,
+                        iconURL: try? client.channelIconURL(channelId: channel.id),
+                        currentProgram: program,
+                        now: now,
+                        matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
+                        isScheduledRecording: rec != nil,
+                        isCurrentlyRecording: rec?.recordingStatus == .recording
+                    )
+                    #else
                     ChannelGridCard(
                         channel: channel,
                         currentProgram: program,
                         isScheduledRecording: rec != nil,
                         isCurrentlyRecording: rec?.recordingStatus == .recording
                     )
+                    #endif
                 }
                 .accessibilityIdentifier("channel-card-\(channel.id)")
                 #if os(tvOS)
@@ -606,13 +620,37 @@ struct ChannelsView: View {
     }
 
     #if os(tvOS)
+    /// The selected group or profile, or "All Channels".
+    private var tvOSChannelsTitle: String {
+        #if DISPATCHERPVR
+        if appState.guideProfileFilter != nil { return selectedProfileLabel }
+        #endif
+        return appState.guideGroupFilter != nil ? selectedGroupLabel : "All Channels"
+    }
+
     private var tvOSFilterBar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.spacingLG) {
+            HStack(spacing: Theme.spacingMD) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Channels")
+                        .midnightKicker(Theme.scaledFont(13))
+                        .foregroundStyle(MidnightPalette.accent)
+                    Text(tvOSChannelsTitle)
+                        .midnightDisplay(Theme.scaledFont(30))
+                        .foregroundStyle(MidnightPalette.ink)
+                        .lineLimit(1)
+                }
+                .fixedSize()
+                Text("\(visibleChannels.count) channel\(visibleChannels.count == 1 ? "" : "s")")
+                    .midnightMeta(Theme.scaledFont(15))
+                    .foregroundStyle(MidnightPalette.inkSoft)
+                    .fixedSize()
+                    .padding(.trailing, Theme.spacingSM)
+
                 tvOSSearchField
                 if hasFilterData {
                     Rectangle()
-                        .fill(Theme.surfaceHighlight)
+                        .fill(MidnightPalette.line)
                         .frame(width: 1, height: 30)
                     tvOSFilterField(
                         icon: "folder.fill",
@@ -635,16 +673,12 @@ struct ChannelsView: View {
                 Spacer()
             }
             .padding(.horizontal, Theme.spacingLG)
-            .frame(minHeight: 62)
+            .frame(minHeight: 78)
             .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radius(12))
-                    .fill(Theme.surface.opacity(0.55))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radius(12))
-                    .stroke(Theme.surfaceHighlight.opacity(0.5), lineWidth: 1)
-            )
+            .background(MidnightPalette.railHead.opacity(0.55))
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(MidnightPalette.line).frame(height: 1)
+            }
 
             if headerDrawerKind != nil {
                 tvOSHeaderDrawer
@@ -694,7 +728,7 @@ struct ChannelsView: View {
         .focusEffectDisabled()
         .accessibilityIdentifier("channels-view-field")
         .background(
-            ChannelsTVImmediateSearchField(
+            TVKeyboardField(
                 text: $appState.guideChannelFilter,
                 placeholder: "Search channels...",
                 requestFocus: $requestTVSearchKeyboard,
@@ -1181,11 +1215,11 @@ private struct ChannelGridCardFocusWrapper<Content: View>: View {
     var body: some View {
         content()
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusMD)
-                    .strokeBorder(isFocused ? Theme.accent.opacity(0.95) : Color.clear, lineWidth: 3)
+                Rectangle()
+                    .strokeBorder(isFocused ? MidnightPalette.accent : Color.clear, lineWidth: 4)
             }
-            .shadow(color: isFocused ? Theme.accent.opacity(0.22) : .clear, radius: 10, x: 0, y: 1)
-            .scaleEffect(isFocused ? 1.03 : 1.0)
+            .shadow(color: isFocused ? .black.opacity(0.4) : .clear, radius: 14, x: 0, y: 6)
+            .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 }
@@ -1215,18 +1249,15 @@ private struct TVPillFieldFocusWrapper<Content: View>: View {
 
     var body: some View {
         content()
-            .foregroundStyle(isFocused ? Color(white: 0.1) : unfocusedForeground)
+            .font(.archivo(Theme.scaledFont(17), .extraBold))
+            .foregroundStyle(isFocused ? MidnightPalette.selectedInk : unfocusedForeground)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radius(8))
-                    .fill(isFocused ? Color.white : Theme.surfaceElevated.opacity(0.75))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radius(8))
-                    .stroke(isFocused ? Color.clear : Theme.surfaceHighlight, lineWidth: 1)
-            )
-            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
+            .overlay {
+                Rectangle().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
+            }
+            .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 }
@@ -1250,97 +1281,21 @@ private struct ChannelsDrawerItemFocusWrapper<Content: View>: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: isFocused ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(isFocused ? Theme.accent : Theme.textTertiary)
             content()
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .font(.subheadline)
-        .foregroundStyle(isFocused ? Theme.textPrimary : Theme.textSecondary)
-        .padding(.horizontal, 12)
+        .font(.archivo(Theme.scaledFont(18), .extraBold))
+        .foregroundStyle(isFocused ? MidnightPalette.selectedInk : MidnightPalette.ink)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radius(10))
-                .fill(isFocused ? Theme.surfaceElevated : Theme.surface.opacity(0.3))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radius(10))
-                .stroke(isFocused ? Theme.accent : Theme.surfaceHighlight.opacity(0.5), lineWidth: isFocused ? 2 : 1)
-        )
-        .animation(.easeInOut(duration: 0.12), value: isFocused)
-    }
-}
-
-/// Zero-size `UITextField` that only ever drives the on-screen keyboard for the
-/// search field. `canBecomeFocused` is `false` so the focus engine never lands
-/// on it — the visible focusable element is the SwiftUI `Button` in front of it.
-private final class NonFocusableTextField: UITextField {
-    override var canBecomeFocused: Bool { false }
-}
-
-private struct ChannelsTVImmediateSearchField: UIViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    @Binding var requestFocus: Bool
-    var onFocusChange: (Bool) -> Void
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: ChannelsTVImmediateSearchField
-
-        init(parent: ChannelsTVImmediateSearchField) {
-            self.parent = parent
-        }
-
-        @objc func textDidChange(_ sender: UITextField) {
-            parent.text = sender.text ?? ""
-        }
-
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            parent.onFocusChange(true)
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            parent.onFocusChange(false)
-        }
-
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            textField.resignFirstResponder()
-            return true
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    func makeUIView(context: Context) -> UITextField {
-        let field = NonFocusableTextField(frame: .zero)
-        field.delegate = context.coordinator
-        field.placeholder = placeholder
-        field.text = text
-        field.textColor = UIColor.white
-        field.tintColor = UIColor.white
-        field.borderStyle = .none
-        field.returnKeyType = .search
-        field.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
-        return field
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        context.coordinator.parent = self
-        if uiView.text != text {
-            uiView.text = text
-        }
-        uiView.placeholder = placeholder
-
-        if requestFocus {
-            if !uiView.isFirstResponder {
-                uiView.becomeFirstResponder()
+        .background(isFocused ? MidnightPalette.selectedBg : MidnightPalette.cellRest)
+        .overlay(alignment: .leading) {
+            if isFocused {
+                Rectangle().fill(MidnightPalette.accent).frame(width: 5)
             }
-        } else if uiView.isFirstResponder {
-            uiView.resignFirstResponder()
         }
+        .animation(.easeInOut(duration: 0.12), value: isFocused)
     }
 }
 

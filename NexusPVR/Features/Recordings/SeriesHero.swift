@@ -1,33 +1,41 @@
 //
-//  MacSeriesHero.swift
+//  SeriesHero.swift
 //  nextpvr-apple-client
 //
-//  The top of a macOS series page (Midnight): the poster on the series'
-//  fanart, with how many episodes there are and when the next one records.
+//  The top of a series page (Midnight, macOS and tvOS): the poster on the
+//  series' fanart, with how many episodes there are and when the next one
+//  records.
 //
 
-#if os(macOS)
+#if os(macOS) || os(tvOS)
 import SwiftUI
 
-struct MacSeriesHero: View {
+struct SeriesHero: View {
     let summary: RecordingsSeriesSummary
     let posterURL: URL?
     let fanartURL: URL?
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// tvOS draws the same hero larger, for the distance.
+    #if os(tvOS)
+    private let scale: CGFloat = Theme.scaledFont(1.7)
+    #else
+    private let scale: CGFloat = 1
+    #endif
+
     var body: some View {
-        HStack(alignment: .bottom, spacing: 20) {
+        HStack(alignment: .bottom, spacing: 20 * scale) {
             poster
             VStack(alignment: .leading, spacing: 12) {
                 facts
                 if let next = nextEpisode {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Next recording")
-                            .midnightKicker(9)
+                            .midnightKicker(9 * scale)
                             .foregroundStyle(MidnightPalette.accent)
                         Text(next)
-                            .midnightMeta(12.5, weight: .semibold)
+                            .midnightMeta(12.5 * scale, weight: .semibold)
                             .foregroundStyle(MidnightPalette.ink)
                     }
                 }
@@ -35,7 +43,7 @@ struct MacSeriesHero: View {
             .padding(.bottom, 4)
             Spacer(minLength: 0)
         }
-        .padding(18)
+        .padding(18 * scale)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background { backdrop }
         .overlay { Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
@@ -49,13 +57,13 @@ struct MacSeriesHero: View {
                 CachedAsyncImage(url: posterURL) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
-                    ProgressView().controlSize(.small)
+                    ProgressView()
                 } fallback: {
                     EmptyView()
                 }
             }
         }
-        .frame(width: 130, height: 195)
+        .frame(width: 130 * scale, height: 195 * scale)
         .clipped()
         .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
@@ -84,7 +92,7 @@ struct MacSeriesHero: View {
     }
 
     private var facts: some View {
-        HStack(alignment: .top, spacing: 26) {
+        HStack(alignment: .top, spacing: 26 * scale) {
             fact("Recorded", summary.completed.count)
             fact("Unwatched", summary.unwatchedCount)
             if !summary.active.isEmpty { fact("Recording now", summary.active.count) }
@@ -95,10 +103,10 @@ struct MacSeriesHero: View {
     private func fact(_ label: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("\(value)")
-                .font(.archivo(30, .extraBold))
+                .font(.archivo(30 * scale, .extraBold))
                 .foregroundStyle(MidnightPalette.ink)
             Text(label)
-                .midnightKicker(9)
+                .midnightKicker(9 * scale)
                 .foregroundStyle(MidnightPalette.inkSoft)
         }
     }

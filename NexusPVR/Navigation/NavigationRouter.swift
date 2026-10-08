@@ -1250,6 +1250,7 @@ struct TVOSNavigation: View {
                 appState.tvosBlocksSidebarExitCommand = false
                 appState.tvosSettingsHasPopup = false
                 appState.tvosSettingsShowingEventLog = false
+                appState.tvosSettingsShowingCategory = false
             }
         }
         .fullScreenCover(isPresented: $appState.isShowingPlayer) {
@@ -1278,6 +1279,7 @@ struct TVOSNavigation: View {
             sidebarHasFocus: focusedItem != nil,
             settingsHasPopup: appState.tvosSettingsHasPopup,
             settingsShowingEventLog: appState.tvosSettingsShowingEventLog,
+            settingsShowingCategory: appState.tvosSettingsShowingCategory,
             blocksSidebarExit: appState.tvosBlocksSidebarExitCommand
         )
     }
@@ -1295,6 +1297,8 @@ struct TVOSNavigation: View {
             appState.tvosSettingsDismissPopupRequest += 1
         case .dismissEventLog:
             appState.tvosSettingsDismissEventLogRequest += 1
+        case .closeSettingsCategory:
+            appState.tvosSettingsCloseCategoryRequest += 1
         case .focusSidebar:
             focusSidebar()
         case .ignore, .exitToSystem:
@@ -1329,9 +1333,6 @@ struct TVOSNavigation: View {
             }
             return .recordingsFilter(appState.recordingsFilter)
         case .topics, .calendar:
-            if appState.showingKeywordsEditor {
-                return .topicManage
-            }
             if !appState.selectedTopicKeyword.isEmpty,
                appState.topicKeywords.contains(appState.selectedTopicKeyword) {
                 return .topicKeyword(appState.selectedTopicKeyword)
@@ -1429,7 +1430,7 @@ struct TVOSNavigation: View {
                                     tvOSSidebarSubRow(
                                         label: keyword,
                                         item: .topicKeyword(keyword),
-                                        isSelected: appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
+                                        isSelected: appState.selectedTab == .topics && appState.selectedTopicKeyword == keyword
                                     ) {
                                         if let count = appState.topicKeywordMatchCounts[keyword] {
                                             Text("\(count)")
@@ -1438,11 +1439,15 @@ struct TVOSNavigation: View {
                                         }
                                     }
                                 }
-                                tvOSSidebarSubRow(
-                                    label: "Manage",
-                                    item: .topicManage,
-                                    isSelected: appState.selectedTab == .topics && appState.showingKeywordsEditor
-                                ) { EmptyView() }
+                                // Topics are managed in Settings; with none yet,
+                                // this row leads there so the section isn't empty.
+                                if appState.topicKeywords.isEmpty {
+                                    tvOSSidebarSubRow(
+                                        label: "Add topics",
+                                        item: .topicManage,
+                                        isSelected: false
+                                    ) { EmptyView() }
+                                }
                             }
                         } else if tab == .guide {
                             if guideSidebarPreferences.guideShowGroupsInSidebar || guideSidebarShowsProfiles {
@@ -1704,12 +1709,11 @@ struct TVOSNavigation: View {
                 appState.showRecordingsSeriesMenu(userInitiated: true)
                 appState.selectedTab = .recordings
             case .topicKeyword(let keyword):
-                appState.showingKeywordsEditor = false
                 appState.selectedTopicKeyword = keyword
                 appState.selectedTab = .topics
             case .topicManage:
-                appState.showingKeywordsEditor = true
-                appState.selectedTab = .topics
+                appState.requestedSettingsCategory = .topics
+                appState.selectedTab = .settings
             case .guideAll:
                 appState.guideGroupFilter = nil
                 appState.guideProfileFilter = nil
@@ -1838,7 +1842,7 @@ struct TVOSNavigation: View {
                 if appState.activeStreamCount > 0 {
                     Text("\(appState.activeStreamCount)")
                         .font(.tvSidebarScaled(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Theme.accent)
