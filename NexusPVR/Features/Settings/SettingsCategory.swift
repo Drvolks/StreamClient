@@ -2,7 +2,7 @@
 //  SettingsCategory.swift
 //  nextpvr-apple-client
 //
-//  The eight categories of the macOS Settings index (Midnight redesign).
+//  The categories of the macOS Settings index (Midnight redesign).
 //
 
 import Foundation
@@ -13,13 +13,14 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
     case playback
     case subtitles
     case guide
+    case topics
     case recordings
     case advanced
     case about
 
     var id: Int { rawValue }
 
-    /// Two-digit position shown in the index, "01" to "08".
+    /// Two-digit position shown in the index, "01", "02", …
     var number: String {
         String(format: "%02d", rawValue + 1)
     }
@@ -31,6 +32,7 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
         case .playback: "Playback"
         case .subtitles: "Subtitles"
         case .guide: "Guide"
+        case .topics: "Topics"
         case .recordings: "Recordings"
         case .advanced: "Advanced"
         case .about: "About"
@@ -56,6 +58,9 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
         case .guide:
             "Only the groups and profiles you tick appear in the sidebar. Everything else "
                 + "stays one click away under All Channels."
+        case .topics:
+            "Programs whose title, subtitle or description contains a topic are listed under "
+                + "Topics in the sidebar and outlined in the guide. The first topic opens by default."
         case .recordings:
             "Hiding recording features removes every recording menu, button and tab across "
                 + "the app. Scheduled recordings keep running on the server."

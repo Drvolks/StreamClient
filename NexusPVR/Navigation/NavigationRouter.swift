@@ -2070,11 +2070,9 @@ struct MacOSNavigation: View {
         .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
             guideSidebarPreferences = UserPreferences.load()
         }
-        .onChange(of: appState.showingKeywordsEditor) { _ in
-            if !appState.showingKeywordsEditor {
-                appState.topicKeywords = UserPreferences.load().keywords
-                Task { await computeTopicMatchCounts() }
-            }
+        .onChange(of: appState.topicKeywords) { _ in
+            // Topics are edited in Settings › Topics; keep the sidebar counts current.
+            Task { await computeTopicMatchCounts() }
         }
         .onChange(of: epgCache.isFullyLoaded) { _ in
             if epgCache.isFullyLoaded {
@@ -2480,23 +2478,22 @@ struct MacOSNavigation: View {
     }
     #endif
 
+    /// Opens Settings › Topics, where topics are added, ordered and removed.
     private func macSidebarTopicManageRow() -> some View {
-        let isSelected = appState.selectedTab == .topics && appState.showingKeywordsEditor
-        return Button {
-            appState.showingKeywordsEditor = true
-            appState.selectedTab = .topics
+        Button {
+            appState.requestedSettingsCategory = .topics
+            appState.selectedTab = .settings
         } label: {
             HStack {
                 Text("Manage")
                     .font(.subheadline)
                 Spacer()
             }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .foregroundStyle(Theme.textSecondary)
             .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
             .contentShape(Rectangle())
         }

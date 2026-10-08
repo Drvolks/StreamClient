@@ -109,14 +109,6 @@ struct GuideView: View {
                     .environmentObject(appState)
                     .frame(minWidth: 700, minHeight: 500)
             }
-            .sheet(isPresented: $appState.showingKeywordsEditor) {
-                KeywordsEditorView()
-                    .onDisappear {
-                        keywords = UserPreferences.load().keywords
-                        viewModel.updateKeywordMatches(keywords: keywords)
-                    }
-                    .frame(minWidth: 500, minHeight: 400)
-            }
             #endif
     }
 
@@ -435,7 +427,8 @@ struct GuideView: View {
                 updateScrollTarget()
             },
             onTopics: {
-                appState.showingKeywordsEditor = true
+                appState.requestedSettingsCategory = .topics
+                appState.selectedTab = .settings
             },
             onRefresh: {
                 Task { await refreshGuide() }

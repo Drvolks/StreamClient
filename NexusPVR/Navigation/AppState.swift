@@ -37,6 +37,9 @@ final class AppState: ObservableObject {
     @Published var topicKeywordMatchCounts: [String: Int] = [:]
     @Published var selectedTopicKeyword: String = ""
     @Published var showingKeywordsEditor = false
+    /// Set to open macOS Settings on a given category (e.g. Topics from the
+    /// sidebar's "Manage"); Settings applies it and clears it.
+    @Published var requestedSettingsCategory: SettingsCategory?
     @Published var showingCalendar = false
     /// Persists the calendar's visible day while macOS temporarily replaces
     /// navigation with PlayerView during catch-up playback.

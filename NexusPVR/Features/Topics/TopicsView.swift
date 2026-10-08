@@ -100,15 +100,6 @@ struct TopicsView: View {
         .background(Theme.background)
         #endif
         #if os(macOS)
-        .sheet(isPresented: $appState.showingKeywordsEditor) {
-            KeywordsEditorView()
-                .onDisappear {
-                    Task {
-                        await viewModel.loadData()
-                    }
-                }
-                .frame(minWidth: 500, minHeight: 400)
-        }
         .onChange(of: appState.showingCalendar) { _ in
             if appState.showingCalendar {
                 viewModel.epgCache = epgCache
@@ -193,8 +184,7 @@ struct TopicsView: View {
             #if os(macOS)
             MacTopicsHeader(
                 title: selectedKeyword.isEmpty ? "Topics" : selectedKeyword,
-                programCount: filteredPrograms.count,
-                onManage: { appState.showingKeywordsEditor = true }
+                programCount: filteredPrograms.count
             )
             #endif
 

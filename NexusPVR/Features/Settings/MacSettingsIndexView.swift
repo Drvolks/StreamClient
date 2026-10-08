@@ -10,6 +10,15 @@
 import SwiftUI
 
 struct MacSettingsIndexView: View {
+    /// "Nine categories", spelled out like the design's "Eight categories".
+    private static let categoryCountLabel: String = {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .spellOut
+        let count = formatter.string(from: NSNumber(value: SettingsCategory.allCases.count)) ?? "\(SettingsCategory.allCases.count)"
+        return "\(count.prefix(1).uppercased())\(count.dropFirst()) categories"
+    }()
+
     @Binding var selection: SettingsCategory
     let summary: (SettingsCategory) -> String
 
@@ -19,7 +28,7 @@ struct MacSettingsIndexView: View {
                 Text("Settings")
                     .midnightDisplay(28)
                     .foregroundStyle(MidnightPalette.ink)
-                Text("Eight categories")
+                Text(Self.categoryCountLabel)
                     .midnightKicker(10.5)
                     .foregroundStyle(MidnightPalette.accent)
             }

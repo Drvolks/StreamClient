@@ -2,8 +2,8 @@
 //  MacTopicsHeader.swift
 //  nextpvr-apple-client
 //
-//  The macOS Topics header: the selected topic, how many programs match,
-//  and a way into the keyword editor.
+//  The macOS Topics header: the selected topic and how many programs match.
+//  Topics are managed in Settings › Topics.
 //
 
 #if os(macOS)
@@ -12,7 +12,6 @@ import SwiftUI
 struct MacTopicsHeader: View {
     let title: String
     let programCount: Int
-    let onManage: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -33,10 +32,6 @@ struct MacTopicsHeader: View {
                 .fixedSize()
 
             Spacer(minLength: Theme.spacingSM)
-
-            Button("Manage topics", action: onManage)
-                .buttonStyle(MidnightOutlineButtonStyle())
-                .accessibilityIdentifier("topics-manage-button")
         }
         .padding(.horizontal, MacGuideHeaderMetrics.horizontalPadding)
         .frame(height: MacGuideHeaderMetrics.height)
