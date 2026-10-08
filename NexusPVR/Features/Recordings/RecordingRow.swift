@@ -135,6 +135,7 @@ struct RecordingRow: View {
                             .foregroundStyle(Theme.textPrimary)
                             .lineLimit(1)
                         Spacer()
+                        if recording.isLiveBroadcast { LiveBadge() }
                         if recording.isNew { NewBadge() }
                     }
 
@@ -185,6 +186,7 @@ struct RecordingRow: View {
                             .foregroundStyle(Theme.textPrimary)
                             .lineLimit(2)
                         Spacer()
+                        if recording.isLiveBroadcast { LiveBadge() }
                         if recording.isNew { NewBadge() }
                     }
 

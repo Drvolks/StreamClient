@@ -80,6 +80,10 @@ struct ProgramCell: View {
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
 
+                        if program.shouldShowLiveBadge {
+                            LiveBadge(compact: useCompactBadges)
+                        }
+
                         if program.shouldShowNewBadge && !isCatchupAvailable {
                             NewBadge(compact: useCompactBadges)
                         }

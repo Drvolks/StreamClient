@@ -21,9 +21,6 @@ struct MacSettingsIndexRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.spacingSM + 4) {
-                Text(category.number)
-                    .font(.archivo(12, .extraBold))
-                    .frame(width: 20, alignment: .leading)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(category.title)
                         .font(.archivo(15, .extraBold))

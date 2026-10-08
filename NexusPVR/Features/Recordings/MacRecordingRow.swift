@@ -13,8 +13,12 @@ import SwiftUI
 struct MacRecordingRow: View {
     let recording: Recording
     var matchedTopic: String?
+    /// Inside a series section or page, lead with the episode title: the
+    /// recording's own name is just the series name again.
+    var showsEpisodeTitle = false
+    /// Resumes a part-watched recording, plays any other from the start.
+    let onPlay: () -> Void
     let onPlayFromBeginning: () -> Void
-    let onResume: () -> Void
     let onInfo: () -> Void
     let onDelete: () -> Void
 
@@ -73,17 +77,18 @@ struct MacRecordingRow: View {
                         .padding(.vertical, 2)
                         .background(MidnightPalette.barSoft)
                 }
-                Text(recording.cleanName)
+                Text(title)
                     .font(.archivo(15.5, .extraBold))
                     .foregroundStyle(MidnightPalette.ink)
                     .lineLimit(1)
+                if recording.isLiveBroadcast {
+                    LiveBadge()
+                }
                 if let matchedTopic {
                     Text(matchedTopic)
-                        .midnightBadge(8.5)
-                        .foregroundStyle(MidnightPalette.topicInk)
                         .lineLimit(1)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
+                        .badgeLabel()
+                        .foregroundStyle(MidnightPalette.topicInk)
                         .background(MidnightPalette.topic)
                 }
             }
@@ -130,11 +135,19 @@ struct MacRecordingRow: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    private var title: String {
+        if showsEpisodeTitle, let episode = recording.episodeTitle { return episode }
+        return recording.cleanName
+    }
+
     private var description: String? {
-        let text = [recording.subtitle, recording.desc]
+        // The subtitle is already the title when the episode title leads.
+        let candidates = showsEpisodeTitle && recording.episodeTitle != nil
+            ? [recording.desc]
+            : [recording.subtitle, recording.desc]
+        return candidates
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
-        return text
     }
 
     // MARK: Right
@@ -187,21 +200,23 @@ struct MacRecordingRow: View {
 
     private var actionStrip: some View {
         let playable = status.isPlayable || status == .recording
+        // Starting over only means something once the recording has been played.
+        let canStartOver = playable && watchState != .new
         return HStack(spacing: 0) {
             MidnightActionCell(
-                systemImage: "gobackward",
-                help: "Play from the beginning",
+                systemImage: "play.fill",
+                help: resumeProgress != nil ? "Resume" : "Play",
                 isEnabled: playable,
                 isDimmed: !playable,
-                action: onPlayFromBeginning
+                action: onPlay
             )
             divider
             MidnightActionCell(
-                systemImage: "play.fill",
-                help: "Resume",
-                isEnabled: playable && resumeProgress != nil,
-                isDimmed: resumeProgress == nil,
-                action: onResume
+                systemImage: "gobackward",
+                help: "Play from the beginning",
+                isEnabled: canStartOver,
+                isDimmed: !canStartOver,
+                action: onPlayFromBeginning
             )
             divider
             MidnightActionCell(systemImage: "info.circle", help: "Info", action: onInfo)

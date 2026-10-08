@@ -39,13 +39,26 @@ nonisolated struct Recording: Identifiable, Codable, Hashable {
     let seriesBannerURL: String?
 
     var isNew: Bool {
-        name.contains("\u{1D3A}\u{1D49}\u{02B7}")
+        name.contains(EPGTitleMarkers.new)
+    }
+
+    /// Whether the recorded program was marked "ᴸᶦᵛᵉ" in the guide.
+    var isLiveBroadcast: Bool {
+        EPGTitleMarkers.isLive(name)
     }
 
     var cleanName: String {
-        name.replacingOccurrences(of: "\\s*ᴺᵉʷ\\s*", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "  ", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        EPGTitleMarkers.clean(name)
+    }
+
+    /// The episode's own title: the subtitle without any "S01E02" pattern, or
+    /// nil when there isn't one. Series recordings are named after the series,
+    /// so this is what tells their episodes apart.
+    var episodeTitle: String? {
+        guard let subtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !subtitle.isEmpty else { return nil }
+        let cleaned = SeriesInfo.stripPattern(from: subtitle).trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     var startDate: Date? {

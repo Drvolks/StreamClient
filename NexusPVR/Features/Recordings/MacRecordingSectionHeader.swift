@@ -12,23 +12,7 @@ struct MacRecordingSectionHeader: View {
     let section: RecordingSection
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(section.title)
-                .font(.archivo(17, .extraBold))
-                .textCase(.uppercase)
-                .foregroundStyle(MidnightPalette.ink)
-                .lineLimit(1)
-            Text(meta)
-                .midnightMeta(11)
-                .foregroundStyle(MidnightPalette.inkSoft)
-            Spacer()
-        }
-        .padding(.top, 18)
-        .padding(.bottom, 6)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(MidnightPalette.line).frame(height: 2)
-        }
-        .accessibilityAddTraits(.isHeader)
+        MidnightSectionHeader(title: section.title, meta: meta)
     }
 
     private var meta: String {

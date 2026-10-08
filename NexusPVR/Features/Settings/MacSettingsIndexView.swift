@@ -2,8 +2,8 @@
 //  MacSettingsIndexView.swift
 //  nextpvr-apple-client
 //
-//  The middle column of macOS Settings: the eight numbered categories, each
-//  with a live one-line summary of its current values.
+//  The middle column of macOS Settings: the categories, each with a live
+//  one-line summary of its current values.
 //
 
 #if os(macOS)
@@ -15,19 +15,14 @@ struct MacSettingsIndexView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Settings")
-                    .midnightDisplay(28)
-                    .foregroundStyle(MidnightPalette.ink)
-                Text("Eight categories")
-                    .midnightKicker(10.5)
-                    .foregroundStyle(MidnightPalette.accent)
-            }
-            .padding(EdgeInsets(top: 18, leading: 18, bottom: 14, trailing: 18))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(MidnightPalette.line).frame(height: 1)
-            }
+            Text("Settings")
+                .midnightDisplay(28)
+                .foregroundStyle(MidnightPalette.ink)
+                .padding(EdgeInsets(top: 18, leading: 18, bottom: 14, trailing: 18))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(MidnightPalette.line).frame(height: 1)
+                }
 
             ScrollView {
                 VStack(spacing: 0) {

@@ -215,6 +215,25 @@ enum Theme {
     #endif
 }
 
+// MARK: - Badge Label
+
+extension View {
+    /// Font and padding shared by the small status tags (NEW, LIVE, REC,
+    /// catch-up, and the macOS topic tags), so tags side by side are the same
+    /// height. macOS uses the Midnight badge type.
+    func badgeLabel(compact: Bool = false) -> some View {
+        #if os(macOS)
+        midnightBadge(8.5)
+            .padding(.horizontal, compact ? 4 : 5)
+            .padding(.vertical, 2)
+        #else
+        font(.system(size: 9, weight: .bold))
+            .padding(.horizontal, compact ? 4 : 5)
+            .padding(.vertical, 2)
+        #endif
+    }
+}
+
 // MARK: - New Badge
 
 struct NewBadge: View {
@@ -224,11 +243,25 @@ struct NewBadge: View {
 
     var body: some View {
         Text(compact ? "N" : "NEW")
-            .font(.system(size: 9, weight: .bold))
+            .badgeLabel(compact: compact)
             .foregroundStyle(.white)
-            .padding(.horizontal, compact ? 4 : 5)
-            .padding(.vertical, 2)
             .background(Theme.success)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
+    }
+}
+
+// MARK: - Live Badge
+
+/// Marks a program the guide flags as airing live ("ᴸᶦᵛᵉ" in its title).
+struct LiveBadge: View {
+    /// Shrinks the label to a single "L" for tight spots, like `NewBadge`.
+    var compact: Bool = false
+
+    var body: some View {
+        Text(compact ? "L" : "LIVE")
+            .badgeLabel(compact: compact)
+            .foregroundStyle(Theme.textOnAccent)
+            .background(Theme.accent)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
     }
 }
@@ -245,10 +278,8 @@ struct RecBadge: View {
 
     var body: some View {
         Text(compact ? "R" : "REC")
-            .font(.system(size: 9, weight: .bold))
+            .badgeLabel(compact: compact)
             .foregroundStyle(.white)
-            .padding(.horizontal, compact ? 4 : 5)
-            .padding(.vertical, 2)
             .background(Theme.recording)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
             .opacity(isActive ? 1.0 : 0.6)
@@ -264,10 +295,8 @@ struct CatchupBadge: View {
 
     var body: some View {
         Text(compact ? "C" : "CATCH-UP")
-            .font(.system(size: 9, weight: .bold))
+            .badgeLabel(compact: compact)
             .foregroundStyle(.white)
-            .padding(.horizontal, compact ? 4 : 5)
-            .padding(.vertical, 2)
             .background(Theme.catchup)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
     }

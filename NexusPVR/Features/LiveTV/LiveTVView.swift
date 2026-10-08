@@ -213,6 +213,7 @@ struct ChannelCard: View {
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                         Spacer()
+                        if program.shouldShowLiveBadge { LiveBadge() }
                         if program.shouldShowNewBadge { NewBadge() }
                     }
 

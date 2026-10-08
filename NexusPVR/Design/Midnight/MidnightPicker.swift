@@ -19,13 +19,20 @@ struct MidnightPicker<Value: Hashable>: View {
 
     var body: some View {
         Menu {
-            Picker(title, selection: $selection) {
-                ForEach(options, id: \.value) { option in
-                    Text(option.label).tag(option.value)
+            // Plain buttons rather than an inline Picker: macOS draws inline
+            // picker options as toggles, which an ancestor's ToggleStyle (the
+            // Settings page's ON/OFF switch) would restyle.
+            ForEach(options, id: \.value) { option in
+                Button {
+                    selection = option.value
+                } label: {
+                    if option.value == selection {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
                 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
         } label: {
             Text(currentLabel)
                 .font(.archivo(13, .extraBold))

@@ -11,7 +11,14 @@ import SwiftUI
 
 // MARK: - Constants
 
+#if os(macOS)
+// Taller hours on macOS so a 15-minute program still gets a readable line.
+private let hourHeight: CGFloat = 80
+#else
 private let hourHeight: CGFloat = 60
+#endif
+/// Shortest a block is drawn, unless the next program leaves less room.
+private let minimumBlockHeight: CGFloat = 20
 private let timeColumnWidth: CGFloat = 50
 private let startHour = 0
 private let endHour = 24
@@ -149,7 +156,6 @@ struct CalendarView: View {
             VStack(spacing: 0) {
                 #if !os(iOS)
                 navigationBar
-                Divider()
                 #endif
 
                 switch viewMode {
@@ -161,7 +167,11 @@ struct CalendarView: View {
             }
             .accessibilityIdentifier("calendar-view")
             .frame(maxHeight: .infinity)
+            #if os(macOS)
+            .background(MidnightGradients.ground(colorScheme))
+            #else
             .background(Theme.background)
+            #endif
             .onGeometryChange(for: CGFloat.self) { geo in
                 geo.size.width
             } action: { newWidth in
@@ -306,72 +316,54 @@ struct CalendarView: View {
 
     // MARK: - Navigation Bar
 
+    #if os(macOS)
     private var navigationBar: some View {
-        HStack(spacing: Theme.spacingMD) {
-            Button { navigateBack() } label: {
-                Image(systemName: "chevron.left")
-                    .fontWeight(.semibold)
-            }
-            .buttonStyle(.plain)
-            .disabled(!canNavigateBack)
-
-            Text(dateRangeLabel)
-                .font(.headline)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-
-            Button { navigateForward() } label: {
-                Image(systemName: "chevron.right")
-                    .fontWeight(.semibold)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Menu {
-                Button { selectedKeyword = "" } label: {
-                    if selectedKeyword.isEmpty {
-                        Label("All", systemImage: "checkmark")
-                    } else {
-                        Text("All")
-                    }
-                }
-                ForEach(keywords, id: \.self) { keyword in
-                    Button {
-                        selectedKeyword = keyword
-                    } label: {
-                        Label(keyword, systemImage: keyword == selectedKeyword ? "checkmark.circle.fill" : "circle.fill")
-                    }
-                    .tint(colorForKeyword(keyword))
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    if !selectedKeyword.isEmpty {
-                        Circle()
-                            .fill(colorForKeyword(selectedKeyword))
-                            .frame(width: 8, height: 8)
-                    }
-                    Text(selectedKeyword.isEmpty ? "All" : selectedKeyword)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.tvScaled(size: 10))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .font(.subheadline)
-            }
-
-            Picker("", selection: $viewMode) {
-                ForEach(ViewMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
-        }
-        .padding(.horizontal, Theme.spacingMD)
-        .padding(.vertical, Theme.spacingSM)
-        .background(Theme.surface)
+        MacCalendarHeader(
+            title: macRangeTitle,
+            canGoBack: canNavigateBack,
+            viewMode: $viewMode,
+            selectedKeyword: $selectedKeyword,
+            keywordOptions: [("All topics", "")] + keywords.map { ($0, $0) },
+            onBack: navigateBack,
+            onForward: navigateForward,
+            onToday: { selectedDate = Date() }
+        )
     }
+
+    /// "Thu, Oct 8" for a day; "Oct 4 – 10" (or "Sep 28 – Oct 4") for a week.
+    private var macRangeTitle: String {
+        let day = DateFormatter()
+        switch viewMode {
+        case .day:
+            day.setLocalizedDateFormatFromTemplate("EEEMMMd")
+            return day.string(from: selectedDate)
+        case .week:
+            guard let first = visibleDates.first, let last = visibleDates.last else { return "" }
+            day.setLocalizedDateFormatFromTemplate("MMMd")
+            let cal = Calendar.current
+            if cal.isDate(first, equalTo: last, toGranularity: .month) {
+                let dayOnly = DateFormatter()
+                dayOnly.setLocalizedDateFormatFromTemplate("d")
+                return "\(day.string(from: first)) – \(dayOnly.string(from: last))"
+            }
+            return "\(day.string(from: first)) – \(day.string(from: last))"
+        }
+    }
+
+    /// The accent now-line across a day column, while that day is today.
+    @ViewBuilder
+    private func nowLine(xOffset: CGFloat, width: CGFloat) -> some View {
+        TimelineView(.everyMinute) { context in
+            let cal = Calendar.current
+            let minutes = CGFloat(cal.component(.hour, from: context.date) * 60 + cal.component(.minute, from: context.date))
+            Rectangle()
+                .fill(MidnightPalette.accent)
+                .frame(width: max(width, 0), height: 2)
+                .offset(x: xOffset, y: minutes / 60 * hourHeight - 1)
+        }
+        .allowsHitTesting(false)
+    }
+    #endif
 
     // MARK: - Day View
 
@@ -401,9 +393,14 @@ struct CalendarView: View {
                     // Program blocks overlaid
                     if availableWidth > 0 {
                         ForEach(dayPrograms) { item in
-                            let layout = columns[item.id] ?? (column: 0, totalColumns: 1)
-                            programBlock(item, columnOffset: timeColumnWidth, columnWidth: availableWidth, colIndex: layout.column, totalCols: layout.totalColumns)
+                            let layout = columns[item.id]
+                            programBlock(item, columnOffset: timeColumnWidth, columnWidth: availableWidth, slot: layout)
                         }
+                        #if os(macOS)
+                        if cal.isDateInToday(selectedDate) {
+                            nowLine(xOffset: timeColumnWidth, width: availableWidth)
+                        }
+                        #endif
                     }
                 }
                 .padding(.trailing, Theme.spacingSM)
@@ -448,6 +445,26 @@ struct CalendarView: View {
                 Color.clear.frame(width: timeColumnWidth, height: 1)
                 ForEach(dates, id: \.self) { date in
                     let isToday = cal.isDateInToday(date)
+                    #if os(macOS)
+                    VStack(spacing: 1) {
+                        Text({
+                            dayFormatter.dateFormat = "EEE"
+                            return dayFormatter.string(from: date)
+                        }())
+                            .midnightKicker(9.5)
+                            .foregroundStyle(isToday ? MidnightPalette.accent : MidnightPalette.inkSoft)
+                        Text("\(cal.component(.day, from: date))")
+                            .font(.archivo(18, .extraBold))
+                            .foregroundStyle(isToday ? MidnightPalette.accent : MidnightPalette.ink)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .overlay(alignment: .bottom) {
+                        if isToday {
+                            Rectangle().fill(MidnightPalette.accent).frame(height: 2)
+                        }
+                    }
+                    #else
                     VStack(spacing: 2) {
                         Text({
                             dayFormatter.dateFormat = "EEE"
@@ -462,12 +479,22 @@ struct CalendarView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.spacingXS)
+                    #endif
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
+            #if os(macOS)
+            .background(MidnightPalette.railHead)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(MidnightPalette.line).frame(height: 1)
+            }
+            #else
             .background(Theme.surface)
+            #endif
 
+            #if !os(macOS)
             Divider()
+            #endif
 
             // Timeline
             ScrollViewReader { proxy in
@@ -480,8 +507,13 @@ struct CalendarView: View {
                             // Vertical column dividers
                             ForEach(0..<dates.count, id: \.self) { index in
                                 Rectangle()
+                                    #if os(macOS)
+                                    .fill(MidnightPalette.lineSoft)
+                                    .frame(width: 1)
+                                    #else
                                     .fill(Theme.surfaceHighlight.opacity(0.5))
                                     .frame(width: 0.5)
+                                    #endif
                                     .offset(x: timeColumnWidth + columnWidth * CGFloat(index))
                             }
 
@@ -492,10 +524,15 @@ struct CalendarView: View {
                                 let columns = layoutColumns(for: dayPrograms)
 
                                 ForEach(dayPrograms) { item in
-                                    let layout = columns[item.id] ?? (column: 0, totalColumns: 1)
-                                    programBlock(item, columnOffset: xOffset + 1, columnWidth: columnWidth - 2, colIndex: layout.column, totalCols: layout.totalColumns)
+                                    let layout = columns[item.id]
+                                    programBlock(item, columnOffset: xOffset + 1, columnWidth: columnWidth - 2, slot: layout)
                                 }
                             }
+                            #if os(macOS)
+                            if let todayIndex = dates.firstIndex(where: { cal.isDateInToday($0) }) {
+                                nowLine(xOffset: timeColumnWidth + columnWidth * CGFloat(todayIndex), width: columnWidth)
+                            }
+                            #endif
                         }
                     }
                 }
@@ -520,6 +557,23 @@ struct CalendarView: View {
     private var timelineVStack: some View {
         VStack(spacing: 0) {
             ForEach(startHour..<endHour, id: \.self) { hour in
+                #if os(macOS)
+                // The rule sits exactly on the hour, where the blocks are
+                // positioned; the label is centred on it.
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(MidnightPalette.lineSoft)
+                        .frame(height: 1)
+                        .padding(.leading, timeColumnWidth + 4)
+                    Text(hourLabel(hour))
+                        .midnightMeta(10)
+                        .foregroundStyle(MidnightPalette.inkSoft)
+                        .frame(width: timeColumnWidth, alignment: .trailing)
+                        .offset(y: hour == startHour ? 0 : -6)
+                }
+                .frame(height: hourHeight, alignment: .top)
+                .id(hour)
+                #else
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         Text(hourLabel(hour))
@@ -536,66 +590,35 @@ struct CalendarView: View {
                 }
                 .frame(height: hourHeight)
                 .id(hour)
+                #endif
             }
         }
     }
 
     // MARK: - Overlap Layout
 
-    /// Assigns each program a column index and total column count for side-by-side layout
-    private func layoutColumns(for programs: [MatchingProgram]) -> [String: (column: Int, totalColumns: Int)] {
-        let sorted = programs.sorted { $0.program.startDate < $1.program.startDate }
-        // Each item gets a column assignment
-        var assignments: [(id: String, column: Int, start: Date, end: Date)] = []
-
-        for item in sorted {
-            let start = item.program.startDate
-            let end = item.program.endDate
-            // Find the first column where this program doesn't overlap with any existing assignment
-            var col = 0
-            while assignments.contains(where: { $0.column == col && $0.end > start && $0.start < end }) {
-                col += 1
-            }
-            assignments.append((id: item.id, column: col, start: start, end: end))
-        }
-
-        // For each group of overlapping programs, determine the total column count
-        var result: [String: (column: Int, totalColumns: Int)] = [:]
-        for assignment in assignments {
-            // Find all assignments that overlap with this one
-            let overlapping = assignments.filter { $0.end > assignment.start && $0.start < assignment.end }
-            let totalColumns = (overlapping.map(\.column).max() ?? 0) + 1
-            result[assignment.id] = (column: assignment.column, totalColumns: totalColumns)
-        }
-
-        // Normalize: ensure all mutually overlapping items share the same totalColumns
-        for assignment in assignments {
-            let overlapping = assignments.filter { $0.end > assignment.start && $0.start < assignment.end }
-            let maxTotal = overlapping.compactMap { result[$0.id]?.totalColumns }.max() ?? 1
-            for ovl in overlapping {
-                if let existing = result[ovl.id], existing.totalColumns < maxTotal {
-                    result[ovl.id] = (column: existing.column, totalColumns: maxTotal)
-                }
-            }
-        }
-
-        return result
+    /// Column and height for each of a day's program blocks (see
+    /// `CalendarBlockLayout`).
+    private func layoutColumns(for programs: [MatchingProgram]) -> [String: CalendarBlockLayout.Slot] {
+        CalendarBlockLayout.layout(
+            programs.map { .init(id: $0.id, start: $0.program.startDate, end: $0.program.endDate) },
+            hourHeight: hourHeight,
+            minHeight: minimumBlockHeight
+        )
     }
 
     // MARK: - Program Block
 
-    private func programBlock(_ item: MatchingProgram, columnOffset: CGFloat, columnWidth: CGFloat?) -> some View {
-        programBlock(item, columnOffset: columnOffset, columnWidth: columnWidth, colIndex: 0, totalCols: 1)
-    }
-
-    private func programBlock(_ item: MatchingProgram, columnOffset: CGFloat, columnWidth: CGFloat?, colIndex: Int, totalCols: Int) -> some View {
+    private func programBlock(_ item: MatchingProgram, columnOffset: CGFloat, columnWidth: CGFloat?, slot: CalendarBlockLayout.Slot?) -> some View {
+        let colIndex = slot?.column ?? 0
+        let totalCols = slot?.totalColumns ?? 1
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: item.program.startDate)
         let startMinutes = cal.dateComponents([.hour, .minute], from: dayStart, to: item.program.startDate)
         let totalStartMinutes = CGFloat((startMinutes.hour ?? 0) * 60 + (startMinutes.minute ?? 0))
         let durationMinutes = CGFloat(item.program.durationMinutes)
         let yOffset = (totalStartMinutes / 60.0) * hourHeight
-        let blockHeight = max((durationMinutes / 60.0) * hourHeight, 20)
+        let blockHeight = slot?.height ?? max((durationMinutes / 60.0) * hourHeight, minimumBlockHeight)
         #if DISPATCHERPVR
         let catchupAvailable = CatchupAvailability.isAvailable(
             program: item.program,
@@ -612,6 +635,17 @@ struct CalendarView: View {
                 channel: item.channel
             )
         } label: {
+            #if os(macOS)
+            MacCalendarBlock(
+                program: item.program,
+                channel: item.channel,
+                topicColor: colorForKeyword(item.matchedKeyword),
+                height: blockHeight,
+                isScheduled: scheduledProgramIds.contains(item.program.id),
+                isCatchupAvailable: catchupAvailable
+            )
+            .padding(.horizontal, 1)
+            #else
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.program.cleanName)
@@ -694,6 +728,7 @@ struct CalendarView: View {
                     }
                 }
             }
+            #endif
         }
         .buttonStyle(.plain)
         .offset(x: {

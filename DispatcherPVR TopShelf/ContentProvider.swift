@@ -108,7 +108,7 @@ class ContentProvider: TVTopShelfContentProvider {
 
     private func makeRecordingItem(_ recording: Recording) -> TVTopShelfSectionedItem {
         let item = TVTopShelfSectionedItem(identifier: "rec-\(recording.id)")
-        item.title = recording.name
+        item.title = recording.cleanName
         item.imageShape = .hdtv
 
         if let playURL = URL(string: "\(urlScheme)://recording/\(recording.id)") {
@@ -125,7 +125,7 @@ class ContentProvider: TVTopShelfContentProvider {
 
     private func makeLiveItem(_ program: TopShelfProgram) -> TVTopShelfSectionedItem {
         let item = TVTopShelfSectionedItem(identifier: "live-\(program.channelId)")
-        item.title = program.programName
+        item.title = EPGTitleMarkers.clean(program.programName)
         item.imageShape = .hdtv
 
         if let playURL = URL(string: "\(urlScheme)://channel/\(program.channelId)") {
@@ -149,7 +149,7 @@ class ContentProvider: TVTopShelfContentProvider {
             drawTileBackground(in: ctx, size: size)
 
             drawIcon("play.rectangle.fill", in: ctx, size: size)
-            drawTitle(recording.name, in: ctx, size: size)
+            drawTitle(recording.cleanName, in: ctx, size: size)
 
             if let startDate = recording.startDate {
                 let formatter = DateFormatter()
@@ -168,7 +168,7 @@ class ContentProvider: TVTopShelfContentProvider {
             drawTileBackground(in: ctx, size: size)
 
             drawIcon("tv", in: ctx, size: size)
-            drawTitle(program.programName, in: ctx, size: size)
+            drawTitle(EPGTitleMarkers.clean(program.programName), in: ctx, size: size)
             drawSubtitle("LIVE · \(program.channelName)", in: ctx, size: size)
 
             // Live indicator dot

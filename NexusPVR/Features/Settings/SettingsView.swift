@@ -53,7 +53,8 @@ struct SettingsView: View {
     #if os(macOS)
     @SceneStorage("settings.category") private var macCategory: SettingsCategory = .server
     @State private var showingMacEventLog = false
-    @State private var showingKeywordsEditor = false
+    @State private var macKeywords: [String] = UserPreferences.load().keywords
+    @State private var newMacKeyword = ""
     #endif
     #if os(tvOS)
     @State private var activeTVPopup: TVSettingsPopup?
@@ -1411,7 +1412,7 @@ struct SettingsView: View {
         }
         return "Live TV switches to \(cellularStreamQuality.label) on cellular, a personal "
             + "hotspot, or in Low Data Mode. Chosen when playback starts — changing network "
-            + "mid-programme doesn't interrupt the stream."
+            + "mid-program doesn't interrupt the stream."
     }
     #endif
 
@@ -1732,10 +1733,8 @@ extension SettingsView {
         .navigationDestination(isPresented: $showingMacEventLog) {
             EventLogView()
         }
-        .sheet(isPresented: $showingKeywordsEditor) {
-            KeywordsEditorView()
-                .frame(minWidth: 480, minHeight: 420)
-        }
+        .onAppear(perform: applyRequestedCategory)
+        .onChange(of: appState.requestedSettingsCategory) { _ in applyRequestedCategory() }
         .confirmationDialog("Unlink Server", isPresented: $showingUnlinkConfirm, titleVisibility: .visible) {
             Button("Unlink", role: .destructive) {
                 unlinkServer()
@@ -1754,9 +1753,9 @@ extension SettingsView {
         case .playback: macPlaybackRows
         case .subtitles: macSubtitleRows
         case .guide: macGuideRows
+        case .topics: macTopicsRows
         case .recordings: macRecordingRows
         case .advanced: macAdvancedRows
-        case .about: macAboutRows
         }
     }
 
@@ -1789,12 +1788,12 @@ extension SettingsView {
             parts.append(guideShowProfilesInSidebar ? Self.count(profileCount, "profile") : "Profiles off")
             #endif
             return parts.joined(separator: " · ")
+        case .topics:
+            return macKeywords.isEmpty ? "None" : macKeywords.joined(separator: " · ")
         case .recordings:
             return hideRecordings ? "Hidden" : "Shown"
         case .advanced:
             return "\(macRendererShortName) · \(deinterlaceMode.label)"
-        case .about:
-            return appVersion
         }
     }
 
@@ -1817,13 +1816,6 @@ extension SettingsView {
         case .metal: "Metal"
         case .opengl: "OpenGL"
         }
-    }
-
-    private var appVersion: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
     }
 
     // MARK: Panes
@@ -1984,10 +1976,6 @@ extension SettingsView {
             toggle: toggleGuideProfile
         )
         #endif
-        MacSettingsRow(title: "Topic Keywords", subtitle: "Programmes matching these appear under Topics.") {
-            Button("Edit") { showingKeywordsEditor = true }
-                .buttonStyle(MidnightOutlineButtonStyle())
-        }
     }
 
     /// Checkbox rows under a Guide sidebar toggle, dimmed while it is off.
@@ -2016,6 +2004,101 @@ extension SettingsView {
         .padding(.vertical, 4)
         .opacity(isEnabled ? 1 : 0.4)
         .disabled(!isEnabled)
+    }
+
+    private func applyRequestedCategory() {
+        guard let requested = appState.requestedSettingsCategory else { return }
+        macCategory = requested
+        appState.requestedSettingsCategory = nil
+    }
+
+    // MARK: Topics
+
+    @ViewBuilder
+    private var macTopicsRows: some View {
+        MacSettingsRow(title: "Add a topic", subtitle: "Matched against program titles, subtitles and descriptions.") {
+            HStack(spacing: 8) {
+                TextField("e.g. Cycling", text: $newMacKeyword)
+                    .textFieldStyle(.plain)
+                    .font(.archivo(13))
+                    .frame(width: 200)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background { Rectangle().fill(MidnightPalette.inputBg) }
+                    .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                    .onSubmit(addMacKeyword)
+                    .accessibilityIdentifier("keyword-text-field")
+                Button("Add", action: addMacKeyword)
+                    .buttonStyle(MidnightFieldButtonStyle())
+                    .fixedSize()
+                    .disabled(newMacKeyword.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("add-keyword-confirm")
+            }
+        }
+        if macKeywords.isEmpty {
+            Text("No topics yet.")
+                .font(.archivo(12.5))
+                .foregroundStyle(MidnightPalette.inkSoft)
+                .padding(.vertical, 12)
+        } else {
+            ForEach(Array(macKeywords.enumerated()), id: \.element) { index, keyword in
+                MacSettingsRow(title: keyword, subtitle: index == 0 ? "Opens by default" : nil) {
+                    HStack(spacing: 6) {
+                        Button {
+                            moveMacKeyword(at: index, by: -1)
+                        } label: {
+                            Image(systemName: "arrow.up").frame(width: 14, height: 14)
+                        }
+                        .buttonStyle(MidnightOutlineButtonStyle())
+                        .disabled(index == 0)
+                        .accessibilityLabel("Move \(keyword) up")
+                        Button {
+                            moveMacKeyword(at: index, by: 1)
+                        } label: {
+                            Image(systemName: "arrow.down").frame(width: 14, height: 14)
+                        }
+                        .buttonStyle(MidnightOutlineButtonStyle())
+                        .disabled(index == macKeywords.count - 1)
+                        .accessibilityLabel("Move \(keyword) down")
+                        Button("Remove") { removeMacKeyword(keyword) }
+                            .buttonStyle(MidnightOutlineButtonStyle(isDestructive: true))
+                    }
+                }
+            }
+        }
+    }
+
+    private func addMacKeyword() {
+        let trimmed = newMacKeyword.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        newMacKeyword = ""
+        guard !macKeywords.contains(trimmed) else { return }
+        macKeywords.append(trimmed)
+        saveMacKeywords()
+    }
+
+    private func removeMacKeyword(_ keyword: String) {
+        macKeywords.removeAll { $0 == keyword }
+        saveMacKeywords()
+    }
+
+    private func moveMacKeyword(at index: Int, by offset: Int) {
+        let destination = index + offset
+        guard macKeywords.indices.contains(destination) else { return }
+        macKeywords.swapAt(index, destination)
+        saveMacKeywords()
+    }
+
+    /// Same save path as `KeywordsEditorView`: persist, then publish the list so
+    /// the sidebar's topic rows and counts follow.
+    private func saveMacKeywords() {
+        var prefs = UserPreferences.load()
+        prefs.keywords = macKeywords
+        prefs.save()
+        appState.topicKeywords = macKeywords
+        if !macKeywords.contains(appState.selectedTopicKeyword) {
+            appState.selectedTopicKeyword = macKeywords.first ?? ""
+        }
     }
 
     @ViewBuilder
@@ -2083,21 +2166,6 @@ extension SettingsView {
             }
         }
         #endif
-    }
-
-    @ViewBuilder
-    private var macAboutRows: some View {
-        MacSettingsRow(title: "Version") {
-            Text(appVersion)
-                .midnightMeta(14, weight: .heavy)
-                .foregroundStyle(MidnightPalette.ink)
-                .textSelection(.enabled)
-        }
-        MacSettingsRow(title: "Platform") {
-            Text("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-                .midnightMeta(13)
-                .foregroundStyle(MidnightPalette.ink)
-        }
     }
 }
 #endif

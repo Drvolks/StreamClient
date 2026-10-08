@@ -109,6 +109,9 @@ struct MacProgramCell: View {
     /// the last ones rather than squashing them.
     private var badges: some View {
         HStack(spacing: 5) {
+            if program.shouldShowLiveBadge {
+                LiveBadge(compact: false)
+            }
             if program.shouldShowNewBadge && !isCatchupAvailable {
                 NewBadge(compact: true)
             }
@@ -120,11 +123,9 @@ struct MacProgramCell: View {
             }
             if let matchedTopic {
                 Text(matchedTopic)
-                    .midnightBadge(8.5)
-                    .foregroundStyle(MidnightPalette.topicInk)
                     .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
+                    .badgeLabel()
+                    .foregroundStyle(MidnightPalette.topicInk)
                     .background(MidnightPalette.topic)
             }
         }

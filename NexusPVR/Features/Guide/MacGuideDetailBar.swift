@@ -33,7 +33,7 @@ struct MacGuideDetailBar: View {
                 Spacer(minLength: Theme.spacingMD)
                 actions
             } else {
-                Text("Select a programme to see what's on and what you can do with it.")
+                Text("Select a program to see what's on and what you can do with it.")
                     .font(.archivo(12.5))
                     .foregroundStyle(MidnightPalette.inkSoft)
                 Spacer()
@@ -57,6 +57,9 @@ struct MacGuideDetailBar: View {
                     .foregroundStyle(MidnightPalette.accentSoft)
                 if program.isCurrentlyAiring {
                     MidnightFieldChip(text: "Live now", size: 9)
+                }
+                if program.shouldShowLiveBadge {
+                    LiveBadge()
                 }
             }
             Text(program.cleanName)

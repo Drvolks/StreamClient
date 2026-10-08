@@ -16,14 +16,105 @@ struct StatsView: View {
     @FocusState private var isRootFocused: Bool
     #endif
     @StateObject private var vm = StatsViewModel()
+    #if os(macOS)
+    @Environment(\.colorScheme) private var colorScheme
+    #endif
 
     var body: some View {
         #if os(tvOS)
         tvOSBody
+        #elseif os(macOS)
+        macBody
         #else
         standardBody
         #endif
     }
+
+    // MARK: - macOS (Midnight)
+
+    #if os(macOS)
+    private var macBody: some View {
+        VStack(spacing: 0) {
+            MacStatusHeader(activeCount: vm.activeCount, accountCount: vm.m3uAccounts.count)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let message = vm.switchError {
+                        MacSettingsHint(text: message)
+                            .padding(.top, 14)
+                    }
+
+                    MidnightSectionHeader(
+                        title: "Active streams",
+                        meta: "\(vm.activeCount) channel\(vm.activeCount == 1 ? "" : "s")"
+                    )
+                    Group {
+                        if vm.isLoading && vm.channels.isEmpty && vm.m3uAccounts.isEmpty {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 120)
+                        } else if let error = vm.error, vm.channels.isEmpty {
+                            macNote(error, isError: true)
+                        } else if vm.channels.isEmpty {
+                            macNote("Channels appear here while they are being streamed.", isError: false)
+                        } else {
+                            VStack(spacing: 12) {
+                                ForEach(vm.channels) { channel in
+                                    macCard(for: channel)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 12)
+
+                    if !vm.m3uAccounts.isEmpty {
+                        MidnightSectionHeader(
+                            title: "M3U accounts",
+                            meta: "\(vm.m3uAccounts.count) account\(vm.m3uAccounts.count == 1 ? "" : "s")"
+                        )
+                        .padding(.top, 10)
+                        ForEach(vm.m3uAccounts) { account in
+                            MacM3UAccountRow(account: account)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, Theme.spacingLG)
+            }
+        }
+        .background(MidnightGradients.ground(colorScheme))
+        .task {
+            vm.startRefreshing(client: client, appState: appState)
+        }
+        .onDisappear {
+            vm.stopRefreshing()
+        }
+    }
+
+    private func macCard(for channel: ProxyChannelStatus) -> some View {
+        let canSwitch = vm.canSwitchStreams(client: client, appState: appState)
+        return MacStreamCard(
+            channel: channel,
+            profileName: channel.profileLabel(nameLookup: { vm.profileName(forId: $0) }),
+            streams: canSwitch ? vm.streams(for: channel) : [],
+            activeStreamId: vm.activeStreamId(for: channel),
+            isSwitchingStream: vm.isSwitching(channel),
+            accountNameLookup: { vm.m3uAccountName(forId: $0) },
+            onSelectStream: canSwitch ? { stream in
+                Task { await vm.switchStream(channel: channel, to: stream, client: client, appState: appState) }
+            } : nil
+        )
+        .task(id: channel.id) {
+            guard canSwitch else { return }
+            await vm.loadStreams(for: channel, client: client)
+        }
+    }
+
+    private func macNote(_ text: String, isError: Bool) -> some View {
+        Text(text)
+            .font(.archivo(12.5))
+            .foregroundStyle(isError ? MidnightPalette.danger : MidnightPalette.inkSoft)
+            .padding(.vertical, 8)
+    }
+    #endif
 
     // MARK: - iOS / macOS
 
@@ -373,7 +464,7 @@ struct ChannelStatusCard: View {
         if let resolution = channel.resolution {
             StatRow(label: "Resolution", value: resolution)
         }
-        StatRow(label: "Codecs", value: codecString)
+        StatRow(label: "Codecs", value: channel.codecSummary)
         if let bitrate = channel.avgBitrate {
             StatRow(label: "Bitrate", value: bitrate)
         }
@@ -384,10 +475,10 @@ struct ChannelStatusCard: View {
             StatRow(label: "FFmpeg Speed", value: String(format: "%.2fx", speed))
         }
         if let uptime = channel.uptime {
-            StatRow(label: "Uptime", value: formatUptime(uptime))
+            StatRow(label: "Uptime", value: ProxyChannelStatus.durationText(uptime))
         }
         if let bytes = channel.totalBytes {
-            StatRow(label: "Total Data", value: formatBytes(bytes))
+            StatRow(label: "Total Data", value: ProxyChannelStatus.dataText(bytes))
         }
     }
 
@@ -395,38 +486,6 @@ struct ChannelStatusCard: View {
         let name = channel.displayName
         guard let profile = channel.profileLabel(nameLookup: profileNameLookup) else { return name }
         return "\(name) [\(profile)]"
-    }
-
-    private var codecString: String {
-        var parts: [String] = []
-        if let vc = channel.videoCodec { parts.append(vc.uppercased()) }
-        if let ac = channel.audioCodec {
-            var s = ac.uppercased()
-            if let ch = channel.audioChannels { s += " \(ch)" }
-            parts.append(s)
-        }
-        return parts.isEmpty ? "N/A" : parts.joined(separator: " / ")
-    }
-
-    private func formatUptime(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        var result = ""
-        if h > 0 { result += "\(h)h " }
-        if m > 0 { result += "\(m)m " }
-        result += "\(s)s"
-        return result
-    }
-
-    private func formatBytes(_ bytes: Int64) -> String {
-        let gb = Double(bytes) / (1024 * 1024 * 1024)
-        if gb >= 1 {
-            return String(format: "%.2f GB", gb)
-        }
-        let mb = Double(bytes) / (1024 * 1024)
-        return String(format: "%.2f MB", mb)
     }
 }
 
@@ -490,25 +549,13 @@ struct ClientRow: View {
             }
             Spacer()
             if let since = client.connectedTime {
-                Text(formatDuration(since))
+                Text(ProxyChannelStatus.durationText(since))
                     .font(.caption)
                     .foregroundStyle(Theme.accent)
                     .monospacedDigit()
             }
         }
         .padding(.vertical, 4)
-    }
-
-    private func formatDuration(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        var result = ""
-        if h > 0 { result += "\(h)h " }
-        if m > 0 { result += "\(m)m " }
-        result += "\(s)s"
-        return result
     }
 }
 #endif

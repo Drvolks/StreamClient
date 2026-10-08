@@ -78,7 +78,7 @@ struct MacChannelCard: View {
                     .midnightMeta(9.5)
                     .foregroundStyle(MidnightPalette.inkFaint)
             } else {
-                Text("No programme info")
+                Text("No program info")
                     .font(.archivo(12))
                     .foregroundStyle(MidnightPalette.inkFaint)
                     .lineLimit(2, reservesSpace: true)
@@ -92,6 +92,9 @@ struct MacChannelCard: View {
     private var chips: some View {
         // Fixed height, so cards stay level whether or not they carry chips.
         HStack(spacing: 5) {
+            if currentProgram?.shouldShowLiveBadge == true {
+                LiveBadge()
+            }
             if currentProgram?.shouldShowNewBadge == true {
                 NewBadge(compact: false)
             }
@@ -100,11 +103,9 @@ struct MacChannelCard: View {
             }
             if let matchedTopic {
                 Text(matchedTopic)
-                    .midnightBadge(8.5)
-                    .foregroundStyle(MidnightPalette.topicInk)
                     .lineLimit(1)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
+                    .badgeLabel()
+                    .foregroundStyle(MidnightPalette.topicInk)
                     .background(MidnightPalette.topic)
             }
         }

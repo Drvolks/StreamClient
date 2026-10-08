@@ -2065,35 +2065,10 @@ struct MacOSNavigation: View {
         .onAppear {
             appState.topicKeywords = UserPreferences.load().keywords
             guideSidebarPreferences = UserPreferences.load()
-            Task { await computeTopicMatchCounts() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
             guideSidebarPreferences = UserPreferences.load()
         }
-        .onChange(of: appState.showingKeywordsEditor) { _ in
-            if !appState.showingKeywordsEditor {
-                appState.topicKeywords = UserPreferences.load().keywords
-                Task { await computeTopicMatchCounts() }
-            }
-        }
-        .onChange(of: epgCache.isFullyLoaded) { _ in
-            if epgCache.isFullyLoaded {
-                Task { await computeTopicMatchCounts() }
-            }
-        }
-    }
-
-    // MARK: - Topic Match Counts
-
-    private func computeTopicMatchCounts() async {
-        let keywords = appState.topicKeywords
-        guard !keywords.isEmpty, epgCache.isFullyLoaded else { return }
-        let matches = await epgCache.matchingPrograms(keywords: keywords)
-        var counts: [String: Int] = [:]
-        for match in matches where match.matchedKeyword != MatchingProgram.scheduledKeyword {
-            counts[match.matchedKeyword, default: 0] += 1
-        }
-        appState.topicKeywordMatchCounts = counts
     }
 
     // MARK: - macOS Sidebar
@@ -2115,9 +2090,8 @@ struct MacOSNavigation: View {
                 } else if tab == .topics {
                     Section {
                         ForEach(appState.topicKeywords, id: \.self) { keyword in
-                            macSidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
+                            macSidebarTopicSubRow(keyword: keyword)
                         }
-                        macSidebarTopicManageRow()
                     } header: {
                         macSidebarHeader(icon: tab.icon, label: tab.label)
                     }
@@ -2202,6 +2176,10 @@ struct MacOSNavigation: View {
         // Same ink as the plain top-level rows (Calendar, Downloads, …).
         .foregroundStyle(Theme.textPrimary)
         .padding(.vertical, 2)
+        // Section headers sit shallower than list rows; this lines their icon
+        // and label up with the top-level rows' (whose 8pt highlight padding
+        // starts at the row edge).
+        .padding(.leading, 10)
     }
 
     private func macSidebarRow(tab: Tab) -> some View {
@@ -2214,12 +2192,14 @@ struct MacOSNavigation: View {
             }
             appState.selectedTab = tab
         } label: {
-            HStack(spacing: 10) {
+            // Same icon, type and spacing as `macSidebarHeader`, so top-level
+            // rows line up with the section headers above them.
+            HStack(spacing: 8) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 14))
+                    .font(.system(size: 13, weight: .semibold))
                     .frame(width: 20)
                 Text(tab.label)
-                    .font(.body)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 if tab == .recordings && appState.recordingsHasActive {
                     Circle().fill(Theme.recording).frame(width: 8, height: 8)
@@ -2227,7 +2207,7 @@ struct MacOSNavigation: View {
                 if tab == .downloads, appState.activeDownloadCount > 0 {
                     Text("\(appState.activeDownloadCount)")
                         .font(.caption2.bold())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.textOnAccent)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Theme.accent)
@@ -2242,7 +2222,7 @@ struct MacOSNavigation: View {
                     if appState.activeStreamCount > 0 {
                         Text("\(appState.activeStreamCount)")
                             .font(.caption2.bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.textOnAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Theme.accent)
@@ -2260,6 +2240,7 @@ struct MacOSNavigation: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar-\(tab.rawValue)")
     }
 
     private func macSidebarSubRow(label: String, filter: RecordingsFilter) -> some View {
@@ -2277,7 +2258,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2302,7 +2283,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2328,7 +2309,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2354,7 +2335,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2381,7 +2362,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2408,7 +2389,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2434,7 +2415,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2461,7 +2442,7 @@ struct MacOSNavigation: View {
                 Spacer()
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2474,31 +2455,7 @@ struct MacOSNavigation: View {
     }
     #endif
 
-    private func macSidebarTopicManageRow() -> some View {
-        let isSelected = appState.selectedTab == .topics && appState.showingKeywordsEditor
-        return Button {
-            appState.showingKeywordsEditor = true
-            appState.selectedTab = .topics
-        } label: {
-            HStack {
-                Text("Manage")
-                    .font(.subheadline)
-                Spacer()
-            }
-            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
-            .padding(.trailing, 8)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("topic-manage")
-    }
-
-    private func macSidebarTopicSubRow(keyword: String, count: Int?) -> some View {
+    private func macSidebarTopicSubRow(keyword: String) -> some View {
         let isSelected = appState.selectedTab == .topics && !appState.showingKeywordsEditor && appState.selectedTopicKeyword == keyword
         return Button {
             appState.showingKeywordsEditor = false
@@ -2509,14 +2466,9 @@ struct MacOSNavigation: View {
                 Text(keyword)
                     .font(.subheadline)
                 Spacer()
-                if let count {
-                    Text("(\(count))")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
             }
             .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-            .padding(.leading, 28)
+            .padding(.leading, 36)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2536,7 +2488,7 @@ struct MacOSNavigation: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textTertiary)
 
-            TextField("Search programmes", text: $searchText)
+            TextField("Search programs", text: $searchText)
                 .font(.archivo(12.5))
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("global-search-field")

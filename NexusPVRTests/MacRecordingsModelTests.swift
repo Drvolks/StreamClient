@@ -79,4 +79,14 @@ struct MacRecordingsModelTests {
         #expect(TopicMatcher.matchedKeyword(name: "Evening", subtitle: nil, desc: "Biathlon World Cup", in: ["biathlon"]) == "biathlon")
         #expect(TopicMatcher.matchedKeyword(name: "Evening", subtitle: nil, desc: nil, in: ["golf"]) == nil)
     }
+
+    // MARK: - Recording.episodeTitle
+
+    @Test("The episode title is the subtitle without its SxxExx pattern")
+    func episodeTitle() {
+        #expect(Recording(id: 1, name: "NOVA", subtitle: "Space Wars").episodeTitle == "Space Wars")
+        #expect(Recording(id: 2, name: "NOVA", subtitle: "S53E12 Space Wars").episodeTitle == "Space Wars")
+        #expect(Recording(id: 3, name: "NOVA", subtitle: "  ").episodeTitle == nil)
+        #expect(Recording(id: 4, name: "NOVA").episodeTitle == nil)
+    }
 }
