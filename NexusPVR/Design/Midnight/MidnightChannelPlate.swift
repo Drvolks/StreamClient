@@ -3,16 +3,18 @@
 //  nextpvr-apple-client
 //
 //  A channel's logo on its plate. The name only shows when there is no logo.
-//  Used by the macOS guide column and the channel cards.
+//  Used by the guide column and the channel cards (macOS, tvOS).
 //
 
-#if os(macOS)
+#if os(macOS) || os(tvOS)
 import SwiftUI
 
 struct MidnightChannelPlate: View {
     let channel: Channel
     let iconURL: URL?
     var logoInsets = EdgeInsets(top: 12, leading: 22, bottom: 12, trailing: 22)
+    /// Size of the name shown when there is no logo; tvOS passes a TV size.
+    var nameSize: CGFloat = 13
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -29,10 +31,14 @@ struct MidnightChannelPlate: View {
                     .scaledToFit()
                     .padding(logoInsets)
             } placeholder: {
+                #if os(macOS)
                 ProgressView().controlSize(.small)
+                #else
+                ProgressView()
+                #endif
             } fallback: {
                 Text(channel.name)
-                    .font(.archivo(13, .extraBold))
+                    .font(.archivo(nameSize, .extraBold))
                     .textCase(.uppercase)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
