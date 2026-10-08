@@ -10,7 +10,6 @@ import SwiftUI
 struct WatchProgressCircle: View {
     let progress: Double // 0.0 to 1.0
     let size: CGFloat
-    var sport: Sport? = nil
 
     private var isFullyWatched: Bool {
         progress >= 0.9
@@ -31,12 +30,8 @@ struct WatchProgressCircle: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            // Center icon: sport icon if available, otherwise play/checkmark
-            if let sport {
-                Image(systemName: sport.sfSymbol)
-                    .font(.system(size: size * 0.38))
-                    .foregroundStyle(isFullyWatched ? Theme.success : Theme.accent)
-            } else if isFullyWatched {
+            // Center icon: checkmark once watched, otherwise play
+            if isFullyWatched {
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.4, weight: .bold))
                     .foregroundStyle(Theme.success)

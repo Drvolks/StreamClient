@@ -149,7 +149,6 @@
 				Core/Services/LiveProgramFetcher.swift,
 				Core/Services/RecordingFetcher.swift,
 				Core/Services/TopShelfProgram.swift,
-				Design/SportIcon.swift,
 				Design/Theme.swift,
 			);
 			target = 6EA347F22F48EF9C00E0A324 /* NexusPVR TopShelf */;
@@ -190,7 +189,6 @@
 				Core/Services/LiveProgramFetcher.swift,
 				Core/Services/RecordingFetcher.swift,
 				Core/Services/TopShelfProgram.swift,
-				Design/SportIcon.swift,
 				Design/Theme.swift,
 			);
 			target = 6EA348062F48EFB600E0A324 /* DispatcherPVR TopShelf */;

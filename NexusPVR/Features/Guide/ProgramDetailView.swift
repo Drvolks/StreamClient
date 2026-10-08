@@ -224,15 +224,8 @@ struct ProgramDetailView: View {
                     .keyboardShortcut(.cancelAction)
             }
             #endif
-            // Content area with sport icon behind
+            // Content area
             ZStack(alignment: .trailing) {
-                // Sport icon background
-                if let sport = SportDetector.detect(from: program) {
-                    Image(systemName: sport.sfSymbol)
-                        .font(.system(size: 200))
-                        .foregroundStyle(Theme.textTertiary.opacity(0.15))
-                }
-
                 VStack(alignment: .leading, spacing: Theme.spacingMD) {
                     headerSection
                     infoSection
@@ -338,13 +331,6 @@ struct ProgramDetailView: View {
                 }
                 .padding(Theme.spacingLG)
 
-                // Sport icon background
-                if let sport = SportDetector.detect(from: program) {
-                    Image(systemName: sport.sfSymbol)
-                        .font(.system(size: 250))
-                        .foregroundStyle(Theme.textTertiary.opacity(0.15))
-                        .padding(Theme.spacingLG)
-                }
                 }
             }
         }

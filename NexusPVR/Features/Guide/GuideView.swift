@@ -1313,12 +1313,6 @@ struct GuideView: View {
             }
         }()
 
-        let showSport = GuideSportIconVisibility.shouldShow(
-            for: program,
-            cellWidth: cellWidth,
-            minimumCellWidth: 200
-        )
-        let sportIconSize = rowHeight - 10 - 16 // cell height minus padding
         // cellWidth already reflects the visible/clipped duration for a
         // currently-airing program (tvOSProgramPosition trims to
         // visibleStart/visibleEnd), so it alone tells us whether "NEW" /
@@ -1327,10 +1321,6 @@ struct GuideView: View {
 
         return ZStack {
             HStack(spacing: 6) {
-                if showSport, let sport = SportDetector.detect(from: program) {
-                    SportIconView(sport: sport, size: sportIconSize)
-                }
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text(program.cleanName)
                         .font(.tvScaled(size: 16, weight: .semibold))
@@ -1968,7 +1958,6 @@ struct GuideView: View {
                 let status = viewModel.recordingStatus(program)
                 let isRecording = isScheduled && program.isCurrentlyAiring && status == .recording
                 let matchesKeywords = viewModel.keywordMatchedProgramIds.contains(program.id)
-                let sport = viewModel.detectedSport(for: program)
                 #if DISPATCHERPVR
                 let catchupAvailable = viewModel.isCatchupAvailable(program, on: channel)
                 #else
@@ -1991,7 +1980,6 @@ struct GuideView: View {
                     isCurrentlyRecording: isRecording,
                     isCatchupAvailable: catchupAvailable,
                     matchedTopic: viewModel.keywordMatchByProgramId[program.id],
-                    detectedSport: sport,
                     isSelected: macSelection?.program.id == program.id && macSelection?.channel.id == channel.id,
                     leadingPadding: leadingPad
                 )
@@ -2021,7 +2009,6 @@ struct GuideView: View {
                         isCurrentlyRecording: isRecording,
                         isCatchupAvailable: catchupAvailable,
                         matchesKeyword: matchesKeywords,
-                        detectedSport: sport,
                         leadingPadding: leadingPad
                     )
                 }

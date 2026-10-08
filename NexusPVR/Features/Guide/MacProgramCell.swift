@@ -19,7 +19,6 @@ struct MacProgramCell: View {
     var isCatchupAvailable = false
     /// The topic keyword this program matches, if any.
     var matchedTopic: String?
-    var detectedSport: Sport?
     var isSelected = false
     /// Pushes the text of an airing program to the visible left edge.
     var leadingPadding: CGFloat = 0
@@ -37,19 +36,11 @@ struct MacProgramCell: View {
         GuideCellTimeLabel.showsBadges(width: contentWidth)
     }
 
-    private var showsSportIcon: Bool {
-        detectedSport != nil
-            && GuideSportIconVisibility.shouldShow(for: program, cellWidth: contentWidth, minimumCellWidth: 160)
-    }
-
     var body: some View {
         ZStack(alignment: .leading) {
             fill
 
             HStack(spacing: 8) {
-                if showsSportIcon, let detectedSport {
-                    SportIconView(sport: detectedSport, size: height - 18)
-                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(program.cleanName)
                         .font(.archivo(12.5, .extraBold))

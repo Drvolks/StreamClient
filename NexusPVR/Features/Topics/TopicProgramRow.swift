@@ -7,10 +7,10 @@
 
 import SwiftUI
 
-// MARK: - Shared Sport Icon View
+// MARK: - Program Glyph
 
-struct ProgramSportIcon: View {
-    let program: Program
+/// The round TV glyph that leads a topic program row.
+struct ProgramGlyph: View {
     var size: CGFloat = 56
     var iconSize: CGFloat = 22
 
@@ -18,16 +18,9 @@ struct ProgramSportIcon: View {
         ZStack {
             Circle()
                 .fill(Theme.surfaceElevated)
-
-            if let sport = SportDetector.detect(from: program) {
-                Image(systemName: sport.sfSymbol)
-                    .font(.system(size: iconSize))
-                    .foregroundStyle(Theme.textSecondary)
-            } else {
-                Image(systemName: "tv")
-                    .font(.system(size: iconSize))
-                    .foregroundStyle(Theme.textTertiary)
-            }
+            Image(systemName: "tv")
+                .font(.system(size: iconSize))
+                .foregroundStyle(Theme.textTertiary)
         }
         .frame(width: size, height: size)
     }
@@ -125,7 +118,7 @@ struct TopicProgramRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.spacingMD) {
-            ProgramSportIcon(program: program)
+            ProgramGlyph()
 
             VStack(alignment: .leading, spacing: Theme.spacingXS) {
                 if program.isCurrentlyAiring {
@@ -337,7 +330,7 @@ struct TopicProgramRowTV: View {
 
                 ZStack {
                     HStack(spacing: 10) {
-                        ProgramSportIcon(program: program, size: 54, iconSize: 24)
+                        ProgramGlyph(size: 54, iconSize: 24)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(program.cleanName)

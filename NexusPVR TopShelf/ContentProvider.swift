@@ -148,8 +148,7 @@ class ContentProvider: TVTopShelfContentProvider {
             let ctx = context.cgContext
             drawTileBackground(in: ctx, size: size)
 
-            let sport = SportDetector.detect(from: recording)
-            drawIcon(sport?.sfSymbol ?? "play.rectangle.fill", in: ctx, size: size)
+            drawIcon("play.rectangle.fill", in: ctx, size: size)
             drawTitle(recording.name, in: ctx, size: size)
 
             if let startDate = recording.startDate {
@@ -168,8 +167,7 @@ class ContentProvider: TVTopShelfContentProvider {
             let ctx = context.cgContext
             drawTileBackground(in: ctx, size: size)
 
-            let sport = SportDetector.detect(name: program.programName, desc: program.desc, genres: program.genres)
-            drawIcon(sport?.sfSymbol ?? "tv", in: ctx, size: size)
+            drawIcon("tv", in: ctx, size: size)
             drawTitle(program.programName, in: ctx, size: size)
             drawSubtitle("LIVE · \(program.channelName)", in: ctx, size: size)
 

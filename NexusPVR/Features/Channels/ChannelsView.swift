@@ -1077,10 +1077,6 @@ struct ChannelGridCard: View {
                 .frame(width: Theme.iconSize, height: Theme.iconSize)
 
                 Spacer(minLength: Theme.spacingSM)
-
-                if let program = currentProgram, let sport = SportDetector.detect(from: program) {
-                    SportIconView(sport: sport, size: Theme.iconSize * 0.5)
-                }
             }
 
             Text(channel.name)

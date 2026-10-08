@@ -617,25 +617,4 @@ struct GuideViewModelTests {
         #expect(vm.isScheduledRecording(programB))
         #expect(vm.recordingId(for: programB) == 2)
     }
-
-    // MARK: - detectedSport
-
-    @Test("detectedSport caches the first lookup result")
-    func detectedSportCaches() {
-        let vm = GuideViewModel()
-        let program = Program(
-            id: 1,
-            name: "Champions League Final",
-            subtitle: nil,
-            desc: nil,
-            start: 0,
-            end: 3600,
-            genres: ["Sports", "Soccer"],
-            channelId: 1
-        )
-        // Two calls should return the same result (the second comes from the cache).
-        let first = vm.detectedSport(for: program)
-        let second = vm.detectedSport(for: program)
-        #expect(first == second)
-    }
 }
