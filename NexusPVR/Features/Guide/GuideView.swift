@@ -2222,8 +2222,10 @@ private struct TVImmediateSearchField: UIViewRepresentable {
         field.delegate = context.coordinator
         field.placeholder = placeholder
         field.text = text
-        field.textColor = UIColor.white
-        field.tintColor = UIColor.white
+        field.textColor = UIColor(MidnightPalette.ink)
+        field.tintColor = UIColor(MidnightPalette.accent)
+        // Header-sized, not the tvOS text field default.
+        field.font = UIFont.systemFont(ofSize: Theme.scaledFont(22), weight: .semibold)
         field.borderStyle = .none
         field.clearButtonMode = .whileEditing
         field.returnKeyType = .search

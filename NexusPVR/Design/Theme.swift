@@ -256,12 +256,15 @@ struct NewBadge: View {
 struct LiveBadge: View {
     /// Shrinks the label to a single "L" for tight spots, like `NewBadge`.
     var compact: Bool = false
+    /// Set when the badge sits on the accent field (an airing guide cell):
+    /// an accent badge would vanish there, so it inverts to the field ink.
+    var onAccentField: Bool = false
 
     var body: some View {
         Text(compact ? "L" : "LIVE")
             .badgeLabel(compact: compact)
-            .foregroundStyle(Theme.textOnAccent)
-            .background(Theme.accent)
+            .foregroundStyle(onAccentField ? Theme.accent : Theme.textOnAccent)
+            .background(onAccentField ? Theme.textOnAccent : Theme.accent)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
     }
 }

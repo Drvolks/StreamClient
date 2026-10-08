@@ -80,7 +80,9 @@ struct TVProgramCell: View {
 
     private var badges: some View {
         HStack(spacing: 5) {
-            if program.shouldShowLiveBadge { LiveBadge(compact: compactBadges) }
+            if program.shouldShowLiveBadge {
+                LiveBadge(compact: compactBadges, onAccentField: isAiring && !isFocused && !isRecording)
+            }
             if program.shouldShowNewBadge && !isCatchupAvailable { NewBadge(compact: compactBadges) }
             if isScheduled { RecBadge(isActive: isRecording, compact: compactBadges) }
             if isCatchupAvailable { CatchupBadge(compact: compactBadges) }
