@@ -234,7 +234,7 @@ struct CalendarView: View {
                 }
             }
             #endif
-            .sheet(item: $selectedProgramDetail, onDismiss: {
+            .programDetailPopover(item: $selectedProgramDetail, onDismiss: {
                 Task { await loadScheduledRecordings() }
             }) { detail in
                 ProgramDetailView(

@@ -43,7 +43,7 @@ struct SearchView: View {
             #elseif os(macOS)
             .searchable(text: $viewModel.searchText, prompt: "Search programs")
             #endif
-            .detailCover(item: $selectedProgramDetail) { detail in
+            .programDetailPopover(item: $selectedProgramDetail) { detail in
                 ProgramDetailView(
                     program: detail.program,
                     channel: detail.channel,

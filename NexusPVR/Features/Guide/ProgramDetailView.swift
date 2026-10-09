@@ -37,7 +37,6 @@ struct ProgramDetailView: View {
     @State private var completedRecording: Recording?
     @State private var didChangeRecording = false
     #if os(iOS)
-    @State private var selectedDetent: PresentationDetent
     @State private var measuredContentHeight: CGFloat = 0
     #endif
 
@@ -71,7 +70,6 @@ struct ProgramDetailView: View {
         _existingRecordingId = State(initialValue: initialRecordingId)
         _completedRecording = State(initialValue: initialCompletedRecording)
         #if os(iOS)
-        _selectedDetent = State(initialValue: .large)
         #endif
     }
 
@@ -90,13 +88,8 @@ struct ProgramDetailView: View {
             }
             .streamPreparingOverlay()
         #elseif os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            iPadSheetContent
-                .streamPreparingOverlay()
-        } else {
-            iPhoneSheetContent
-                .streamPreparingOverlay()
-        }
+        iOSPopoverContent
+            .streamPreparingOverlay()
         #else
         NavigationStack {
             ScrollView {
@@ -122,38 +115,37 @@ struct ProgramDetailView: View {
     }
 
     #if os(iOS)
-    private var iPadSheetContent: some View {
-        let screenHeight = UIScreen.main.bounds.height
+    /// Shown in a popover next to the tap (see `programDetailPopover`), on
+    /// iPhone and iPad: as wide as fits, as tall as its content up to most
+    /// of the screen, scrolling beyond that.
+    private var iOSPopoverContent: some View {
+        let screen = UIScreen.main.bounds.size
+        let width = min(screen.width - 24, 440)
+        let maxHeight = screen.height * 0.72
+        let height = measuredContentHeight > 0 ? min(measuredContentHeight, maxHeight) : min(360, maxHeight)
 
-        return VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                Button("Done") { dismiss() }
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal)
-            }
-            .padding(.top, 8)
-
-            Divider()
-
-            Group {
-                if measuredContentHeight > screenHeight * 0.85 {
-                    ScrollView {
-                        programDetailContent
-                    }
-                } else {
-                    programDetailContent
+        return ScrollView {
+            VStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .buttonStyle(MidnightOutlineButtonStyle())
                 }
+                .padding(.horizontal, Theme.spacingMD)
+                .padding(.top, Theme.spacingMD)
+
+                programDetailContent
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .preference(key: ProgramDetailFullHeightPreferenceKey.self, value: proxy.size.height)
+                }
+            )
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Theme.background)
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(key: ProgramDetailFullHeightPreferenceKey.self, value: proxy.size.height)
-            }
-        )
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: width, height: height)
+        .background(MidnightPalette.railHead)
         .alert("Error", isPresented: .constant(scheduleError != nil)) {
             Button("OK") { scheduleError = nil }
         } message: {
@@ -161,57 +153,9 @@ struct ProgramDetailView: View {
                 Text(error)
             }
         }
-        .presentationDetents(Set([detentHeight, .large]), selection: $selectedDetent)
-        .modifier(IOSPresentationSizingCompat())
-        .onChange(of: isScheduled) { resizeiPadDetent() }
-        .onChange(of: isSeriesScheduled) { resizeiPadDetent() }
-        .onChange(of: completedRecording?.id) { resizeiPadDetent() }
         .onPreferenceChange(ProgramDetailFullHeightPreferenceKey.self) { fullHeight in
             measuredContentHeight = fullHeight
-            resizeiPadDetent()
         }
-        .task {
-            await checkIfScheduled()
-        }
-    }
-
-    private var detentHeight: PresentationDetent {
-        let h = measuredContentHeight > 0 ? measuredContentHeight : UIScreen.main.bounds.height
-        return .height(min(h, UIScreen.main.bounds.height * 0.88))
-    }
-
-    private func resizeiPadDetent() {
-        let screenHeight = UIScreen.main.bounds.height
-        let cap = screenHeight * 0.88
-        if measuredContentHeight > cap {
-            selectedDetent = .large
-        } else if measuredContentHeight > 0 {
-            selectedDetent = .height(measuredContentHeight)
-        }
-    }
-
-    private var iPhoneSheetContent: some View {
-        NavigationStack {
-            ScrollView {
-                programDetailContent
-            }
-            .background(Theme.background)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .alert("Error", isPresented: .constant(scheduleError != nil)) {
-                Button("OK") { scheduleError = nil }
-            } message: {
-                if let error = scheduleError {
-                    Text(error)
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .modifier(IOSPresentationSizingCompat())
         .task {
             await checkIfScheduled()
         }
@@ -405,19 +349,29 @@ struct ProgramDetailView: View {
     private var infoSection: some View {
         VStack(spacing: Theme.spacingSM) {
             HStack {
+                #if os(iOS)
+                // The popover is narrow: a short date leaves the times
+                // room to stay on one line.
+                Text(program.startDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                #else
                 Text(program.startDate, style: .date)
+                #endif
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 HStack(spacing: Theme.spacingXS) {
                     Text(program.startDate, style: .time)
                     Text("-")
                     Text(program.endDate, style: .time)
                 }
+                .lineLimit(1)
+                .fixedSize()
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 Text("\(program.durationMinutes) min")
+                    .lineLimit(1)
+                    .fixedSize()
             }
             .font(.subheadline)
             .foregroundStyle(Theme.textSecondary)
@@ -1141,16 +1095,6 @@ private struct ProgramDetailFullHeightPreferenceKey: PreferenceKey {
 #endif
 
 #if os(iOS)
-private struct IOSPresentationSizingCompat: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom != .pad {
-            content.presentationSizing(.page)
-        } else {
-            content
-        }
-    }
-}
 
 #endif
 

@@ -36,16 +36,6 @@ struct TopicsView: View {
         #endif
     }
 
-    #if os(iOS)
-    private func updateKeywordsWithMatches() {
-        var counts: [String: Int] = [:]
-        for program in viewModel.matchingPrograms where program.matchedKeyword != MatchingProgram.scheduledKeyword {
-            counts[program.matchedKeyword, default: 0] += 1
-        }
-        appState.topicKeywordMatchCounts = counts
-    }
-    #endif
-
     private func syncTopicSelection(with keywords: [String], preferFirst: Bool = false) {
         appState.topicKeywords = keywords
 
@@ -121,7 +111,6 @@ struct TopicsView: View {
             let hasValidSelection = !appState.selectedTopicKeyword.isEmpty &&
                 viewModel.keywords.contains(appState.selectedTopicKeyword)
             syncTopicSelection(with: viewModel.keywords, preferFirst: !hasValidSelection)
-            updateKeywordsWithMatches()
             #elseif !os(tvOS)
             syncTopicSelection(with: viewModel.keywords)
             #else
@@ -151,9 +140,6 @@ struct TopicsView: View {
             if scenePhase == .active {
                 Task {
                     await viewModel.loadData()
-                    #if os(iOS)
-                    updateKeywordsWithMatches()
-                    #endif
                 }
             }
         }
@@ -163,17 +149,11 @@ struct TopicsView: View {
             guard epgCache.hasLoaded else { return }
             Task {
                 await viewModel.loadData()
-                #if os(iOS)
-                updateKeywordsWithMatches()
-                #endif
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .recordingsDidChange)) { _ in
             Task {
                 await viewModel.loadData()
-                #if os(iOS)
-                updateKeywordsWithMatches()
-                #endif
             }
         }
         #if os(iOS)
@@ -218,7 +198,7 @@ struct TopicsView: View {
                 kicker: "Topics · \(filteredPrograms.count) program\(filteredPrograms.count == 1 ? "" : "s")"
             )
             #endif
-            .detailCover(item: $selectedProgramDetail) { detail in
+            .programDetailPopover(item: $selectedProgramDetail) { detail in
                 ProgramDetailView(
                     program: detail.program,
                     channel: detail.channel,

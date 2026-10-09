@@ -83,7 +83,7 @@ struct GuideView: View {
         content
             .accessibilityIdentifier("guide-view")
             .background(MidnightGradients.ground(colorScheme))
-            .detailCover(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
+            .programDetailPopover(item: programDetailBinding, onDismiss: onDismissDetail) { detail in
                 programDetailSheet(detail)
             }
             .alert("Error", isPresented: .constant(streamError != nil)) {
