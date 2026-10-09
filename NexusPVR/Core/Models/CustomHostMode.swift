@@ -17,6 +17,8 @@ nonisolated enum CustomHostMode: String, Codable, CaseIterable, Identifiable, Se
     case cellularOnly
     /// Every request goes through the custom host.
     case always
+    /// Primary address only on the configured Wi-Fi; unknown networks use the custom host.
+    case outsideWiFiNetwork
 
     var id: String { rawValue }
 
@@ -30,6 +32,8 @@ nonisolated enum CustomHostMode: String, Codable, CaseIterable, Identifiable, Se
             #endif
         case .always:
             return "Always"
+        case .outsideWiFiNetwork:
+            return "Outside of Wi-Fi Network"
         }
     }
 }

@@ -119,3 +119,31 @@ For Dispatcharr users, access depends on `user_level`:
 ## License
 
 See [LICENSE](LICENSE) for details.
+
+### Wi-Fi custom-host routing
+
+On iOS and macOS, Settings → Server → Use Custom Host offers **Outside of Wi-Fi Network**.
+Enter your home Wi-Fi name: the primary server address is used on that network,
+while the custom host is used on every other network, including cellular,
+Ethernet, or an unreadable/unknown Wi-Fi network. An empty configured name also
+uses the custom host. Names match exact UTF-8 bytes: case, spaces, and Unicode
+representation are significant; no trimming or normalization is applied.
+
+The addresses and routing mode sync through iCloud. The Wi-Fi name is saved only
+on this device, so configure it separately on each iPhone, iPad, or Mac. A device
+that receives this mode without a local Wi-Fi name uses the custom host. Existing
+On Cellular / On iPhone Hotspot and Always settings retain their behavior.
+
+Use **Allow Wi-Fi Name Access** to request Location permission. Enable Precise
+Location on iPhone/iPad. iOS builds require the Access Wi-Fi Information capability
+(`com.apple.developer.networking.wifi-info`) in their provisioning profiles; the
+project supplies this entitlement only for iOS ([Apple API requirements](https://developer.apple.com/documentation/systemconfiguration/cncopycurrentnetworkinfo)). Native macOS reads the SSID through
+CoreWLAN and requires Location access on current macOS versions ([Apple explanation](https://developer.apple.com/forums/thread/732431)). No location fixes
+are requested or collected. Permission denial, privacy restrictions, VPN routing,
+and platform/API limitations can make the name unreadable; the custom host is the
+fallback. Simulators cannot validate real Wi-Fi identification.
+
+Routing is resolved for subsequent API, artwork, EPG, recording, live, and catch-up
+requests and new playback URLs. Changes do not tear down an active player or clear
+authentication or the EPG cache. tvOS and Top Shelf continue to use only the primary
+server address and do not expose custom-host settings.

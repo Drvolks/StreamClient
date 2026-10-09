@@ -21,7 +21,7 @@ protocol PVRClientProtocol: ObservableObject {
     func disconnect()
     func updateConfig(_ newConfig: ServerConfig)
     /// Changes only the custom host settings, keeping the session (#165).
-    func updateCustomHost(_ host: String, mode: CustomHostMode)
+    func updateCustomHost(_ host: String, mode: CustomHostMode, wiFiSSID: String?)
     func getChannels() async throws -> [Channel]
     func getListings(channelId: Int) async throws -> [Program]
     func getAllListings(for channels: [Channel]) async throws -> [Int: [Program]]

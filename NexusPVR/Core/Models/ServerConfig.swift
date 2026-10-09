@@ -20,6 +20,8 @@ nonisolated struct ServerConfig: Codable, Equatable {
     /// macOS; tvOS ignores it.
     var customHost: String = ""
     var customHostMode: CustomHostMode = .cellularOnly
+    /// Device-local SSID. Match UTF-8 bytes exactly: case and whitespace are significant.
+    var customHostWiFiSSID: String = ""
 
     var effectivePort: Int {
         port ?? (useHTTPS ? 443 : 80)
@@ -128,7 +130,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
     ///
     /// - Parameter onExpensiveNetwork: the current path is cellular or a personal
     ///   hotspot (`NetworkPathReporting.isExpensive`).
-    func usesCustomHost(onExpensiveNetwork: Bool) -> Bool {
+    func usesCustomHost(onExpensiveNetwork: Bool, currentWiFiSSID: String? = nil) -> Bool {
         #if os(tvOS)
         return false
         #else
@@ -136,16 +138,47 @@ nonisolated struct ServerConfig: Codable, Equatable {
         switch customHostMode {
         case .always: return true
         case .cellularOnly: return onExpensiveNetwork
+        case .outsideWiFiNetwork:
+            guard !customHostWiFiSSID.isEmpty, let currentWiFiSSID else { return true }
+            return !customHostWiFiSSID.utf8.elementsEqual(currentWiFiSSID.utf8)
         }
         #endif
     }
 
     /// The base URL every request and playback URL is built from: the custom
     /// host when `usesCustomHost(onExpensiveNetwork:)` holds, else `baseURL`.
-    func activeBaseURL(onExpensiveNetwork: Bool) -> String {
-        guard usesCustomHost(onExpensiveNetwork: onExpensiveNetwork),
+    func activeBaseURL(onExpensiveNetwork: Bool, currentWiFiSSID: String? = nil) -> String {
+        guard usesCustomHost(onExpensiveNetwork: onExpensiveNetwork, currentWiFiSSID: currentWiFiSSID),
               let custom = customHostBaseURL else { return baseURL }
         return custom
+    }
+
+    /// Reroutes absolute URLs returned by this server (recordings and artwork).
+    /// Third-party/CDN URLs remain as supplied. Preserve query credentials and
+    /// the path relative to either configured address, including reverse proxies.
+    func routedServerURL(_ url: URL, activeBaseURL: String) -> URL {
+        #if os(tvOS)
+        return url
+        #else
+        guard hasCustomHost,
+              let original = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              var target = URLComponents(string: activeBaseURL) else { return url }
+        for address in [baseURL, customHostBaseURL].compactMap({ $0 }) {
+            guard let source = URLComponents(string: address),
+                  original.scheme == source.scheme,
+                  original.host == source.host,
+                  (original.port ?? (original.scheme == "https" ? 443 : 80))
+                    == (source.port ?? (source.scheme == "https" ? 443 : 80)) else { continue }
+            let prefix = source.percentEncodedPath
+            let path = original.percentEncodedPath
+            guard prefix.isEmpty || path == prefix || path.hasPrefix(prefix + "/") else { continue }
+            target.percentEncodedPath += String(path.dropFirst(prefix.count))
+            target.percentEncodedQuery = original.percentEncodedQuery
+            target.percentEncodedFragment = original.percentEncodedFragment
+            return target.url ?? url
+        }
+        return url
+        #endif
     }
 
     /// This config without the custom host settings: which server and
@@ -156,6 +189,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
         var identity = self
         identity.customHost = ""
         identity.customHostMode = .cellularOnly
+        identity.customHostWiFiSSID = ""
         return identity
     }
 
@@ -259,7 +293,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
     // Coding keys with defaults for backward compatibility
     enum CodingKeys: String, CodingKey {
         case host, port, pin, username, password, apiKey, useHTTPS
-        case customHost, customHostMode
+        case customHost, customHostMode, customHostWiFiSSID
     }
 
     init(host: String, port: Int? = nil, pin: String, username: String = "", password: String = "", apiKey: String = "", useHTTPS: Bool) {
@@ -283,6 +317,7 @@ nonisolated struct ServerConfig: Codable, Equatable {
         apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         useHTTPS = try container.decode(Bool.self, forKey: .useHTTPS)
         customHost = try container.decodeIfPresent(String.self, forKey: .customHost) ?? ""
+        customHostWiFiSSID = try container.decodeIfPresent(String.self, forKey: .customHostWiFiSSID) ?? ""
         // An unknown mode (written by a newer build) falls back to the default
         // rather than failing the whole config decode.
         customHostMode = (try? container.decodeIfPresent(CustomHostMode.self, forKey: .customHostMode)) ?? .cellularOnly
@@ -307,9 +342,12 @@ nonisolated extension ServerConfig {
         if let data = ubiquitousStore.data(forKey: storageKey),
            let config = try? JSONDecoder().decode(ServerConfig.self, from: data),
            config.isConfigured {
-            // Also save locally as backup
-            saveToUserDefaults(config)
-            return config
+            let local = UserDefaults.standard.data(forKey: storageKey)
+                .flatMap { try? JSONDecoder().decode(ServerConfig.self, from: $0) }
+            let restored = config.restoringDeviceRouting(from: local)
+            // Keep this device's SSID when adopting synced addresses/mode.
+            saveToUserDefaults(restored)
+            return restored
         }
 
         // Fall back to UserDefaults for migration or offline use
@@ -346,8 +384,23 @@ nonisolated extension ServerConfig {
         return ServerConfig.default
     }
 
+    /// Addresses and mode sync; the Wi-Fi name remains on this device.
+    var cloudSyncedConfig: ServerConfig {
+        var synced = self
+        synced.customHostWiFiSSID = ""
+        return synced
+    }
+
+    func restoringDeviceRouting(from local: ServerConfig?) -> ServerConfig {
+        var restored = cloudSyncedConfig
+        if let local, hasSameServer(as: local) {
+            restored.customHostWiFiSSID = local.customHostWiFiSSID
+        }
+        return restored
+    }
+
     func save() {
-        if let data = try? JSONEncoder().encode(self) {
+        if let data = try? JSONEncoder().encode(cloudSyncedConfig) {
             // Save to iCloud for sync
             Self.ubiquitousStore.set(data, forKey: Self.storageKey)
             Self.ubiquitousStore.synchronize()
