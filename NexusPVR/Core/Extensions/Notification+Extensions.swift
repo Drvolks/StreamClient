@@ -16,4 +16,7 @@ nonisolated extension Notification.Name {
     /// server has no record of a local file's position.
     /// userInfo: `downloadId: UUID`, `position: Double` (seconds).
     static let downloadPositionDidChange = Notification.Name("downloadPositionDidChange")
+    /// Posted after a VOD movie's or episode's local playback position was
+    /// saved, so open On Demand pages refresh their watch state (#17).
+    static let vodProgressDidChange = Notification.Name("vodProgressDidChange")
 }

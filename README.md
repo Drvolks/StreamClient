@@ -57,9 +57,10 @@ Server configuration, topic keywords, seek preferences, and audio settings sync 
 Playback-only setup? Enable **Hide Recording Features** in Settings → General to remove the Recordings tab and every record button and menu from the app. The preference syncs across your devices via iCloud.
 
 ### Demo Mode
-Explore the full app without a server. Provides 15 simulated channels across 5 groups, 3 days of EPG data, sample recordings, and pre-configured topic keywords. Enter `demo` as the server host to activate.
+Explore the full app without a server. Provides 15 simulated channels across 5 groups, 3 days of EPG data, sample recordings, pre-configured topic keywords, and (on the Dispatcharr variant) an on-demand library of movies and multi-season series. Enter `demo` as the server host to activate.
 
 ### Dispatcharr-Specific Features
+- **On Demand** — Browse and play your providers' movies and series: search, categories, seasons and episodes, and resume where you left off on each device. The menu appears under Recordings when the server has VOD content
 - **Stream Status** — Live monitoring of active proxy streams and viewer counts
 - **Channel Profiles** — Curated channel collections (Sports, News, Entertainment)
 - **M3U Account Health** — Connection status indicators for your stream sources

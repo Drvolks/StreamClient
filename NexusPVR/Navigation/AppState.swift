@@ -73,6 +73,9 @@ final class AppState: ObservableObject {
     /// player can mint the next session in the chain when the archive runs out
     /// while the programme is still airing.
     @Published var currentlyPlayingCatchupProgram: CatchupProgramContext?
+    /// The uuid of the VOD movie or episode being played (#17); nil for
+    /// everything else. Its position is saved on the device by `PlayerView`.
+    @Published var currentlyPlayingVODId: String?
     /// Guide time that launched the current catch-up playback. Unlike the
     /// session id, this intentionally survives `stopPlayback()` long enough
     /// for a reconstructed macOS guide to consume and restore it.
@@ -133,6 +136,16 @@ final class AppState: ObservableObject {
         didSet { reconcileSelectedTabForCurrentAccess() }
     }
 
+    // On Demand (#17)
+    /// How many movies and series the server offers; `.none` until asked, and
+    /// for servers without VOD. Drives whether the On Demand menu shows.
+    @Published var vodCounts: VODCounts = .none
+    /// Which half of the library the On Demand page lists.
+    @Published var vodKind: VODKind = .movies
+    /// The movie or series whose page is open; nil shows the poster index.
+    @Published var selectedVODItem: VODItem?
+    var showsVOD: Bool { !vodCounts.isEmpty }
+
     /// Most recent `EnvironmentSettings` payload from
     /// `GET /api/core/settings/env/`. Nil until the first poll completes, or
     /// when running in demo / output-only mode (where the endpoint is not
@@ -144,6 +157,8 @@ final class AppState: ObservableObject {
     #else
     /// NexusPVR users always have full access
     var userLevel: Int { 10 }
+    /// On Demand is a Dispatcharr feature.
+    var showsVOD: Bool { false }
     #endif
 
     /// Whether the user chose to hide all recording features in Settings (#110).
@@ -307,6 +322,34 @@ final class AppState: ObservableObject {
     }
     #endif
 
+    #if DISPATCHERPVR
+    // MARK: - On Demand (#17)
+
+    /// Opens the Movies or Series index, closing any open title.
+    func showVOD(_ kind: VODKind) {
+        vodKind = kind
+        selectedVODItem = nil
+    }
+
+    /// Asks the server what it has on demand. A failure keeps the last known
+    /// counts, so a network blip doesn't make the menu flicker away.
+    func refreshVODAvailability(client: any VODProviding) async {
+        guard let counts = try? await client.getVODCounts() else { return }
+        applyVODCounts(counts)
+    }
+
+    func applyVODCounts(_ counts: VODCounts) {
+        vodCounts = counts
+        if counts.count(for: vodKind) == 0, let available = counts.availableKinds.first {
+            vodKind = available
+        }
+        if counts.isEmpty {
+            selectedVODItem = nil
+            if selectedTab == .vod { selectedTab = .guide }
+        }
+    }
+    #endif
+
     #if !TOPSHELF_EXTENSION
     private var recordingsActivityTask: Task<Void, Never>?
 
@@ -389,6 +432,7 @@ final class AppState: ObservableObject {
     /// only; see also `--demo-tab` in `initialLandingTab()`.
     ///
     /// - `--demo-recordings Scheduled | Series | <series name>`
+    /// - `--demo-vod Movies | Series | <title>` (Dispatcharr)
     /// - `--demo-settings <category title>`, e.g. `Topics`
     private func applyDemoPageArguments() {
         let arguments = ProcessInfo.processInfo.arguments
@@ -407,6 +451,16 @@ final class AppState: ObservableObject {
                 selectRecordingsSeries(named: recordings, userInitiated: true)
             }
         }
+        #if DISPATCHERPVR
+        if let vod = value(after: "--demo-vod") {
+            if let kind = VODKind(rawValue: vod) {
+                showVOD(kind)
+            } else if let title = DemoVODLibrary.item(named: vod) {
+                vodKind = title.kind
+                selectedVODItem = title
+            }
+        }
+        #endif
         if let title = value(after: "--demo-settings"),
            let category = SettingsCategory.allCases.first(where: { $0.title == title }) {
             requestedSettingsCategory = category
@@ -581,7 +635,8 @@ final class AppState: ObservableObject {
         recordingStartTime: Date? = nil,
         catchupSessionId: String? = nil,
         catchupProgram: CatchupProgramContext? = nil,
-        catchupGuideReturnTime: Date? = nil
+        catchupGuideReturnTime: Date? = nil,
+        vodId: String? = nil
     ) {
         #if DEBUG
         let effectiveURL: URL
@@ -609,6 +664,7 @@ final class AppState: ObservableObject {
         currentlyPlayingCatchupSessionId = catchupSessionId
         currentlyPlayingCatchupProgram = catchupProgram
         self.catchupGuideReturnTime = catchupGuideReturnTime
+        currentlyPlayingVODId = vodId
         isPreparingStream = false
         isShowingPlayer = true
     }
@@ -640,6 +696,7 @@ final class AppState: ObservableObject {
         currentlyPlayingRecordingStartTime = nil
         currentlyPlayingCatchupSessionId = nil
         currentlyPlayingCatchupProgram = nil
+        currentlyPlayingVODId = nil
     }
 
     /// Clears the pending target only after the reconstructed macOS guide has

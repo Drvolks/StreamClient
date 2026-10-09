@@ -86,6 +86,22 @@ struct TabTests {
         #expect(cases.contains(.settings))
     }
 
+    @Test("On Demand sits directly under Recordings, and only exists on Dispatcharr")
+    func onDemandPlacement() {
+        let cases = Tab.allCases(userLevel: 10, showsVOD: true)
+        #if DISPATCHERPVR
+        #expect(cases.firstIndex(of: .vod) == cases.firstIndex(of: .recordings).map { $0 + 1 })
+        #expect(Tab.vod.isVOD)
+        #expect(!Tab.allCases(userLevel: 10).contains(.vod))
+        // Without recordings access it follows Channels instead.
+        let streamer = Tab.allCases(userLevel: 0, showsVOD: true)
+        #expect(streamer.firstIndex(of: .vod) == streamer.firstIndex(of: .channels).map { $0 + 1 })
+        #else
+        #expect(cases == Tab.allCases(userLevel: 10))
+        #expect(cases.allSatisfy { !$0.isVOD })
+        #endif
+    }
+
     @Test("Channels tab appears directly below Guide in allCases")
     func channelsAppearsAfterGuide() {
         let cases = Tab.allCases(userLevel: 10)

@@ -9,7 +9,7 @@ import Foundation
 import Combine
 
 @MainActor
-final class DispatcherClient: ObservableObject, PVRClientProtocol {
+final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding {
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isConnecting = false
 
@@ -2033,6 +2033,115 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     func recordingArtworkURL(recordingId: Int, fanart: Bool) -> URL? {
         guard !config.isDemoMode else { return DemoDataProvider.recordingArtworkURL(recordingId: recordingId, fanart: fanart) }
         return nil
+    }
+
+    // MARK: - VOD (#17)
+
+    func getVODCounts() async throws -> VODCounts {
+        guard !config.isDemoMode else { return DemoVODLibrary.counts }
+        // Streamer (output/XC) sign-ins have no access to the REST VOD API.
+        guard !useOutputEndpoints else { return .none }
+        async let movies = vodCountResult(.movies)
+        async let series = vodCountResult(.series)
+        let (movieResult, seriesResult) = await (movies, series)
+        // One kind can be switched off on the server; only a failure of both
+        // is reported, so the caller keeps what it knew.
+        if case .failure(let error) = movieResult, case .failure = seriesResult {
+            throw error
+        }
+        return VODCounts(movies: (try? movieResult.get()) ?? 0, series: (try? seriesResult.get()) ?? 0)
+    }
+
+    private func vodCountResult(_ kind: VODKind) async -> Result<Int, Error> {
+        do {
+            return .success(try await vodCount(kind))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func vodCount(_ kind: VODKind) async throws -> Int {
+        guard let url = DispatcharrVODRequest.listURL(baseURL: baseURL, kind: kind, page: 1, pageSize: 1) else {
+            throw PVRClientError.invalidResponse
+        }
+        let response: DispatcharrListResponse<VODItem> = try await authenticatedRequest(url)
+        return response.count ?? response.allItems.count
+    }
+
+    func getVODCategories(kind: VODKind) async throws -> [VODCategory] {
+        guard !config.isDemoMode else { return DemoVODLibrary.categories(kind: kind) }
+        guard let url = DispatcharrVODRequest.categoriesURL(baseURL: baseURL, kind: kind) else {
+            throw PVRClientError.invalidResponse
+        }
+        let categories: [VODCategory] = try await fetchAllPages(url)
+        return categories
+            .filter { $0.categoryType == kind.categoryType }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func getVODItems(kind: VODKind, page: Int, pageSize: Int, search: String?, category: String?) async throws -> VODPage {
+        guard !config.isDemoMode else {
+            return DemoVODLibrary.page(kind: kind, page: page, pageSize: pageSize, search: search, category: category)
+        }
+        guard let url = DispatcharrVODRequest.listURL(
+            baseURL: baseURL, kind: kind, page: page, pageSize: pageSize, search: search, category: category
+        ) else {
+            throw PVRClientError.invalidResponse
+        }
+        let response: DispatcharrListResponse<VODItem> = try await authenticatedRequest(url)
+        let items = response.allItems.map { $0.stamped(kind) }
+        let total = response.count ?? items.count
+        return VODPage(
+            items: items,
+            totalCount: total,
+            hasMore: !items.isEmpty && max(page, 1) * min(max(pageSize, 1), DispatcharrVODRequest.maxPageSize) < total
+        )
+    }
+
+    func getVODMovieDetail(id: Int) async throws -> VODMovieDetail {
+        if config.isDemoMode {
+            guard let detail = DemoVODLibrary.movieDetail(id: id) else { throw PVRClientError.invalidResponse }
+            return detail
+        }
+        guard let url = DispatcharrVODRequest.movieDetailURL(baseURL: baseURL, id: id) else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequest(url)
+    }
+
+    func getVODSeriesDetail(id: Int) async throws -> VODSeriesDetail {
+        if config.isDemoMode {
+            guard let detail = DemoVODLibrary.seriesDetail(id: id) else { throw PVRClientError.invalidResponse }
+            return detail
+        }
+        guard let url = DispatcharrVODRequest.seriesDetailURL(baseURL: baseURL, id: id) else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequest(url)
+    }
+
+    func vodMovieStreamURL(uuid: String) throws -> URL {
+        guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
+        guard let url = DispatcharrVODRequest.movieStreamURL(baseURL: baseURL, uuid: uuid) else {
+            throw PVRClientError.invalidResponse
+        }
+        return url
+    }
+
+    func vodEpisodeStreamURL(uuid: String) throws -> URL {
+        guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
+        guard let url = DispatcharrVODRequest.episodeStreamURL(baseURL: baseURL, uuid: uuid) else {
+            throw PVRClientError.invalidResponse
+        }
+        return url
+    }
+
+    func vodImageURL(_ reference: String?) -> URL? {
+        guard let reference = reference?.trimmingCharacters(in: .whitespacesAndNewlines), !reference.isEmpty else {
+            return nil
+        }
+        guard !config.isDemoMode else { return DemoVODLibrary.imageURL(named: reference) }
+        return makeAbsoluteURL(from: reference)
     }
 
     // MARK: - Proxy Status

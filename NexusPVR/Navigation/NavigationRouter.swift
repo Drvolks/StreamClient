@@ -114,7 +114,17 @@ struct NavigationRouter: View {
             }
             #endif
         }
+        #if DISPATCHERPVR
+        .task {
+            await appState.refreshVODAvailability(client: client)
+        }
+        #endif
         .onChange(of: appState.userLevel) { level in
+            #if DISPATCHERPVR
+            // The level arrives once sign-in settles; ask again in case the
+            // first request went out before it.
+            Task { await appState.refreshVODAvailability(client: client) }
+            #endif
             guard level >= 1 else {
                 #if !TOPSHELF_EXTENSION
                 appState.stopRecordingsActivityPolling()
@@ -235,6 +245,10 @@ struct IOSNavigation: View {
                     SearchView()
                 case .recordings:
                     RecordingsListView()
+                #if DISPATCHERPVR
+                case .vod:
+                    VODView()
+                #endif
                 case .downloads:
                     // Like StatsView, DownloadsView has no NavigationStack of
                     // its own — without one there's no toolbar to hang the
@@ -360,7 +374,8 @@ struct IOSNavigation: View {
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
                     catchupSessionId: appState.currentlyPlayingCatchupSessionId,
-                    catchupProgram: appState.currentlyPlayingCatchupProgram
+                    catchupProgram: appState.currentlyPlayingCatchupProgram,
+                    vodId: appState.currentlyPlayingVODId
                 )
                 .statusBarHidden()
             }
@@ -526,7 +541,7 @@ struct IOSNavigation: View {
             // Tab items
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Tab.iOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings)) { tab in
+                    ForEach(Tab.iOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings, showsVOD: appState.showsVOD)) { tab in
                         if tab == .recordings {
                             // Recordings header (non-tappable)
                             sidebarRow(
@@ -544,6 +559,21 @@ struct IOSNavigation: View {
                             sidebarSubRow(label: "Completed", filter: .completed)
                             sidebarSubRow(label: "Scheduled", filter: .scheduled)
                             sidebarShowMoreSubRow()
+                        } else if tab.isVOD {
+                            #if DISPATCHERPVR
+                            // On Demand header (non-tappable), then what the server offers
+                            sidebarRow(
+                                icon: tab.icon,
+                                label: tab.label,
+                                isSelected: false,
+                                badge: { EmptyView() }
+                            )
+                            .foregroundStyle(Theme.textSecondary)
+
+                            ForEach(appState.vodCounts.availableKinds) { kind in
+                                sidebarVODSubRow(kind)
+                            }
+                            #endif
                         } else if tab == .topics {
                             // Topics header — topics are managed in Settings
                             Button {
@@ -794,6 +824,37 @@ struct IOSNavigation: View {
         }
         .accessibilityIdentifier("recordings-series-menu")
     }
+
+    #if DISPATCHERPVR
+    private func sidebarVODSubRow(_ kind: VODKind) -> some View {
+        let isSelected = appState.selectedTab == .vod && appState.vodKind == kind
+        return Button {
+            appState.showVOD(kind)
+            appState.selectedTab = .vod
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                isSidebarOpen = false
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 28)
+                Text(kind.title)
+                    .font(.archivo(14, .semibold))
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
+            .padding(.horizontal, Theme.spacingLG)
+            .padding(.leading, Theme.spacingSM)
+            .padding(.vertical, 10)
+            .background(isSelected ? MidnightPalette.cellRest : Color.clear)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(MidnightPalette.accent).frame(width: 4)
+                }
+            }
+        }
+        .accessibilityIdentifier("vod-kind-\(kind.rawValue)")
+    }
+    #endif
 
     private func sidebarStaticSubRow(label: String) -> some View {
         HStack(spacing: 12) {
@@ -1184,6 +1245,10 @@ struct TVOSNavigation: View {
                     ChannelsView()
                 case .recordings:
                     RecordingsListView()
+                #if DISPATCHERPVR
+                case .vod:
+                    VODView()
+                #endif
                 case .topics, .calendar:
                     TopicsView()
                 case .search:
@@ -1238,7 +1303,8 @@ struct TVOSNavigation: View {
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
                     catchupSessionId: appState.currentlyPlayingCatchupSessionId,
-                    catchupProgram: appState.currentlyPlayingCatchupProgram
+                    catchupProgram: appState.currentlyPlayingCatchupProgram,
+                    vodId: appState.currentlyPlayingVODId
                 )
             }
         }
@@ -1306,6 +1372,11 @@ struct TVOSNavigation: View {
                 return .recordingsFilter(.completed)
             }
             return .recordingsFilter(appState.recordingsFilter)
+        #if DISPATCHERPVR
+        case .vod:
+            // On Demand is a section too; target the listed kind.
+            return .vod(appState.vodKind)
+        #endif
         case .topics, .calendar:
             if !appState.selectedTopicKeyword.isEmpty,
                appState.topicKeywords.contains(appState.selectedTopicKeyword) {
@@ -1352,7 +1423,7 @@ struct TVOSNavigation: View {
         return VStack(alignment: .leading, spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Tab.tvOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings)) { tab in
+                    ForEach(Tab.tvOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings, showsVOD: appState.showsVOD)) { tab in
                         if tab == .recordings {
                             tvOSSidebarSection(icon: tab.icon, label: tab.label) {
                                 if appState.recordingsHasActive {
@@ -1396,6 +1467,20 @@ struct TVOSNavigation: View {
                                         (appState.showingRecordingsSeriesList || appState.hasSelectedRecordingsSeries)
                                 ) { EmptyView() }
                             }
+                        } else if tab.isVOD {
+                            #if DISPATCHERPVR
+                            tvOSSidebarSection(icon: tab.icon, label: tab.label) {
+                                EmptyView()
+                            } content: {
+                                ForEach(appState.vodCounts.availableKinds) { kind in
+                                    tvOSSidebarSubRow(
+                                        label: kind.title,
+                                        item: .vod(kind),
+                                        isSelected: appState.selectedTab == .vod && appState.vodKind == kind
+                                    ) { EmptyView() }
+                                }
+                            }
+                            #endif
                         } else if tab == .topics {
                             tvOSSidebarSection(icon: tab.icon, label: tab.label) {
                                 EmptyView()
@@ -1699,6 +1784,9 @@ struct TVOSNavigation: View {
                 appState.guideChannelFilter = ""
                 appState.selectedTab = .guide
             #if DISPATCHERPVR
+            case .vod(let kind):
+                appState.showVOD(kind)
+                appState.selectedTab = .vod
             case .guideProfile(let profileId):
                 appState.guideProfileFilter = profileId
                 appState.guideGroupFilter = nil
@@ -1780,6 +1868,8 @@ struct TVOSNavigation: View {
         case .channelGroup(let groupId):
             return "channel-group-\(groupId)"
         #if DISPATCHERPVR
+        case .vod(let kind):
+            return "vod-kind-\(kind.rawValue)"
         case .guideProfile(let profileId):
             return "guide-profile-\(profileId)"
         case .channelProfile(let profileId):
@@ -1847,6 +1937,8 @@ enum TVSidebarItem: Hashable {
     #if DISPATCHERPVR
     case guideProfile(Int)
     case channelProfile(Int)
+    /// On Demand sub-menu: Movies or Series (#17).
+    case vod(VODKind)
     #endif
 }
 #endif
@@ -1933,7 +2025,8 @@ struct MacOSNavigation: View {
                     isRecordingInProgress: appState.currentlyPlayingIsRecordingInProgress,
                     recordingStartTime: appState.currentlyPlayingRecordingStartTime,
                     catchupSessionId: appState.currentlyPlayingCatchupSessionId,
-                    catchupProgram: appState.currentlyPlayingCatchupProgram
+                    catchupProgram: appState.currentlyPlayingCatchupProgram,
+                    vodId: appState.currentlyPlayingVODId
                 )
             } else {
                 // Show regular navigation with sidebar
@@ -1960,6 +2053,10 @@ struct MacOSNavigation: View {
                                 SearchView()
                             case .recordings:
                                 RecordingsListView()
+                            #if DISPATCHERPVR
+                            case .vod:
+                                VODView()
+                            #endif
                             case .downloads:
                                 DownloadsView()
                             #if DISPATCHERPVR
@@ -2050,7 +2147,7 @@ struct MacOSNavigation: View {
 
     private var macSidebar: some View {
         List {
-            ForEach(Tab.macOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings)) { tab in
+            ForEach(Tab.macOSTabs(userLevel: appState.userLevel, hideRecordings: appState.hideRecordings, showsVOD: appState.showsVOD)) { tab in
                 if tab == .recordings {
                     Section {
                         if appState.recordingsHasActive {
@@ -2062,6 +2159,16 @@ struct MacOSNavigation: View {
                     } header: {
                         macSidebarHeader(icon: tab.icon, label: tab.label)
                     }
+                } else if tab.isVOD {
+                    #if DISPATCHERPVR
+                    Section {
+                        ForEach(appState.vodCounts.availableKinds) { kind in
+                            macSidebarVODSubRow(kind)
+                        }
+                    } header: {
+                        macSidebarHeader(icon: tab.icon, label: tab.label)
+                    }
+                    #endif
                 } else if tab == .topics {
                     Section {
                         ForEach(appState.topicKeywords, id: \.self) { keyword in
@@ -2269,6 +2376,32 @@ struct MacOSNavigation: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("recordings-series-menu")
     }
+
+    #if DISPATCHERPVR
+    private func macSidebarVODSubRow(_ kind: VODKind) -> some View {
+        let isSelected = appState.selectedTab == .vod && appState.vodKind == kind
+        return Button {
+            appState.showVOD(kind)
+            appState.selectedTab = .vod
+        } label: {
+            HStack {
+                Text(kind.title)
+                    .font(.subheadline)
+                Spacer()
+            }
+            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
+            .padding(.leading, 36)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Theme.accent.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(6)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("vod-kind-\(kind.rawValue)")
+    }
+    #endif
 
     private func macSidebarGuideAllRow() -> some View {
         let isSelected = appState.selectedTab == .guide && appState.guideGroupFilter == nil && appState.guideProfileFilter == nil
