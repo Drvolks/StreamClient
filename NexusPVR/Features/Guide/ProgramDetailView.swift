@@ -116,35 +116,42 @@ struct ProgramDetailView: View {
 
     #if os(iOS)
     /// Shown in a popover next to the tap (see `programDetailPopover`), on
-    /// iPhone and iPad: as wide as fits, as tall as its content up to most
-    /// of the screen, scrolling beyond that.
+    /// iPhone and iPad: as wide as fits and as tall as its content, up to
+    /// most of the screen. Done stays pinned above the scrolling content, so
+    /// it is still there when the system gives the popover less height than
+    /// it asked for.
     private var iOSPopoverContent: some View {
         let screen = UIScreen.main.bounds.size
         let width = min(screen.width - 24, 440)
+        let headerHeight: CGFloat = 52
         let maxHeight = screen.height * 0.72
-        let height = measuredContentHeight > 0 ? min(measuredContentHeight, maxHeight) : min(360, maxHeight)
+        let contentHeight = measuredContentHeight > 0 ? measuredContentHeight : 320
+        let height = min(headerHeight + contentHeight, maxHeight)
 
-        return ScrollView {
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    Button("Done") { dismiss() }
-                        .buttonStyle(MidnightOutlineButtonStyle())
-                }
-                .padding(.horizontal, Theme.spacingMD)
-                .padding(.top, Theme.spacingMD)
-
-                programDetailContent
+        return VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(MidnightOutlineButtonStyle())
             }
-            .background(
-                GeometryReader { proxy in
-                    Color.clear
-                        .preference(key: ProgramDetailFullHeightPreferenceKey.self, value: proxy.size.height)
-                }
-            )
+            .padding(.horizontal, Theme.spacingMD)
+            .frame(height: headerHeight)
+
+            ScrollView {
+                programDetailContent
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(key: ProgramDetailFullHeightPreferenceKey.self, value: proxy.size.height)
+                        }
+                    )
+            }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(width: width, height: height)
+        // An ideal height, not a fixed one: the popover asks for this much,
+        // and the content scrolls if it gets less.
+        .frame(width: width)
+        .frame(idealHeight: height, maxHeight: height)
         .background(MidnightPalette.railHead)
         .alert("Error", isPresented: .constant(scheduleError != nil)) {
             Button("OK") { scheduleError = nil }

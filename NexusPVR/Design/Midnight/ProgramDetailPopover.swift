@@ -34,6 +34,8 @@ private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: Vie
     /// asked for it has been read into `anchor`.
     @State private var presented: Item?
     @State private var anchor = CGRect(x: 0, y: 0, width: 1, height: 1)
+    /// Which side of the tap the popover opens on: the roomier one.
+    @State private var arrowEdge: Edge = .top
     @State private var frameInWindow = CGRect.zero
 
     func body(content: Content) -> some View {
@@ -49,9 +51,10 @@ private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: Vie
                     return
                 }
                 anchor = anchorRect()
+                arrowEdge = roomierArrowEdge()
                 presented = item
             }
-            .popover(item: $presented, attachmentAnchor: .rect(.rect(anchor))) { value in
+            .popover(item: $presented, attachmentAnchor: .rect(.rect(anchor)), arrowEdge: arrowEdge) { value in
                 popoverContent(value)
                     .presentationCompactAdaptation(.popover)
                     .presentationBackground(MidnightPalette.railHead)
@@ -63,6 +66,15 @@ private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: Vie
                     onDismiss?()
                 }
             }
+    }
+
+    /// A tap in the upper half of the screen opens the popover below it
+    /// (arrow on the popover's top edge), a tap in the lower half above it.
+    /// Left to itself the system sometimes picked the side with less room
+    /// and squeezed the popover.
+    private func roomierArrowEdge() -> Edge {
+        guard let tap = TouchLocationRecorder.lastLocation else { return .top }
+        return tap.y < UIScreen.main.bounds.height / 2 ? .top : .bottom
     }
 
     /// A small rect at the last tap, in this view's coordinates; the middle
