@@ -51,13 +51,22 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
                 self.events.removeFirst(self.events.count - self.maxEvents)
             }
             #if DEBUG
-            print(Self.consoleLine(for: event))
+            if Self.printsToConsole(event) {
+                print(Self.consoleLine(for: event))
+            }
             #endif
         }
     }
 
     func clear() {
         events.removeAll()
+    }
+
+    /// Only failures go to the console (debug builds). Requests that
+    /// succeed, and the "request started" notes, would drown them out; the
+    /// in-app Event Log still keeps every event.
+    nonisolated static func printsToConsole(_ event: NetworkEvent) -> Bool {
+        !event.isSuccess
     }
 
     private static let timeFormatter: DateFormatter = {
