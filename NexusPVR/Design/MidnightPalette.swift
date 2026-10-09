@@ -34,6 +34,10 @@ enum MidnightPalette {
     static let accentSoft = Color(light: Color(hex: "#0b5f74"), dark: Color(hex: "#7ff0ff"))
     /// Text on the accent field.
     static let fieldInk = Color(light: .white, dark: Color(hex: "#04121f"))
+    /// Text on an on-now programme (`MidnightGradients.airing`).
+    static let airingInk = Color(light: Color(hex: "#0b1020"), dark: Color(hex: "#04121f"))
+    /// Text and glyphs on a channel plate (`MidnightGradients.channelPlate`).
+    static let plateInk = Color(light: Color(hex: "#0b1020"), dark: Color(hex: "#f4f7ff"))
 
     // MARK: - Programme cells
 

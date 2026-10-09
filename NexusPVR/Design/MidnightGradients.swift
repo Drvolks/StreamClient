@@ -38,12 +38,22 @@ enum MidnightGradients {
         return LinearGradient(colors: colors, startPoint: start, endPoint: end)
     }
 
-    /// Ground for channel logos (guide column, channel-card band). Flat on
-    /// Night; on Day it matches `field`, because logos are mostly
-    /// white-on-transparent and need a dark ground.
+    /// A programme that is on now (guide cell, calendar block). On Night it
+    /// is the accent field; on Day a light blue-grey, because the deep field
+    /// was too heavy against the white cells around it. Pair with
+    /// `MidnightPalette.airingInk`.
+    static func airing(_ scheme: ColorScheme) -> LinearGradient {
+        scheme == .dark
+            ? field(scheme)
+            : LinearGradient(colors: [Color(hex: "#dfe5f1"), Color(hex: "#d0d9ea")], startPoint: start, endPoint: end)
+    }
+
+    /// Ground for channel logos (guide column, channel-card band). Flat and
+    /// dark on Night; a light blue-grey on Day, quieter than the accent
+    /// field it used to share. Pair with `MidnightPalette.plateInk`.
     static func channelPlate(_ scheme: ColorScheme) -> LinearGradient {
         scheme == .dark
             ? LinearGradient(colors: [Color(hex: "#060a16")], startPoint: start, endPoint: end)
-            : field(scheme)
+            : LinearGradient(colors: [Color(hex: "#dfe5f1"), Color(hex: "#d3dbeb")], startPoint: start, endPoint: end)
     }
 }
