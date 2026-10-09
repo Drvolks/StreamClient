@@ -51,7 +51,7 @@ Automatic sport icon recognition for 40+ sports from program metadata. Covers te
 Automatically scans your local network to find PVR servers. No manual IP entry required.
 
 ### iCloud Sync
-Server configuration, topic keywords, seek preferences, and audio settings sync across all your Apple devices via iCloud.
+Server configuration, topic keywords, seek preferences, and audio settings sync across all your Apple devices via iCloud. On Dispatcharr, which keeps no playback position of its own, resume positions for recordings and On Demand sync the same way.
 
 ### Hide Recording Features
 Playback-only setup? Enable **Hide Recording Features** in Settings → General to remove the Recordings tab and every record button and menu from the app. The preference syncs across your devices via iCloud.
@@ -60,7 +60,7 @@ Playback-only setup? Enable **Hide Recording Features** in Settings → General 
 Explore the full app without a server. Provides 15 simulated channels across 5 groups, 3 days of EPG data, sample recordings, pre-configured topic keywords, and (on the Dispatcharr variant) an on-demand library of movies and multi-season series. Enter `demo` as the server host to activate.
 
 ### Dispatcharr-Specific Features
-- **On Demand** — Browse and play your providers' movies and series: search, categories, seasons and episodes, and resume where you left off on each device. The menu appears under Recordings when the server has VOD content
+- **On Demand** — Browse and play your providers' movies and series: search, categories, seasons and episodes, and resume where you left off, on any of your devices. The menu appears under Recordings when the server has VOD content
 - **Stream Status** — Live monitoring of active proxy streams and viewer counts
 - **Channel Profiles** — Curated channel collections (Sports, News, Entertainment)
 - **M3U Account Health** — Connection status indicators for your stream sources

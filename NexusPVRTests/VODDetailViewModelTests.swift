@@ -150,7 +150,11 @@ struct VODDetailViewModelTests {
         model.markUnwatched(uuid: "s1e2")
         #expect(model.watchState(for: "s1e1") == .new)
         #expect(model.watchState(for: "s1e2") == .new)
-        #expect(VODProgressStore.load(from: defaults).entries.isEmpty)
+        // The cleared item stays as a position-0 entry so the change syncs.
+        let saved = VODProgressStore.load(from: defaults)
+        #expect(saved["s1e1"] == nil)
+        #expect(saved.entries["s1e1"]?.position == 0)
+        #expect(saved.entries["s1e2"] == nil)
     }
 
     @Test("An item with no known runtime can still be marked watched")

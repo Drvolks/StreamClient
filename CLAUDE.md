@@ -128,8 +128,14 @@ The app communicates with NextPVR server via JSON API:
 - `Features/VOD/`: `VODView` (poster index, one `VODKind` at a time) and `VODDetailView` (movie, or series with a season picker), built on the same `PosterCard` / `PosterHero` as the recorded-series pages. The views are `#if DISPATCHERPVR`; models, `DispatcharrVODRequest` and the two view models are not, so the NextPVR-hosted test target covers them through `VODProviding`.
 - API: `/api/vod/movies/` and `/api/vod/series/` (paged, `search`, `category=Name|type`), `/{id}/provider-info/` for a title (`?include_episodes=true` returns episodes keyed by season), playback through `/proxy/vod/movie|episode/{uuid}`. Image references may be absolute or server paths — always resolve them with `vodImageURL(_:)`.
 - The On Demand menu sits under Recordings and only shows when `AppState.vodCounts` is non-empty (`refreshVODAvailability`).
-- Dispatcharr stores no VOD position: `PlayerView(vodId:)` saves it in `VODProgressStore` (UserDefaults, keyed by uuid) and posts `.vodProgressDidChange`.
+- Dispatcharr stores no VOD position: `PlayerView(vodId:)` saves it in `VODProgressStore` (keyed by uuid) and posts `.vodProgressDidChange`.
 - Demo mode serves `DemoVODLibrary`; its artwork lives in `DispatcherPVR/Resources/` (Dispatcharr target only). `--demo-tab "On Demand" --demo-vod Movies | Series | <title>` opens a page at launch.
+
+### Dispatcharr playback positions (#183)
+- Dispatcharr stores no playback position, so the app does: `RecordingPositionStore` (recording id → position) and `VODProgressStore` (uuid → progress). Each is one JSON blob in `UserDefaults`, mirrored to iCloud Key-Value Storage under the same key and merged per entry, newest `updatedAt` wins.
+- A reset is an entry, not a removal ("Watch from beginning" = position 0, VOD "mark unwatched" = position 0), otherwise another device's older copy would bring the position back.
+- `startObservingSync` (called in `AppEntry`) merges on `didChangeExternallyNotification` and posts `.recordingsDidChange` / `.vodProgressDidChange`; it also re-publishes when this device holds entries the iCloud copy lacks.
+- Both stores cap at 500 entries, oldest dropped. The old `recording_position_<id>` keys are imported once and left in place.
 
 ### Response Models
 All API responses use `Codable` structs in `Core/Models/`:

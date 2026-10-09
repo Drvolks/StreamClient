@@ -52,7 +52,9 @@ nonisolated struct DispatcharrRecording: Decodable {
         }
     }
 
-    func toRecording() -> Recording {
+    /// `positions` holds the resume positions — Dispatcharr has none of its
+    /// own. Pass one store when converting a list, so it is loaded once.
+    func toRecording(positions: RecordingPositionStore = .load()) -> Recording {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -75,9 +77,6 @@ nonisolated struct DispatcharrRecording: Decodable {
             status = "pending"
         }
 
-        // Check for locally stored playback position
-        let playbackPosition = UserDefaults.standard.integer(forKey: "recording_position_\(id)")
-
         let fileURL = customProperties?.fileURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedFile = fileURL.flatMap { $0.isEmpty ? nil : $0 }
 
@@ -98,7 +97,7 @@ nonisolated struct DispatcharrRecording: Decodable {
             size: nil,
             quality: nil,
             genres: nil,
-            playbackPosition: playbackPosition > 0 ? playbackPosition : nil,
+            playbackPosition: positions.resumePosition(for: id),
             season: customProperties?.season,
             episode: customProperties?.episode,
             seriesBannerURL: customProperties?.seriesBannerURL ?? customProperties?.program?.bannerURL
