@@ -47,7 +47,8 @@ NexusPVR/
 │   ├── Player/          # MPV video player (PlayerView containing MPVPlayerCore + MPVContainerView)
 │   ├── Recordings/      # Recording management (RecordingsListView, RecordingsViewModel, RecordingRow, RecordingDetailView)
 │   ├── Settings/        # App settings (SettingsView, ServerConfigView, KeywordsEditorView)
-│   └── Topics/          # Keyword-based program discovery (TopicsView, TopicsViewModel, TopicProgramRow)
+│   ├── Topics/          # Keyword-based program discovery (TopicsView, TopicsViewModel, TopicProgramRow)
+│   └── VOD/             # Dispatcharr On Demand: movies and series (VODView, VODDetailView, view models)
 └── Navigation/
     ├── AppState.swift   # Global app state (Tab enum: guide, recordings, topics, settings)
     └── NavigationRouter.swift  # Platform-adaptive navigation (iOS, tvOS, macOS variants)
@@ -122,6 +123,13 @@ The app communicates with NextPVR server via JSON API:
 - That method returns nil when a backend can't serve a single day (NextPVR, the XMLTV fallback, demo mode, a Dispatcharr server that predates the windowed grid); `EPGCache` then falls back to one `getAllListings` download (`/api/epg/programs/` on Dispatcharr).
 - Window support is probed once per session (`DispatcharrGridWindow.probeURL`): a window-aware server rejects the inverted window with a 400, an older one ignores it and returns its default 25h grid.
 - Grid placeholder programmes have string ids hashed per process (`DispatcharrProgram.idWasSynthetic`) — fine for in-session dedup, never persist them.
+
+### Dispatcharr On Demand (#17)
+- `Features/VOD/`: `VODView` (poster index, one `VODKind` at a time) and `VODDetailView` (movie, or series with a season picker), built on the same `PosterCard` / `PosterHero` as the recorded-series pages. The views are `#if DISPATCHERPVR`; models, `DispatcharrVODRequest` and the two view models are not, so the NextPVR-hosted test target covers them through `VODProviding`.
+- API: `/api/vod/movies/` and `/api/vod/series/` (paged, `search`, `category=Name|type`), `/{id}/provider-info/` for a title (`?include_episodes=true` returns episodes keyed by season), playback through `/proxy/vod/movie|episode/{uuid}`. Image references may be absolute or server paths — always resolve them with `vodImageURL(_:)`.
+- The On Demand menu sits under Recordings and only shows when `AppState.vodCounts` is non-empty (`refreshVODAvailability`).
+- Dispatcharr stores no VOD position: `PlayerView(vodId:)` saves it in `VODProgressStore` (UserDefaults, keyed by uuid) and posts `.vodProgressDidChange`.
+- Demo mode serves `DemoVODLibrary`; its artwork lives in `DispatcherPVR/Resources/` (Dispatcharr target only). `--demo-tab "On Demand" --demo-vod Movies | Series | <title>` opens a page at launch.
 
 ### Response Models
 All API responses use `Codable` structs in `Core/Models/`:

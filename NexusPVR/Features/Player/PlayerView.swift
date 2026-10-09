@@ -44,6 +44,10 @@ struct PlayerView: View {
     /// Dispatcharr catch-up playback; lets the player mint the next session in
     /// the chain when the archive ends while the programme is still airing.
     let catchupProgram: CatchupProgramContext?
+    /// The uuid of the VOD movie or episode being played (#17). Makes the
+    /// stream seekable rather than live, and keys its saved position, which
+    /// lives on the device — see `savePlaybackPosition()`.
+    let vodId: String?
 
     // Injected dependencies (default to app singletons via Dependencies)
     private let activePlayerSession: any ActivePlayerSessionManaging
@@ -166,6 +170,7 @@ struct PlayerView: View {
         recordingStartTime: Date? = nil,
         catchupSessionId: String? = nil,
         catchupProgram: CatchupProgramContext? = nil,
+        vodId: String? = nil,
         activePlayerSession: any ActivePlayerSessionManaging = Dependencies.activePlayerSession,
         networkEventLogger: any NetworkEventLogging = Dependencies.networkEventLogger,
         liveKeepalive: LiveStreamKeepalive = Dependencies.liveStreamKeepalive
@@ -179,6 +184,7 @@ struct PlayerView: View {
         self.recordingStartTime = recordingStartTime
         self.catchupSessionId = catchupSessionId
         self.catchupProgram = catchupProgram
+        self.vodId = vodId
         self.activePlayerSession = activePlayerSession
         self.networkEventLogger = networkEventLogger
         self.liveKeepalive = liveKeepalive
@@ -1164,6 +1170,14 @@ struct PlayerView: View {
             )
             return
         }
+        if let vodId {
+            // Dispatcharr keeps no VOD position; remember it on this device.
+            var store = VODProgressStore.load()
+            store.record(uuid: vodId, position: Int(currentPosition), duration: Int(duration))
+            store.save()
+            NotificationCenter.default.post(name: .vodProgressDidChange, object: nil)
+            return
+        }
         guard let recordingId = recordingId else {
             print("[Player] savePlaybackPosition: no recordingId")
             return
@@ -1185,6 +1199,13 @@ struct PlayerView: View {
     }
 
     private func markAsWatched() {
+        if let vodId, duration > 0 {
+            var store = VODProgressStore.load()
+            store.record(uuid: vodId, position: Int(duration), duration: Int(duration))
+            store.save()
+            NotificationCenter.default.post(name: .vodProgressDidChange, object: nil)
+            return
+        }
         guard let recordingId = recordingId else { return }
         // Set position to full duration to mark as watched
         let watchedPosition = Int(duration > 0 ? duration : currentPosition)
@@ -1233,8 +1254,11 @@ struct PlayerView: View {
     /// A local file is never live either. An offline download carries neither a
     /// recording id nor a catch-up session, so without this it would land on
     /// the live-edge bar and refuse to seek.
+    ///
+    /// VOD (#17) is a finished file served through the proxy: seekable, with
+    /// no tuner to keep alive.
     private var isLiveStream: Bool {
-        recordingId == nil && catchupSessionId == nil && !url.isFileURL
+        recordingId == nil && catchupSessionId == nil && vodId == nil && !url.isFileURL
     }
 
     private var centerControls: some View {
