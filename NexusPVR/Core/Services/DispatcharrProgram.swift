@@ -132,7 +132,9 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
         return Date(timeIntervalSince1970: secs)
     }
 
-    func toProgram(channelId: Int? = nil) -> Program? {
+    /// Parsed air time, nil when either end is unreadable or the programme
+    /// has no duration.
+    var airTime: DateInterval? {
         let startDate = Self.fastParseISO(startTime)
             ?? Self.isoFractional.date(from: startTime)
             ?? Self.isoPlain.date(from: startTime)
@@ -142,6 +144,13 @@ nonisolated struct DispatcharrProgram: Decodable, Sendable {
         guard let startDate, let endDate, endDate > startDate else {
             return nil
         }
+        return DateInterval(start: startDate, end: endDate)
+    }
+
+    func toProgram(channelId: Int? = nil) -> Program? {
+        guard let airTime else { return nil }
+        let startDate = airTime.start
+        let endDate = airTime.end
 
         return Program(
             id: id,

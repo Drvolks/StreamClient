@@ -333,14 +333,9 @@ enum LiveProgramFetcher {
             return response.items
         }()
 
-        async let programsTask: [SimpleProgram] = {
-            guard let url = URL(string: "\(config.baseURL)/api/epg/programs/?page_size=50000") else { return [] }
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, _) = try await session.data(for: request)
-            let response = try JSONDecoder().decode(PaginatedResponse<SimpleProgram>.self, from: data)
-            return response.items
-        }()
+        async let programsTask: [SimpleProgram] = fetchDispatcharrCurrentPrograms(
+            config: config, session: session, token: token
+        )
 
         let channels = try await channelsTask
         let programs = try await programsTask
@@ -390,6 +385,37 @@ enum LiveProgramFetcher {
         }
 
         return (channels, programs, tvgIdMap, epgDataIdMap)
+    }
+
+    /// Programs airing now, from the EPG grid (#157). It asks for a one-minute
+    /// window; a server that predates windows ignores it and answers its
+    /// default now-1h to now+24h, which covers "now" just the same. Falls back
+    /// to the full program list when the grid can't be read.
+    private static func fetchDispatcharrCurrentPrograms(
+        config: ServerConfig, session: URLSession, token: String
+    ) async throws -> [SimpleProgram] {
+        func fetch(_ url: URL) async throws -> [SimpleProgram] {
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (data, response) = try await session.data(for: request)
+            if let status = (response as? HTTPURLResponse)?.statusCode, !(200...299).contains(status) {
+                throw URLError(.badServerResponse)
+            }
+            return try JSONDecoder().decode(PaginatedResponse<SimpleProgram>.self, from: data).items
+        }
+
+        let now = Date()
+        var grid = URLComponents(string: "\(config.baseURL)/api/epg/grid/")
+        grid?.queryItems = [
+            URLQueryItem(name: "start", value: now.formatted(.iso8601)),
+            URLQueryItem(name: "end", value: now.addingTimeInterval(60).formatted(.iso8601))
+        ]
+        if let url = grid?.url, let programs = try? await fetch(url) {
+            return programs
+        }
+
+        guard let url = URL(string: "\(config.baseURL)/api/epg/programs/?page_size=50000") else { return [] }
+        return try await fetch(url)
     }
 
     private static func resolveChannelId(

@@ -430,6 +430,57 @@ struct EPGCacheTests {
         #expect(EPGCache.earliestProgramDate(in: [:]) == nil)
     }
 
+    // MARK: - Merging (#157)
+
+    @Test("Merging day listings adds new programs and keeps each channel sorted")
+    func mergingAddsAndSorts() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let cached = [1: [makeProgram(id: 10, start: now)]]
+        let incoming = [
+            1: [makeProgram(id: 12, start: now.addingTimeInterval(7200)), makeProgram(id: 9, start: now.addingTimeInterval(-3600))],
+            2: [makeProgram(id: 20, start: now)]
+        ]
+
+        let merged = EPGCache.merging(incoming, into: cached)
+
+        #expect(merged[1]?.map(\.id) == [9, 10, 12])
+        #expect(merged[2]?.map(\.id) == [20])
+    }
+
+    @Test("A program returned by two adjacent days is kept once")
+    func mergingDedupesById() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let spanningMidnight = makeProgram(id: 10, start: now)
+        let cached = [1: [spanningMidnight]]
+        let incoming = [1: [spanningMidnight, spanningMidnight, makeProgram(id: 11, start: now.addingTimeInterval(3600))]]
+
+        #expect(EPGCache.merging(incoming, into: cached)[1]?.map(\.id) == [10, 11])
+    }
+
+    @Test("Merging nothing, or an empty day, leaves the cache as it was")
+    func mergingEmptyKeepsCache() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let cached = [1: [makeProgram(id: 10, start: now)]]
+
+        #expect(EPGCache.merging([:], into: cached)[1]?.map(\.id) == [10])
+        let merged = EPGCache.merging([1: [], 2: []], into: cached)
+        #expect(merged[1]?.map(\.id) == [10])
+        #expect(merged[2] == nil)
+    }
+
+    @Test("ensureDay reports failure and keeps the cache when the server can't be reached")
+    func ensureDayFailureKeepsCache() async {
+        let cache = EPGCache()
+        cache.channels = makeChannels()
+        let client = PVRClient(config: ServerConfig(host: "", pin: "", useHTTPS: false))
+
+        let loaded = await cache.ensureDay(Date(), using: client)
+
+        #expect(loaded == false)
+        #expect(cache.channels.count == 3)
+        #expect(cache.epg.isEmpty)
+    }
+
     @Test("programs returns empty for unknown channel")
     func programsForUnknownChannel() {
         let cache = EPGCache()

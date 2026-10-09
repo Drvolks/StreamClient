@@ -2822,16 +2822,120 @@ paths:
   /api/epg/grid/:
     get:
       operationId: api_epg_grid_list
-      description: Retrieve programs from the previous hour, currently running and
-        upcoming for the next 24 hours
-      parameters: []
+      description: Retrieve programs overlapping a time window for channels the
+        caller can see. With no query parameters the window is the previous hour
+        through the next 24 hours (recently ended, currently airing, and upcoming).
+        Use `days`/`prev_days` for relative day offsets from now, or `start`/`end`
+        (ISO 8601) for an explicit range of at most 395 days. Optional
+        `channel_profile_id` limits output to that profile. Omitted or `all`- for
+        users with assigned profiles, the union of those profiles; otherwise every
+        non-hidden channel the caller may access by user level. EPG assignments
+        honor channel overrides, and channels with a dummy EPG source or no EPG
+        get programmes generated on demand. The body is streamed, so a
+        server-side failure mid-response yields a truncated body under a 200.
+      parameters:
+      - name: days
+        in: query
+        description: Number of days forward from now (1-365). Omitted- 24 hours
+          forward. 0 is treated as 1. Ignored when start or end is set.
+        required: false
+        type: integer
+      - name: prev_days
+        in: query
+        description: Number of days of lookback from now (0-30). Omitted- 1 hour
+          (recently ended plus currently on). 0 means start at now. Ignored when
+          start or end is set.
+        required: false
+        type: integer
+      - name: start
+        in: query
+        description: Window start as ISO 8601 datetime (a bare date means
+          midnight; naive values are UTC). Takes precedence over days/prev_days.
+          Omitted with end present- defaults to now minus 1 hour.
+        required: false
+        type: string
+        format: date-time
+      - name: end
+        in: query
+        description: Window end as ISO 8601 datetime. Takes precedence over
+          days/prev_days. Omitted with start present- defaults to start plus 24
+          hours.
+        required: false
+        type: string
+        format: date-time
+      - name: channel_profile_id
+        in: query
+        description: Limit programmes to channels enabled in this profile. Omitted
+          or `all`- union of the caller's assigned profiles when they have any;
+          otherwise every non-hidden channel allowed by user level.
+        required: false
+        type: integer
       responses:
         '200':
           description: ''
           schema:
-            type: array
-            items:
-              $ref: '#/definitions/ProgramData'
+            type: object
+            required:
+            - data
+            properties:
+              data:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - id
+                  - start_time
+                  - end_time
+                  properties:
+                    id:
+                      description: Stored programme primary key, or a synthetic
+                        dummy id (prefix-channelId-YYYYMMDDTHHMMSS).
+                      type: string
+                    start_time:
+                      type: string
+                      format: date-time
+                    end_time:
+                      type: string
+                      format: date-time
+                    title:
+                      type: string
+                      x-nullable: true
+                    sub_title:
+                      type: string
+                      x-nullable: true
+                    description:
+                      type: string
+                      x-nullable: true
+                    tvg_id:
+                      type: string
+                      x-nullable: true
+                    season:
+                      type: integer
+                      x-nullable: true
+                    episode:
+                      type: integer
+                      x-nullable: true
+                    is_new:
+                      type: boolean
+                    is_live:
+                      type: boolean
+                    is_premiere:
+                      type: boolean
+                    is_finale:
+                      type: boolean
+                    custom_properties:
+                      description: Present on dummy programmes only. Null when
+                        empty.
+                      type: object
+                      x-nullable: true
+        '400':
+          description: Invalid window (end not after start, span over 395 days,
+            unparseable datetime or integer)
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
       tags:
       - api
     parameters: []

@@ -6,7 +6,10 @@
  * and be extended with edge cases that cause problems.
  *
  * Usage:
- *   node server.js [--channels 1000] [--port 9191]
+ *   node server.js [--channels 1000] [--port 9191] [--legacy-grid]
+ *
+ * --legacy-grid makes /api/epg/grid/ ignore its query params, like a server
+ * that predates the windowed grid, to exercise the app's fallback.
  *
  * Then configure the app to connect to http://<your-ip>:9191
  * with any username/password.
@@ -680,27 +683,51 @@ function handleRequest(req, res) {
     return json(res, { id, tvg_id: ch.tvg_id });
   }
 
-  // EPG grid — returns programs for a time window, non-paginated
-  // Supports optional start_date and end_date query params (ISO 8601)
-  // Defaults to -1h to +24h if not specified (matches real Dispatcharr)
+  // EPG grid — programs overlapping a time window, non-paginated.
+  // Mirrors Dispatcharr's `apps/epg/api_grid.py`: `start`/`end` (ISO 8601,
+  // either may be omitted) select the window, `channel_profile_id` narrows it
+  // to one profile, and no params means now-1h to now+24h. `--legacy-grid`
+  // ignores every param, like a server that predates the windowed grid.
   if (path === "/api/epg/grid/") {
-    const startParam = url.searchParams.get("start_date");
-    const endParam = url.searchParams.get("end_date");
+    const now = Date.now();
+    let windowStart = now - 60 * 60 * 1000;
+    let windowEnd = now + 24 * 60 * 60 * 1000;
+    let channelIds = null;
 
-    let windowStart, windowEnd;
-    if (startParam && endParam) {
-      windowStart = new Date(startParam).getTime();
-      windowEnd = new Date(endParam).getTime();
-    } else {
-      const now = Date.now();
-      windowStart = now - 60 * 60 * 1000;
-      windowEnd = now + 24 * 60 * 60 * 1000;
+    if (!args.legacyGrid) {
+      const startParam = url.searchParams.get("start");
+      const endParam = url.searchParams.get("end");
+      if (startParam || endParam) {
+        if (startParam) windowStart = new Date(startParam).getTime();
+        windowEnd = endParam
+          ? new Date(endParam).getTime()
+          : windowStart + 24 * 60 * 60 * 1000;
+        if (Number.isNaN(windowStart) || Number.isNaN(windowEnd)) {
+          return json(res, { error: "Invalid datetime. Use ISO 8601 (e.g. 2026-02-14T18:00:00Z)." }, 400);
+        }
+        if (windowEnd <= windowStart) {
+          return json(res, { error: "end must be after start." }, 400);
+        }
+      }
+
+      const profileParam = url.searchParams.get("channel_profile_id");
+      if (profileParam && profileParam.toLowerCase() !== "all") {
+        const profileId = parseInt(profileParam, 10);
+        if (Number.isNaN(profileId) || profileId < 1) {
+          return json(res, { error: `Invalid channel_profile_id: ${profileParam}.` }, 400);
+        }
+        const group = CHANNEL_GROUPS.slice(0, 4)[profileId - 1];
+        channelIds = new Set(
+          group ? CHANNELS.filter((c) => c.channel_group_id === group.id).map((c) => c.id) : []
+        );
+      }
     }
 
     const allPrograms = [...PROGRAMS, ...EDGE_CASES];
     const filtered = allPrograms.filter((p) => {
       const end = new Date(p.end_time).getTime();
       const start = new Date(p.start_time).getTime();
+      if (channelIds && !channelIds.has(p.channel)) return false;
       return end > windowStart && start < windowEnd;
     });
     return json(res, { data: filtered });
@@ -853,6 +880,8 @@ function parseArgs() {
       result.daysAfter = parseInt(argv[++i], 10);
     } else if (argv[i] === "--no-edge-cases") {
       result.noEdgeCases = true;
+    } else if (argv[i] === "--legacy-grid") {
+      result.legacyGrid = true;
     }
   }
   return result;

@@ -679,7 +679,7 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     }
 
     /// Fast first-paint: today + tomorrow only, fetched concurrently.
-    func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
+    func getFastListings(for channels: [Channel], profileId: Int? = nil) async throws -> [Int: [Program]] {
         let now = Int(Date().timeIntervalSince1970)
         // Cover roughly the visible guide window: 1h ago → 48h ahead.
         let start = now - 3600
