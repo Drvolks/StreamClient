@@ -1466,7 +1466,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding 
                 return (item.id, path)
             }
         )
-        let recordings = items.map { $0.toRecording() }
+        let positions = RecordingPositionStore.load()
+        let recordings = items.map { $0.toRecording(positions: positions) }
 
         var completed: [Recording] = []
         var active: [Recording] = []
@@ -1702,9 +1703,11 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding 
 
     func setRecordingPosition(recordingId: Int, positionSeconds: Int) async throws {
         guard !config.isDemoMode else { return }
-        // Dispatcharr doesn't natively support playback position tracking
-        // Store locally in UserDefaults as a fallback
-        UserDefaults.standard.set(positionSeconds, forKey: "recording_position_\(recordingId)")
+        // Dispatcharr doesn't track playback positions, so they live in a
+        // store synced between this user's devices through iCloud (#183).
+        var positions = RecordingPositionStore.load()
+        positions.set(recordingId: recordingId, position: positionSeconds)
+        positions.save()
     }
 
     private func fetchProgramDetails(eventId: Int) async throws -> DispatcharrProgram {

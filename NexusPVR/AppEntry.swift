@@ -76,6 +76,19 @@ struct PVRApp: App {
             // Post notification when preferences change from another device
             NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
         }
+
+        #if DISPATCHERPVR
+        // Recording and On Demand positions saved on another device (#183):
+        // merge them in and refresh the pages showing them.
+        if UserPreferences.demoStore == nil {
+            RecordingPositionStore.startObservingSync {
+                NotificationCenter.default.post(name: .recordingsDidChange, object: nil)
+            }
+            VODProgressStore.startObservingSync {
+                NotificationCenter.default.post(name: .vodProgressDidChange, object: nil)
+            }
+        }
+        #endif
     }
 
     var body: some Scene {

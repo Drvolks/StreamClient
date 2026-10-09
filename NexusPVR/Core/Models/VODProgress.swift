@@ -3,7 +3,7 @@
 //  DispatcherPVR
 //
 //  How far a VOD movie or episode has been played (#17). Dispatcharr keeps
-//  no per-user position for VOD, so this lives on the device.
+//  no per-user position for VOD, so the app does, in `VODProgressStore`.
 //
 
 import Foundation
@@ -26,6 +26,15 @@ nonisolated struct VODProgress: Codable, Equatable, Sendable {
     var fraction: Double {
         guard duration > 0 else { return 0 }
         return min(max(Double(position) / Double(duration), 0), 1)
+    }
+
+    /// Which of two entries for the same item to keep when merging devices
+    /// (#183): the newer one, and on a tie the further one, so every device
+    /// picks the same winner.
+    func supersedes(_ other: VODProgress) -> Bool {
+        if updatedAt != other.updatedAt { return updatedAt > other.updatedAt }
+        if position != other.position { return position > other.position }
+        return duration > other.duration
     }
 
     var watchState: RecordingWatchState {
