@@ -21,6 +21,11 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     private var useApiKeyAuth = false
     /// When true, use output/XC endpoints instead of REST API (for Streamer users)
     var useOutputEndpoints = false
+    /// Whether the server honours `start`/`end` on `/api/epg/grid/` (#157).
+    /// nil until probed: an older server ignores the parameters and answers
+    /// its fixed 25h window, so support can't be assumed.
+    private var gridWindowSupport: Bool?
+    private var gridWindowProbe: Task<Data?, Error>?
     private var authInProgress: Task<Void, Error>?
     /// Set when the token endpoint answered 429: no sign-in is attempted
     /// before this time, so retries don't keep the server's limit tripped.
@@ -104,6 +109,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         signInNotBefore = nil
         useApiKeyAuth = false
         useOutputEndpoints = false
+        gridWindowSupport = nil
+        gridWindowProbe?.cancel()
+        gridWindowProbe = nil
         tvgIdToChannelIds = [:]
         epgDataIdToChannelIds = [:]
         channelIdToUUID = [:]
@@ -271,7 +279,8 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     private func loggedData(
         for request: URLRequest,
         connecting: Bool = false,
-        retriesRateLimit: Bool = true
+        retriesRateLimit: Bool = true,
+        expectedStatusCodes: Set<Int> = []
     ) async throws -> (Data, URLResponse) {
         let method = request.httpMethod ?? "GET"
         let path = sanitizePath(request.url)
@@ -289,7 +298,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
             do {
                 let (data, response) = try await session.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode
-                let ok = status.map { (200...399).contains($0) } ?? false
+                let ok = status.map { (200...399).contains($0) || expectedStatusCodes.contains($0) } ?? false
                 let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
                 let shouldRetryHTTP = status.map {
                     Self.retryableHTTPStatusCodes.contains($0) && (retriesRateLimit || $0 != 429)
@@ -852,6 +861,37 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     }
 
     private func authenticatedRequestData(_ url: URL, method: String = "GET", body: Data? = nil) async throws -> Data {
+        let (data, httpResponse) = try await authenticatedResponse(url, method: method, body: body)
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let detail = dispatcharrAPIErrorMessage(from: data)
+            let fallbackBody = String(data: Data(data.prefix(512)), encoding: .utf8) ?? ""
+            let message = detail ?? (fallbackBody.isEmpty ? "Request failed with status \(httpResponse.statusCode)" : fallbackBody)
+            logNetworkEvent(NetworkEvent(
+                timestamp: Date(),
+                method: method,
+                path: sanitizePath(url),
+                statusCode: httpResponse.statusCode,
+                isSuccess: false,
+                durationMs: 0,
+                responseSize: data.count,
+                errorDetail: message
+            ), url: url)
+            throw PVRClientError.apiError("HTTP \(httpResponse.statusCode): \(message)")
+        }
+
+        return data
+    }
+
+    /// Sends an authenticated request and returns the response whatever its
+    /// status, after the 401 refresh/re-auth dance. `expectedStatusCodes` are
+    /// non-2xx answers the caller asked for, so they aren't logged as failures.
+    private func authenticatedResponse(
+        _ url: URL,
+        method: String = "GET",
+        body: Data? = nil,
+        expectedStatusCodes: Set<Int> = []
+    ) async throws -> (Data, HTTPURLResponse) {
         if !isAuthenticated {
             try await authenticate()
         }
@@ -874,7 +914,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         }
 
         do {
-            let (data, response) = try await loggedData(for: request)
+            let (data, response) = try await loggedData(for: request, expectedStatusCodes: expectedStatusCodes)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PVRClientError.invalidResponse
             }
@@ -884,40 +924,23 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
                     // API key auth doesn't support refresh — re-authenticate
                     isAuthenticated = false
                     try await authenticate()
-                    return try await authenticatedRequestData(url, method: method, body: body)
+                    return try await authenticatedResponse(url, method: method, body: body, expectedStatusCodes: expectedStatusCodes)
                 }
                 // Try refreshing the token
                 do {
                     try await refreshAccessToken()
-                    return try await authenticatedRequestData(url, method: method, body: body)
+                    return try await authenticatedResponse(url, method: method, body: body, expectedStatusCodes: expectedStatusCodes)
                 } catch {
                     // Refresh failed, full re-auth. Drop the saved session
                     // first, or sign-in would resume the rejected token.
                     DispatcharrSessionStore.clear()
                     isAuthenticated = false
                     try await authenticate()
-                    return try await authenticatedRequestData(url, method: method, body: body)
+                    return try await authenticatedResponse(url, method: method, body: body, expectedStatusCodes: expectedStatusCodes)
                 }
             }
 
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let detail = dispatcharrAPIErrorMessage(from: data)
-                let fallbackBody = String(data: Data(data.prefix(512)), encoding: .utf8) ?? ""
-                let message = detail ?? (fallbackBody.isEmpty ? "Request failed with status \(httpResponse.statusCode)" : fallbackBody)
-                logNetworkEvent(NetworkEvent(
-                    timestamp: Date(),
-                    method: method,
-                    path: sanitizePath(url),
-                    statusCode: httpResponse.statusCode,
-                    isSuccess: false,
-                    durationMs: 0,
-                    responseSize: data.count,
-                    errorDetail: message
-                ), url: url)
-                throw PVRClientError.apiError("HTTP \(httpResponse.statusCode): \(message)")
-            }
-
-            return data
+            return (data, httpResponse)
         } catch let error as PVRClientError {
             throw error
         } catch {
@@ -1249,38 +1272,21 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
     // MARK: - EPG / Listings
 
+    /// Listings for one channel, from the grid's default window (now-1h to
+    /// now+24h) — callers only need what is on now and next.
     func getListings(channelId: Int) async throws -> [Program] {
         guard !config.isDemoMode else { return DemoDataProvider.listings(for: channelId) }
-
-        guard let url = URL(string: "\(baseURL)/api/epg/programs/?page_size=50000") else {
+        guard let url = DispatcharrGridWindow.url(baseURL: baseURL, window: nil, profileId: nil) else {
             throw PVRClientError.invalidResponse
         }
-
-        let tvgIds = Set(tvgIdToChannelIds.compactMap { $0.value.contains(channelId) ? $0.key : nil })
-        let epgDataIds = Set(epgDataIdToChannelIds.compactMap { $0.value.contains(channelId) ? $0.key : nil })
-
-        let allPrograms: [DispatcharrProgram] = try await fetchAllPages(url, maxPages: 50)
-        let programs = allPrograms
-            .filter { program in
-                if let directId = program.channel, directId == channelId {
-                    return true
-                }
-                if let epgDataId = program.epgDataId, epgDataIds.contains(epgDataId) {
-                    return true
-                }
-                if let programTvgId = program.tvgId, tvgIds.contains(programTvgId) {
-                    return true
-                }
-                return false
-            }
-            .compactMap { $0.toProgram(channelId: channelId) }
-        return programs
+        let data = try await authenticatedRequestData(url)
+        return try await mapGrid(data).listings[channelId] ?? []
     }
 
     /// Fast first-paint EPG fetch via /api/epg/grid/ — returns programs in the
     /// real Dispatcharr grid window (now-1h to now+24h). Falls back to the full
     /// listings on the XMLTV path since /output/epg has no time filter.
-    func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
+    func getFastListings(for channels: [Channel], profileId: Int? = nil) async throws -> [Int: [Program]] {
         guard !config.isDemoMode else { return DemoDataProvider.allListings(for: channels) }
         if useOutputEndpoints {
             return try await getAllListingsFromEPG(channels: channels)
@@ -1288,27 +1294,58 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         if !isAuthenticated {
             try await authenticate()
         }
-        guard let url = URL(string: "\(baseURL)/api/epg/grid/") else {
-            throw PVRClientError.invalidResponse
-        }
         let start = CFAbsoluteTimeGetCurrent()
-        let data = try await authenticatedRequestData(url)
-        let tvgMap = tvgIdToChannelIds
-        let epgDataMap = epgDataIdToChannelIds
-        let result: [Int: [Program]] = try await Task.detached(priority: .userInitiated) {
-            let wrapper = try JSONDecoder().decode(EPGGridResponse.self, from: data)
-            return DispatcharrEPGProgramMapper.map(
-                programs: wrapper.data,
-                tvgIdToChannelIds: tvgMap,
-                epgDataIdToChannelIds: epgDataMap,
-                sortByStart: true
-            )
-        }.value
+        let data = try await fastGridData(profileId: profileId)
+        let result = try await mapGrid(data).listings
         let count = result.values.reduce(0) { $0 + $1.count }
         print("[Dispatcharr] Grid: \(count) programs across \(result.count) channels in \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000))ms")
         return result
     }
 
+    /// Listings overlapping `window`, from the windowed grid (#157). Unlike
+    /// `/api/epg/programs/`, the grid includes the programmes Dispatcharr
+    /// generates for channels without real EPG, honours EPG overrides and only
+    /// covers channels this user can see.
+    ///
+    /// Returns nil when windows aren't available — the XMLTV fallback, demo
+    /// mode, or a server that predates them — so the caller can fall back to
+    /// `getAllListings`.
+    func getListings(for channels: [Channel], in window: DateInterval, profileId: Int?) async throws -> [Int: [Program]]? {
+        guard !config.isDemoMode, !useOutputEndpoints else { return nil }
+        if !isAuthenticated {
+            try await authenticate()
+        }
+        guard !useOutputEndpoints else { return nil }
+        if gridWindowSupport == nil {
+            _ = try await probeGridWindowSupport()
+        }
+        guard gridWindowSupport == true else { return nil }
+        guard let url = DispatcharrGridWindow.url(baseURL: baseURL, window: window, profileId: profileId) else {
+            throw PVRClientError.invalidResponse
+        }
+
+        // The grid is streamed, so a server-side failure mid-response arrives
+        // as a truncated body under a 200. Ask once more before giving up on
+        // this window; the caller keeps whatever it already has.
+        for attempt in 1...2 {
+            let data = try await authenticatedRequestData(url)
+            do {
+                let grid = try await mapGrid(data, checking: window)
+                guard grid.respectsWindow else {
+                    print("[Dispatcharr] Grid ignored the requested window, using full listings instead")
+                    gridWindowSupport = false
+                    return nil
+                }
+                return grid.listings
+            } catch is DecodingError {
+                print("[Dispatcharr] Grid response was truncated (attempt \(attempt)/2)")
+            }
+        }
+        throw PVRClientError.invalidResponse
+    }
+
+    /// Full-EPG download from `/api/epg/programs/`. Legacy path, used only
+    /// when `getListings(for:in:profileId:)` reports windows as unavailable.
     func getAllListings(for channels: [Channel]) async throws -> [Int: [Program]] {
         guard !config.isDemoMode else { return DemoDataProvider.allListings(for: channels) }
         if useOutputEndpoints {
@@ -1338,6 +1375,76 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
         }.value
 
         return result
+    }
+
+    /// Body of the first-paint grid request. While window support is unknown
+    /// this is also where it gets settled, at no cost to an older server: its
+    /// answer to the probe is the default window, i.e. this very payload.
+    private func fastGridData(profileId: Int?) async throws -> Data {
+        if gridWindowSupport == nil, let defaultWindowBody = try await probeGridWindowSupport() {
+            return defaultWindowBody
+        }
+        // `channel_profile_id` arrived with the windowed grid.
+        let profile = gridWindowSupport == true ? profileId : nil
+        guard let url = DispatcharrGridWindow.url(baseURL: baseURL, window: nil, profileId: profile) else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequestData(url)
+    }
+
+    /// Settles `gridWindowSupport` by asking for a window that ends before it
+    /// starts. A server that understands `start`/`end` rejects it with a 400
+    /// before touching the database; an older one ignores both and answers
+    /// its default window, whose body is returned so it isn't wasted.
+    /// Concurrent callers share one request.
+    private func probeGridWindowSupport() async throws -> Data? {
+        if let running = gridWindowProbe {
+            return try await running.value
+        }
+        let task = Task { () -> Data? in
+            guard let url = DispatcharrGridWindow.probeURL(baseURL: self.baseURL) else {
+                throw PVRClientError.invalidResponse
+            }
+            let (data, response) = try await self.authenticatedResponse(
+                url,
+                expectedStatusCodes: [DispatcharrGridWindow.rejectedWindowStatus]
+            )
+            guard let supported = DispatcharrGridWindow.supportsWindows(probeStatus: response.statusCode) else {
+                throw PVRClientError.apiError("HTTP \(response.statusCode): EPG grid unavailable")
+            }
+            try Task.checkCancellation()
+            self.gridWindowSupport = supported
+            print("[Dispatcharr] Windowed EPG grid \(supported ? "supported" : "not supported, using /api/epg/programs/")")
+            return supported ? nil : data
+        }
+        gridWindowProbe = task
+        defer {
+            if gridWindowProbe == task { gridWindowProbe = nil }
+        }
+        return try await task.value
+    }
+
+    /// Decodes a grid body and maps it onto channels, off the main actor.
+    /// With `window`, also reports whether the server kept to it.
+    private func mapGrid(
+        _ data: Data,
+        checking window: DateInterval? = nil
+    ) async throws -> (listings: [Int: [Program]], respectsWindow: Bool) {
+        let tvgMap = tvgIdToChannelIds
+        let epgDataMap = epgDataIdToChannelIds
+        return try await Task.detached(priority: .userInitiated) {
+            let programs = try JSONDecoder().decode(EPGGridResponse.self, from: data).data
+            if let window, !DispatcharrGridWindow.respectsWindow(programs, window: window) {
+                return ([:], false)
+            }
+            let listings = DispatcharrEPGProgramMapper.map(
+                programs: programs,
+                tvgIdToChannelIds: tvgMap,
+                epgDataIdToChannelIds: epgDataMap,
+                sortByStart: true
+            )
+            return (listings, true)
+        }.value
     }
 
     // MARK: - Recordings

@@ -27,7 +27,12 @@ protocol PVRClientProtocol: ObservableObject {
     func getAllListings(for channels: [Channel]) async throws -> [Int: [Program]]
     /// Fast first-paint EPG fetch — should return programs covering today (and ideally tomorrow).
     /// Default falls back to getAllListings; clients with a dedicated endpoint should override.
-    func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]]
+    /// `profileId` is the channel profile the channels were loaded for, if any.
+    func getFastListings(for channels: [Channel], profileId: Int?) async throws -> [Int: [Program]]
+    /// Listings overlapping `window` only, so a single day can be loaded
+    /// without downloading the whole EPG. Returns nil when the backend can
+    /// only serve the full EPG; callers then use `getAllListings`.
+    func getListings(for channels: [Channel], in window: DateInterval, profileId: Int?) async throws -> [Int: [Program]]?
     func getAllRecordings() async throws -> (completed: [Recording], recording: [Recording], scheduled: [Recording])
     func scheduleRecording(eventId: Int) async throws
     func scheduleRecording(program: Program, channel: Channel?) async throws
@@ -69,8 +74,12 @@ extension PVRClientProtocol {
         try await scheduleRecording(eventId: program.id)
     }
 
-    func getFastListings(for channels: [Channel]) async throws -> [Int: [Program]] {
+    func getFastListings(for channels: [Channel], profileId: Int?) async throws -> [Int: [Program]] {
         try await getAllListings(for: channels)
+    }
+
+    func getListings(for channels: [Channel], in window: DateInterval, profileId: Int?) async throws -> [Int: [Program]]? {
+        nil
     }
 
     func renewLiveStream() async throws -> LiveStreamInfo? { nil }

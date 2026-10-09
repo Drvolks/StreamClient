@@ -117,6 +117,12 @@ The app communicates with NextPVR server via JSON API:
 **Configuration:**
 - `updateConfig(_:)` - Update server configuration
 
+### Dispatcharr EPG loading (#157)
+- `EPGCache` loads the EPG one calendar day at a time through `PVRClient.getListings(for:in:profileId:)`, which Dispatcharr serves from `/api/epg/grid/?start=&end=&channel_profile_id=`. The background preload covers yesterday to +14 days (plus the catch-up archive); any other day loads on demand in `ensureDay(_:)`.
+- That method returns nil when a backend can't serve a single day (NextPVR, the XMLTV fallback, demo mode, a Dispatcharr server that predates the windowed grid); `EPGCache` then falls back to one `getAllListings` download (`/api/epg/programs/` on Dispatcharr).
+- Window support is probed once per session (`DispatcharrGridWindow.probeURL`): a window-aware server rejects the inverted window with a 400, an older one ignores it and returns its default 25h grid.
+- Grid placeholder programmes have string ids hashed per process (`DispatcharrProgram.idWasSynthetic`) — fine for in-session dedup, never persist them.
+
 ### Response Models
 All API responses use `Codable` structs in `Core/Models/`:
 - `Channel` - Channel with id, name, number, hasIcon, streamURL

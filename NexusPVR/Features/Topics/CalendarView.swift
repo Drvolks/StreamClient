@@ -292,7 +292,7 @@ struct CalendarView: View {
                value: -maximumCatchupDays,
                to: now
            ) {
-            await epgCache.ensureDay(oldestArchiveDate, using: client)
+            await epgCache.ensureDays(from: oldestArchiveDate, through: now, using: client)
         }
 
         guard !Task.isCancelled else { return }
