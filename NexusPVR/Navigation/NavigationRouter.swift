@@ -258,6 +258,8 @@ struct IOSNavigation: View {
             .environment(\.openSidebar, {
                 isSidebarOpen = true
             })
+            // Notes where the screen is touched, for tap-anchored popovers.
+            .background(TouchLocationRecorderInstaller())
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Dismiss search dropdown (below the bar so it doesn't intercept bar taps)
@@ -369,15 +371,6 @@ struct IOSNavigation: View {
         .onAppear {
             appState.topicKeywords = UserPreferences.load().keywords
         }
-        // Topics are edited in Settings; keep the menu's counts in step.
-        .onChange(of: appState.topicKeywords) {
-            Task { await computeTopicMatchCounts() }
-        }
-        .onChange(of: epgCache.isFullyLoaded) {
-            if epgCache.isFullyLoaded {
-                Task { await computeTopicMatchCounts() }
-            }
-        }
         .onChange(of: searchText) { newValue in
             searchDebounceTask?.cancel()
             if appState.selectedTab == .search {
@@ -434,19 +427,6 @@ struct IOSNavigation: View {
             .keyboardShortcut("f", modifiers: .command)
             .hidden()
         }
-    }
-
-    // MARK: - Topic Match Counts
-
-    private func computeTopicMatchCounts() async {
-        let keywords = appState.topicKeywords
-        guard !keywords.isEmpty, epgCache.isFullyLoaded else { return }
-        let matches = await epgCache.matchingPrograms(keywords: keywords)
-        var counts: [String: Int] = [:]
-        for match in matches where match.matchedKeyword != MatchingProgram.scheduledKeyword {
-            counts[match.matchedKeyword, default: 0] += 1
-        }
-        appState.topicKeywordMatchCounts = counts
     }
 
     // MARK: - Guide Toolbar Content
@@ -584,7 +564,7 @@ struct IOSNavigation: View {
 
                             // Sub-item per keyword
                             ForEach(appState.topicKeywords, id: \.self) { keyword in
-                                sidebarTopicSubRow(keyword: keyword, count: appState.topicKeywordMatchCounts[keyword])
+                                sidebarTopicSubRow(keyword: keyword)
                             }
                         } else if tab == .guide {
                             // Guide header (tappable) + optional group sub-items
@@ -828,7 +808,7 @@ struct IOSNavigation: View {
         .padding(.vertical, 10)
     }
 
-    private func sidebarTopicSubRow(keyword: String, count: Int?) -> some View {
+    private func sidebarTopicSubRow(keyword: String) -> some View {
         let isSelected = appState.selectedTab == .topics && appState.selectedTopicKeyword == keyword
         return Button {
             appState.selectedTopicKeyword = keyword
@@ -842,11 +822,6 @@ struct IOSNavigation: View {
                 Text(keyword)
                     .font(.archivo(14, .semibold))
                 Spacer()
-                if let count {
-                    Text("(\(count))")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                }
             }
             .foregroundStyle(isSelected ? MidnightPalette.ink : MidnightPalette.inkSoft)
             .padding(.horizontal, Theme.spacingLG)

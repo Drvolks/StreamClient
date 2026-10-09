@@ -65,7 +65,7 @@ struct TVProgramCell: View {
         } else if isRecording {
             Theme.recording.opacity(0.3)
         } else if isAiring {
-            MidnightGradients.field(colorScheme)
+            MidnightGradients.airing(colorScheme)
         } else if program.hasEnded {
             MidnightPalette.cellPast
         } else {
@@ -101,14 +101,14 @@ struct TVProgramCell: View {
 
     private var titleInk: Color {
         if isFocused { return MidnightPalette.selectedInk }
-        if isAiring && !isRecording { return MidnightPalette.fieldInk }
+        if isAiring && !isRecording { return MidnightPalette.airingInk }
         if program.hasEnded { return MidnightPalette.cellPastInk }
         return MidnightPalette.cellRestInk
     }
 
     private var metaInk: Color {
         if isFocused { return MidnightPalette.selectedSub }
-        if isAiring && !isRecording { return MidnightPalette.fieldInk.opacity(0.85) }
+        if isAiring && !isRecording { return MidnightPalette.airingInk.opacity(0.85) }
         if program.hasEnded { return MidnightPalette.cellPastInk }
         return MidnightPalette.cellRestSub
     }

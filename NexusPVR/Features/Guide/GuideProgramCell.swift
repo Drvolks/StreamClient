@@ -78,7 +78,7 @@ struct GuideProgramCell: View {
         } else if isCurrentlyRecording {
             Theme.recording.opacity(0.3)
         } else if isAiring {
-            MidnightGradients.field(colorScheme)
+            MidnightGradients.airing(colorScheme)
         } else if program.hasEnded {
             MidnightPalette.cellPast
         } else if isHovering {
@@ -143,14 +143,14 @@ struct GuideProgramCell: View {
 
     private var titleInk: Color {
         if isSelected { return MidnightPalette.selectedInk }
-        if isAiring && !isCurrentlyRecording { return MidnightPalette.fieldInk }
+        if isAiring && !isCurrentlyRecording { return MidnightPalette.airingInk }
         if program.hasEnded { return MidnightPalette.cellPastInk }
         return MidnightPalette.cellRestInk
     }
 
     private var metaInk: Color {
         if isSelected { return MidnightPalette.selectedSub }
-        if isAiring && !isCurrentlyRecording { return MidnightPalette.fieldInk.opacity(0.85) }
+        if isAiring && !isCurrentlyRecording { return MidnightPalette.airingInk.opacity(0.85) }
         if program.hasEnded { return MidnightPalette.cellPastInk }
         return MidnightPalette.cellRestSub
     }

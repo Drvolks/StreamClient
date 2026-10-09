@@ -17,9 +17,6 @@ struct MidnightChannelPlate: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Plate ink: always light, since the plate is dark in both modes.
-    private static let plateInk = Color(hex: "#f4f7ff")
-
     var body: some View {
         ZStack {
             Rectangle().fill(MidnightGradients.channelPlate(colorScheme))
@@ -42,7 +39,7 @@ struct MidnightChannelPlate: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
-                    .foregroundStyle(Self.plateInk)
+                    .foregroundStyle(MidnightPalette.plateInk)
                     .padding(.horizontal, 12)
             }
         }

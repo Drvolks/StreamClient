@@ -76,7 +76,7 @@ struct SeriesCard: View {
     private var placeholderGlyph: some View {
         Image(systemName: "rectangle.stack")
             .font(.system(size: 28, weight: .semibold))
-            .foregroundStyle(Color(hex: "#f4f7ff").opacity(0.7))
+            .foregroundStyle(MidnightPalette.plateInk.opacity(0.7))
     }
 
     private var counts: String {

@@ -61,7 +61,7 @@ struct CalendarBlock: View {
     @ViewBuilder
     private var fill: some View {
         if isAiring {
-            MidnightGradients.field(colorScheme)
+            MidnightGradients.airing(colorScheme)
         } else if program.hasEnded {
             MidnightPalette.cellPast
         } else {
@@ -84,13 +84,13 @@ struct CalendarBlock: View {
     }
 
     private var titleInk: Color {
-        if isAiring { return MidnightPalette.fieldInk }
+        if isAiring { return MidnightPalette.airingInk }
         if program.hasEnded { return MidnightPalette.cellPastInk }
         return MidnightPalette.cellRestInk
     }
 
     private var metaInk: Color {
-        if isAiring { return MidnightPalette.fieldInk.opacity(0.85) }
+        if isAiring { return MidnightPalette.airingInk.opacity(0.85) }
         if program.hasEnded { return MidnightPalette.cellPastInk }
         return MidnightPalette.cellRestSub
     }

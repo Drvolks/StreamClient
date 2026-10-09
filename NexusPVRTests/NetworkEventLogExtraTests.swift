@@ -24,6 +24,27 @@ struct NetworkEventLogExtraTests {
         #expect(log.formattedLog.isEmpty)
     }
 
+    @Test("Only failed requests are printed to the console")
+    func consoleShowsFailuresOnly() {
+        func event(status: Int?, isSuccess: Bool, detail: String? = nil) -> NetworkEvent {
+            NetworkEvent(
+                timestamp: Date(timeIntervalSince1970: 0),
+                method: "GET",
+                path: "/api/channels",
+                statusCode: status,
+                isSuccess: isSuccess,
+                durationMs: 5,
+                responseSize: 0,
+                errorDetail: detail
+            )
+        }
+        #expect(!NetworkEventLog.printsToConsole(event(status: 200, isSuccess: true)))
+        // "Request started" notes carry a detail but are not failures.
+        #expect(!NetworkEventLog.printsToConsole(event(status: nil, isSuccess: true, detail: "Request started (attempt 1/5)")))
+        #expect(NetworkEventLog.printsToConsole(event(status: 429, isSuccess: false)))
+        #expect(NetworkEventLog.printsToConsole(event(status: nil, isSuccess: false, detail: "timed out")))
+    }
+
     @Test("consoleLine formats a successful event")
     func consoleLineSuccess() {
         let event = NetworkEvent(
