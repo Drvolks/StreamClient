@@ -139,7 +139,7 @@ struct PVRApp: App {
                         if newConfig.hasSameServer(as: client.config) {
                             // Only the custom host changed on another device:
                             // reroute without dropping the session or the EPG.
-                            client.updateCustomHost(newConfig.customHost, mode: newConfig.customHostMode)
+                            client.updateCustomHost(newConfig.customHost, mode: newConfig.customHostMode, wiFiSSID: newConfig.customHostWiFiSSID)
                         } else {
                             client.updateConfig(newConfig)
                             epgCache.invalidate()

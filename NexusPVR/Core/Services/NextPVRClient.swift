@@ -100,7 +100,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
     /// Base URL for every request and playback URL. Resolved per call, so a
     /// network change applies to the next request or stream (#165).
     var baseURL: String {
-        config.activeBaseURL(onExpensiveNetwork: networkPath.isExpensive)
+        config.activeBaseURL(
+            onExpensiveNetwork: networkPath.isExpensive,
+            currentWiFiSSID: config.customHostMode == .outsideWiFiNetwork ? networkPath.currentWiFiSSID : nil
+        )
     }
 
     var isConfigured: Bool {
@@ -115,9 +118,10 @@ final class NextPVRClient: ObservableObject, PVRClientProtocol {
 
     /// Applies a custom host change without dropping the session: both
     /// addresses reach the same server, so the current credentials stay valid.
-    func updateCustomHost(_ host: String, mode: CustomHostMode) {
+    func updateCustomHost(_ host: String, mode: CustomHostMode, wiFiSSID: String? = nil) {
         config.customHost = host
         config.customHostMode = mode
+        if let wiFiSSID { config.customHostWiFiSSID = wiFiSSID }
     }
 
     /// Logs `event` tagged with the host it went to: the request URL's when

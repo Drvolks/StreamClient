@@ -15,6 +15,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>StreamClient uses Location permission to read your Wi-Fi name and choose the primary or custom server address. Your location is not collected.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>StreamClient uses Location permission to read your Wi-Fi name and choose the primary or custom server address. Your location is not collected.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -18,6 +18,12 @@ nonisolated protocol NetworkPathReporting: AnyObject, Sendable {
     /// `prefersReducedData` this ignores Low Data Mode, which says nothing about
     /// whether the device is away from the home network.
     var isExpensive: Bool { get }
+    /// SSID of Wi-Fi on the active path, or nil when unavailable.
+    var currentWiFiSSID: String? { get }
+}
+
+nonisolated extension NetworkPathReporting {
+    var currentWiFiSSID: String? { nil }
 }
 
 /// Watches the default network path.
@@ -39,6 +45,7 @@ nonisolated final class NetworkPathMonitor: NetworkPathReporting, @unchecked Sen
     private var _prefersReducedData = false
     private var _isExpensive = false
     private var started = false
+    private var wiFiInterfaces: [String] = []
 
     var prefersReducedData: Bool {
         lock.lock()
@@ -50,6 +57,15 @@ nonisolated final class NetworkPathMonitor: NetworkPathReporting, @unchecked Sen
         lock.lock()
         defer { lock.unlock() }
         return _isExpensive
+    }
+
+    var currentWiFiSSID: String? {
+        lock.lock()
+        let interfaces = wiFiInterfaces
+        lock.unlock()
+        // Read on demand, including after permission changes and same-interface
+        // Wi-Fi roaming. Never reuse a cached SSID from a previous network.
+        return WiFiNetworkInformation.currentSSID(interfaceNames: interfaces)
     }
 
     /// Begins watching. Safe to call more than once.
@@ -65,6 +81,9 @@ nonisolated final class NetworkPathMonitor: NetworkPathReporting, @unchecked Sen
             self.lock.lock()
             self._prefersReducedData = reduced
             self._isExpensive = path.isExpensive
+            self.wiFiInterfaces = path.status == .satisfied && path.usesInterfaceType(.wifi)
+                ? path.availableInterfaces.filter { $0.type == .wifi }.map(\.name)
+                : []
             self.lock.unlock()
         }
         monitor.start(queue: queue)

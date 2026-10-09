@@ -87,7 +87,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     /// Base URL for every request and playback URL. Resolved per call, so a
     /// network change applies to the next request or stream (#165).
     var baseURL: String {
-        config.activeBaseURL(onExpensiveNetwork: networkPath.isExpensive)
+        config.activeBaseURL(
+            onExpensiveNetwork: networkPath.isExpensive,
+            currentWiFiSSID: config.customHostMode == .outsideWiFiNetwork ? networkPath.currentWiFiSSID : nil
+        )
     }
 
     var isConfigured: Bool {
@@ -112,9 +115,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
     /// Applies a custom host change without dropping the session: both
     /// addresses reach the same server, so the current credentials stay valid.
-    func updateCustomHost(_ host: String, mode: CustomHostMode) {
+    func updateCustomHost(_ host: String, mode: CustomHostMode, wiFiSSID: String? = nil) {
         config.customHost = host
         config.customHostMode = mode
+        if let wiFiSSID { config.customHostWiFiSSID = wiFiSSID }
     }
 
     /// Logs `event` tagged with the host it went to: the request URL's when
@@ -1891,7 +1895,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
 
     private func makeAbsoluteURL(from pathOrURL: String) -> URL? {
         if let url = URL(string: pathOrURL), url.scheme != nil {
-            return url
+            return config.routedServerURL(url, activeBaseURL: baseURL)
         }
         let normalized = pathOrURL.hasPrefix("/") ? pathOrURL : "/\(pathOrURL)"
         guard let base = URL(string: baseURL) else { return nil }
@@ -1909,7 +1913,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol {
     func channelIconURL(channelId: Int) throws -> URL? {
         guard !config.isDemoMode else { return DemoDataProvider.channelIconURL(channelId: channelId) }
         if let urlString = channelLogoURLs[channelId], let url = URL(string: urlString) {
-            return url
+            return config.routedServerURL(url, activeBaseURL: baseURL)
         }
         guard let logoId = channelIdToLogoId[channelId],
               let token = accessToken else { return nil }

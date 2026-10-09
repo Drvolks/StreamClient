@@ -17,16 +17,21 @@ struct CustomHostSettingsRows: View {
     @EnvironmentObject private var client: PVRClient
 
     @State private var hostText = ""
+    @State private var wiFiSSID = ""
     @State private var mode: CustomHostMode = .cellularOnly
     @State private var validationError: String?
     @State private var hasLoaded = false
     @FocusState private var isHostFocused: Bool
+    @FocusState private var isWiFiFocused: Bool
 
     var body: some View {
         #if !os(tvOS)
         midnightRows
             .onAppear(perform: load)
             .onChange(of: isHostFocused) { focused in
+                if !focused { apply() }
+            }
+            .onChange(of: isWiFiFocused) { focused in
                 if !focused { apply() }
             }
             .onChange(of: mode) { _ in
@@ -75,6 +80,28 @@ struct CustomHostSettingsRows: View {
             .disabled(!hasHostText)
             .opacity(hasHostText ? 1 : 0.45)
             .accessibilityIdentifier("custom-host-mode-picker")
+        }
+        if mode == .outsideWiFiNetwork {
+            MacSettingsRow(title: "Wi-Fi Network", subtitle: "Saved on this device. Match the name exactly, including case and spaces.") {
+                TextField("My Home Wi-Fi", text: $wiFiSSID)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.done)
+                    #endif
+                    .autocorrectionDisabled()
+                    .focused($isWiFiFocused)
+                    .onSubmit { apply() }
+                    .frame(maxWidth: 220)
+                    .padding(8)
+                    .background(MidnightPalette.inputBg)
+                    .accessibilityIdentifier("custom-host-wifi-field")
+            }
+            MacSettingsRow(title: "Wi-Fi Name Access", subtitle: "Allow Location access in system Settings (Precise Location on iPhone/iPad). Wi-Fi names may be unavailable due to permissions, VPNs, or platform restrictions; the custom host is used then.") {
+                Button("Allow Wi-Fi Name Access") { WiFiNamePermission.shared.request() }
+                    .accessibilityIdentifier("custom-host-wifi-permission")
+            }
         }
     }
     #endif
@@ -144,6 +171,9 @@ struct CustomHostSettingsRows: View {
             #endif
         case .always:
             return "Every request and stream goes through the custom host."
+        case .outsideWiFiNetwork:
+            return "Use the primary address on this Wi-Fi; otherwise use the custom host. "
+                + "An empty or unreadable Wi-Fi name uses the custom host. Applies to the next request or stream."
         }
     }
 
@@ -151,6 +181,7 @@ struct CustomHostSettingsRows: View {
         guard !hasLoaded else { return }
         hostText = client.config.customHost
         mode = client.config.customHostMode
+        wiFiSSID = client.config.customHostWiFiSSID
         hasLoaded = true
     }
 
@@ -167,8 +198,9 @@ struct CustomHostSettingsRows: View {
         hostText = trimmed
 
         let current = client.config
-        guard trimmed != current.customHost || mode != current.customHostMode else { return }
-        client.updateCustomHost(trimmed, mode: mode)
+        guard trimmed != current.customHost || mode != current.customHostMode
+            || !wiFiSSID.utf8.elementsEqual(current.customHostWiFiSSID.utf8) else { return }
+        client.updateCustomHost(trimmed, mode: mode, wiFiSSID: wiFiSSID)
         client.config.save()
     }
 }
