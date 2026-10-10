@@ -29,7 +29,6 @@ private struct VODContentView: View {
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
     @FocusState private var focusedItemID: String?
     @State private var requestSearchKeyboard = false
-    @State private var isChoosingCategory = false
     /// The poster to return focus to when a title's page closes.
     @State private var lastOpenedItemID: String?
     #endif
@@ -94,12 +93,6 @@ private struct VODContentView: View {
                 lastOpenedItemID = newItem.id
             } else if oldItem != nil {
                 focusPoster(lastOpenedItemID)
-            }
-        }
-        .confirmationDialog("Category", isPresented: $isChoosingCategory, titleVisibility: .visible) {
-            Button("All categories") { selectCategory(nil) }
-            ForEach(viewModel.categories) { category in
-                Button(category.name) { selectCategory(category) }
             }
         }
         .onExitCommand {
@@ -167,23 +160,17 @@ private struct VODContentView: View {
     }
     #endif
 
-    #if !os(tvOS)
     @ViewBuilder
     private var categoryPicker: some View {
         if !viewModel.categories.isEmpty {
-            MidnightPicker(
-                title: "Category",
-                selection: Binding(
-                    get: { viewModel.selectedCategory },
-                    set: { selectCategory($0) }
-                ),
-                options: [(label: "All categories", value: VODCategory?.none)]
-                    + viewModel.categories.map { (label: $0.name, value: Optional($0)) }
+            VODCategoryPicker(
+                categories: viewModel.categories,
+                selection: viewModel.selectedCategory,
+                onSelect: selectCategory
             )
-            .accessibilityIdentifier("vod-category-picker")
+            .equatable()
         }
     }
-    #endif
 
     #if os(tvOS)
     @ViewBuilder
@@ -201,18 +188,7 @@ private struct VODContentView: View {
             .focusSection()
         } else {
             TVPageHeader(kicker: "On Demand", title: kind.title, readout: readout) {
-                if !viewModel.categories.isEmpty {
-                    Button {
-                        isChoosingCategory = true
-                    } label: {
-                        TVMidnightOutlineLabel(
-                            title: viewModel.selectedCategory?.name ?? "All categories",
-                            systemImage: "line.3.horizontal.decrease"
-                        )
-                    }
-                    .buttonStyle(TVMidnightButtonStyle(focusScale: 1.04))
-                    .accessibilityIdentifier("vod-category-picker")
-                }
+                categoryPicker
                 tvSearchButton
             }
             .focusSection()
