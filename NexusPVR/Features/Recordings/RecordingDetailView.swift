@@ -22,9 +22,8 @@ struct RecordingDetailView: View {
     @State private var deleteError: String?
     @State private var isCancellingSeries = false
 
-    #if os(iOS)
+    #if !os(tvOS)
     @State private var measuredContentHeight: CGFloat = 0
-    @State private var selectedDetent: PresentationDetent = .large
     #endif
 
     #if !DISPATCHERPVR
@@ -51,53 +50,61 @@ struct RecordingDetailView: View {
                 }
             }
             .streamPreparingOverlay()
-        #elseif os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            iPadSheetContent
-                .streamPreparingOverlay()
-        } else {
-            iPhoneSheetContent
-                .streamPreparingOverlay()
-        }
         #else
-        macOSContent
+        popoverContent
             .streamPreparingOverlay()
         #endif
     }
 
-    #if os(iOS)
-    private var iPadSheetContent: some View {
-        let screenHeight = UIScreen.main.bounds.height
+    #if !os(tvOS)
+    /// Shown in a popover next to the tap or click (see `programDetailPopover`), like
+    /// a programme's details: as wide as fits and as tall as its content,
+    /// up to most of the screen, with Done pinned above the scrolling content.
+    private var popoverContent: some View {
+        #if os(iOS)
+        let screen = UIScreen.main.bounds.size
+        let width = min(screen.width - 24, 440)
+        let maxHeight = screen.height * 0.72
+        #else
+        let width: CGFloat = 460
+        let maxHeight: CGFloat = 640
+        #endif
+        let headerHeight: CGFloat = 52
+        let contentHeight = measuredContentHeight > 0 ? measuredContentHeight : 320
+        let height = min(headerHeight + contentHeight, maxHeight)
 
         return VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button("Done") { dismiss() }
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal)
+                    .buttonStyle(MidnightOutlineButtonStyle())
+                    .keyboardShortcut(.cancelAction)
             }
-            .padding(.top, 8)
+            .padding(.horizontal, Theme.spacingMD)
+            .frame(height: headerHeight)
 
-            Divider()
-
-            Group {
-                if measuredContentHeight > screenHeight * 0.85 {
-                    ScrollView {
-                        recordingDetailContent
-                    }
-                } else {
-                    recordingDetailContent
-                }
+            ScrollView {
+                recordingDetailContent
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(key: RecordingFullHeightPreferenceKey.self, value: proxy.size.height)
+                        }
+                    )
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Theme.background)
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(key: RecordingFullHeightPreferenceKey.self, value: proxy.size.height)
-            }
-        )
+        .frame(width: width)
+        #if os(iOS)
+        // An ideal height, not a fixed one: the popover asks for this much,
+        // and the content scrolls if it gets less.
+        .frame(idealHeight: height, maxHeight: height)
+        #else
+        // A macOS popover only follows a fixed height once the content has
+        // been measured.
+        .frame(height: height)
+        #endif
+        .midnightPopoverContentGround()
         .alert("Error", isPresented: .constant(deleteError != nil)) {
             Button("OK") { deleteError = nil }
         } message: {
@@ -105,52 +112,9 @@ struct RecordingDetailView: View {
                 Text(error)
             }
         }
-        .presentationDetents(Set([detentHeight, .large]), selection: $selectedDetent)
-        .modifier(RecordingPresentationSizingCompat())
         .onPreferenceChange(RecordingFullHeightPreferenceKey.self) { fullHeight in
             measuredContentHeight = fullHeight
-            resizeiPadDetent()
         }
-    }
-
-    private var detentHeight: PresentationDetent {
-        let h = measuredContentHeight > 0 ? measuredContentHeight : UIScreen.main.bounds.height
-        return .height(min(h, UIScreen.main.bounds.height * 0.88))
-    }
-
-    private func resizeiPadDetent() {
-        let screenHeight = UIScreen.main.bounds.height
-        let cap = screenHeight * 0.88
-        if measuredContentHeight > cap {
-            selectedDetent = .large
-        } else if measuredContentHeight > 0 {
-            selectedDetent = .height(measuredContentHeight)
-        }
-    }
-
-    private var iPhoneSheetContent: some View {
-        NavigationStack {
-            ScrollView {
-                recordingDetailContent
-            }
-            .background(Theme.background)
-            .navigationTitle("Recording Details")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .alert("Error", isPresented: .constant(deleteError != nil)) {
-                Button("OK") { deleteError = nil }
-            } message: {
-                if let error = deleteError {
-                    Text(error)
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .modifier(RecordingPresentationSizingCompat())
     }
 
     private var recordingDetailContent: some View {
@@ -162,41 +126,8 @@ struct RecordingDetailView: View {
             }
             actionSection
         }
-        .padding()
-    }
-    #endif
-
-    #if os(macOS)
-    private var macOSContent: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.spacingLG) {
-                    headerSection
-                    infoSection
-                    if recording.desc != nil || recording.seriesInfo != nil {
-                        descriptionSection
-                    }
-                    actionSection
-                }
-                .padding()
-            }
-            .background(Theme.background)
-            .navigationTitle("Recording Details")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .alert("Error", isPresented: .constant(deleteError != nil)) {
-                Button("OK") { deleteError = nil }
-            } message: {
-                if let error = deleteError {
-                    Text(error)
-                }
-            }
-        }
-        .frame(minWidth: 320, idealWidth: 460, maxWidth: 700)
-        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal)
+        .padding(.bottom)
     }
     #endif
 
@@ -471,7 +402,8 @@ struct RecordingDetailView: View {
             }
         }
         .padding()
-        .cardStyle()
+        .background(Theme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 
     private func infoRow(icon: String, label: String, value: String) -> some View {
@@ -506,7 +438,8 @@ struct RecordingDetailView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle()
+        .background(Theme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 
     #if !os(tvOS)
@@ -737,22 +670,11 @@ struct RecordingDetailView: View {
     }
 }
 
-#if os(iOS)
+#if !os(tvOS)
 private struct RecordingFullHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
-    }
-}
-
-private struct RecordingPresentationSizingCompat: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom != .pad {
-            content.presentationSizing(.page)
-        } else {
-            content
-        }
     }
 }
 #endif
@@ -775,9 +697,9 @@ private struct TVPopupActionButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(backgroundColor(configuration: configuration))
             .foregroundStyle(foregroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+            .clipShape(MidnightControlShape())
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusMD)
+                MidnightControlShape()
                     .stroke(isFocused ? Color.white : Color.clear, lineWidth: 2)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : isFocused ? 1.02 : 1.0)

@@ -41,6 +41,8 @@ private struct RecordingsListContentView: View {
     @State private var suppressNextFilterSelectionChange = false
     #if os(macOS)
     @State private var macSearchText = ""
+    #endif
+    #if !os(tvOS)
     /// The recording waiting for the user to confirm its deletion.
     @State private var pendingDelete: Recording?
     #endif
@@ -192,7 +194,7 @@ private struct RecordingsListContentView: View {
                 }
             }
             #endif
-            .detailCover(item: $selectedRecording) { recording in
+            .programDetailPopover(item: $selectedRecording) { recording in
                 RecordingDetailView(recording: recording)
                     .environmentObject(client)
                     .environmentObject(appState)
@@ -267,7 +269,8 @@ private struct RecordingsListContentView: View {
                  ? "\(recording.cleanName) won't be recorded."
                  : "\(recording.cleanName) will be deleted from the server.")
         }
-        #else
+        #endif
+        #if !os(macOS)
         .background(MidnightGradients.ground(colorScheme))
         #endif
         .task {
@@ -880,7 +883,7 @@ private struct RecordingsListContentView: View {
                     .foregroundStyle(MidnightPalette.ink)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                    .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("series-back-button")
@@ -1165,7 +1168,21 @@ private struct RecordingsListContentView: View {
                 in: appState.topicKeywords
             ),
             showsEpisodeTitle: showsEpisodeTitle,
-            durationWarning: durationWarning(for: recording)
+            durationWarning: durationWarning(for: recording),
+            // The strip has its own "from the beginning", so play resumes
+            // a part-watched recording without asking.
+            onPlay: {
+                if recording.recordingStatus == .recording {
+                    inProgressRecording = recording
+                } else if recording.hasResumePosition && !recording.isWatched {
+                    playRecording(recording)
+                } else {
+                    playRecordingFromBeginning(recording)
+                }
+            },
+            onPlayFromBeginning: { playRecordingFromBeginning(recording) },
+            onInfo: { selectedRecording = recording },
+            onDelete: { pendingDelete = recording }
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -1198,6 +1215,24 @@ private struct RecordingsListContentView: View {
             }
         }
         .resumeDialog(recording: recording, resumeRecording: $resumeRecording, playRecording: playRecording, playFromBeginning: playRecordingFromBeginning)
+        // On the row, not the page, so the system anchors it to the row.
+        .confirmationDialog(
+            recording.recordingStatus.isScheduled ? "Cancel Recording" : "Delete Recording",
+            isPresented: Binding(
+                get: { pendingDelete?.id == recording.id },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(recording.recordingStatus.isScheduled ? "Cancel Recording" : "Delete", role: .destructive) {
+                deleteRecording(recording)
+                pendingDelete = nil
+            }
+        } message: {
+            Text(recording.recordingStatus.isScheduled
+                 ? "\(recording.cleanName) won't be recorded."
+                 : "\(recording.cleanName) will be deleted from the server.")
+        }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets())

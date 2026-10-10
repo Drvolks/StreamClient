@@ -44,7 +44,8 @@ struct MacRecordingsHeader: View {
             }
             .padding(.horizontal, 10)
             .frame(height: MacGuideHeaderMetrics.searchHeight)
-            .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+            .clipShape(MidnightControlShape())
+            .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
             .fixedSize()
             .help("Recordings outlined in this color match your topics.")
 
@@ -90,8 +91,8 @@ struct MacRecordingsHeader: View {
         .frame(width: MacGuideHeaderMetrics.searchWidth, height: MacGuideHeaderMetrics.searchHeight)
         // Closure form: a plain colour background would bleed up into the
         // title bar's safe area.
-        .background { Rectangle().fill(MidnightPalette.inputBg) }
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .background { MidnightControlShape().fill(MidnightPalette.inputBg) }
+        .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
 }
 #endif

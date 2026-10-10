@@ -2,8 +2,8 @@
 //  CatchupPlayback.swift
 //  nextpvr-apple-client
 //
-//  Starts catch-up playback of a past program (#119). Shared by the program
-//  detail sheet and the macOS guide's detail bar.
+//  Starts catch-up playback of a past program (#119), from the program
+//  details and the channel cards.
 //
 
 #if DISPATCHERPVR

@@ -26,9 +26,9 @@ private struct MidnightGhostButtonBody: View {
             .foregroundStyle(MidnightPalette.accentSoft)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(isHovering ? MidnightPalette.hoverTint : .clear)
+            .background(isHovering ? MidnightPalette.hoverTint : .clear, in: MidnightControlShape())
             .opacity(configuration.isPressed ? 0.82 : isEnabled ? 1 : 0.45)
-            .contentShape(Rectangle())
+            .contentShape(MidnightControlShape())
             .onHover { isHovering = $0 }
     }
 }

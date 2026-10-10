@@ -10,7 +10,7 @@
 import Foundation
 
 nonisolated enum GuideCellTimeLabel {
-    /// Width the detail bar passes to always get the full form.
+    /// Width a caller passes to always get the full form.
     static let fullWidth: CGFloat = 200
     /// Cells narrower than this drop the meridiems ("10 – 10:30") and their
     /// badges.

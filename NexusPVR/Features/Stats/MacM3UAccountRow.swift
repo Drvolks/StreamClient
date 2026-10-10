@@ -38,7 +38,7 @@ struct MacM3UAccountRow: View {
                     Text(typeTag)
                         .badgeLabel()
                         .foregroundStyle(MidnightPalette.inkSoft)
-                        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                        .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.line, lineWidth: 1) }
                 }
                 Text(account.serverUrl)
                     .midnightMeta(11)

@@ -3,8 +3,9 @@
 //  nextpvr-apple-client
 //
 //  A channel in the iOS Channels grid (Midnight): logo band, name, status
-//  tags, what's on now with its progress and end time. The whole card is a
-//  button (tap plays), as on tvOS.
+//  tags, what's on now with its progress and end time, and the same action
+//  strip as on macOS (watch, watch from the beginning, record, info).
+//  Tapping the card above the strip also watches.
 //
 
 #if os(iOS)
@@ -19,10 +20,33 @@ struct PhoneChannelCard: View {
     var matchedTopic: String?
     var isScheduledRecording = false
     var isCurrentlyRecording = false
+    /// Whether "watch from the beginning" can play anything right now.
+    var canWatchFromStart = false
+    var showsRecord = true
+    let onWatch: () -> Void
+    let onWatchFromStart: () -> Void
+    let onRecord: () -> Void
+    let onInfo: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onWatch) {
+                summary
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("channel-card-\(channel.id)")
+
+            actionStrip
+        }
+        .background(MidnightPalette.cellRest)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
+    }
+
+    private var summary: some View {
         VStack(alignment: .leading, spacing: 0) {
             MidnightChannelPlate(
                 channel: channel,
@@ -63,9 +87,53 @@ struct PhoneChannelCard: View {
             .padding(EdgeInsets(top: 9, leading: 11, bottom: 11, trailing: 11))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(MidnightPalette.cellRest)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
-        .contentShape(Rectangle())
+    }
+
+    private var actionStrip: some View {
+        let hasProgram = currentProgram != nil
+        return HStack(spacing: 0) {
+            MidnightActionCell(systemImage: "play.fill", help: "Watch", action: onWatch)
+            #if DISPATCHERPVR
+            divider
+            MidnightActionCell(
+                systemImage: "gobackward",
+                help: "Watch from the beginning",
+                isEnabled: canWatchFromStart,
+                isDimmed: !hasProgram,
+                action: onWatchFromStart
+            )
+            #endif
+            if showsRecord {
+                divider
+                MidnightActionCell(
+                    systemImage: isScheduledRecording ? "record.circle.fill" : "record.circle",
+                    help: isScheduledRecording ? "Cancel recording" : "Record",
+                    isEnabled: hasProgram,
+                    isDimmed: !hasProgram,
+                    action: onRecord
+                )
+            }
+            divider
+            MidnightActionCell(
+                systemImage: "info.circle",
+                help: "Info",
+                isEnabled: hasProgram,
+                isDimmed: !hasProgram,
+                action: onInfo
+            )
+        }
+        .frame(height: 40)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
+        }
+    }
+
+    private var divider: some View {
+        Rectangle().fill(MidnightPalette.lineSoft).frame(width: 1)
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous)
     }
 
     /// Fixed height, so cards stay level whether or not they carry tags.
@@ -78,7 +146,7 @@ struct PhoneChannelCard: View {
                 Text(matchedTopic)
                     .badgeLabel()
                     .foregroundStyle(MidnightPalette.topicInk)
-                    .background(MidnightPalette.topic)
+                    .background(MidnightPalette.topic, in: Theme.badgeShape)
                     .lineLimit(1)
             }
         }

@@ -138,7 +138,7 @@ struct MacTopicProgramRow: View {
             Text("Scheduled")
                 .badgeLabel()
                 .foregroundStyle(MidnightPalette.inkSoft)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.line, lineWidth: 1) }
                 .accessibilityIdentifier("scheduled-indicator")
         } else if program.isCurrentlyAiring {
             MidnightFieldChip(text: "On now", size: 9)
@@ -149,7 +149,7 @@ struct MacTopicProgramRow: View {
         Text(text)
             .badgeLabel()
             .foregroundStyle(ink)
-            .background(fill)
+            .background(fill, in: Theme.badgeShape)
     }
 
     private var actionStrip: some View {
@@ -175,7 +175,11 @@ struct MacTopicProgramRow: View {
             }
         }
         .frame(width: 34 * 3 + 2, height: 34)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous)
+                .strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
+        }
     }
 
     private var divider: some View {

@@ -64,8 +64,9 @@ struct TVChannelCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(MidnightPalette.cellRest)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
         .overlay {
-            Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous).strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
         }
     }
 
@@ -79,7 +80,7 @@ struct TVChannelCard: View {
                 Text(matchedTopic)
                     .badgeLabel()
                     .foregroundStyle(MidnightPalette.topicInk)
-                    .background(MidnightPalette.topic)
+                    .background(MidnightPalette.topic, in: Theme.badgeShape)
                     .lineLimit(1)
             }
         }

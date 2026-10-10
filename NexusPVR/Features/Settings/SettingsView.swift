@@ -260,7 +260,7 @@ struct SettingsView: View {
                                 .foregroundStyle(MidnightPalette.danger)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
-                                .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
+                                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.danger, lineWidth: 1) }
                         }
                     }
                 }

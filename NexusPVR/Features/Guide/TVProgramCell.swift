@@ -44,14 +44,14 @@ struct TVProgramCell: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 10)
-        .frame(width: max(width - 2, 60), height: height, alignment: .leading)
+        .frame(width: max(width - Theme.guideCellGap, 60), height: height - Theme.guideCellGap, alignment: .leading)
         .background(fill)
         .overlay(alignment: .leading) {
             if let bar = barColor {
                 Rectangle().fill(bar).frame(width: 5)
             }
         }
-        .clipped()
+        .clipShape(Theme.guideCellShape)
         .scaleEffect(isFocused ? 1.02 : 1.0, anchor: .leading)
         .shadow(color: isFocused ? .black.opacity(0.35) : .clear, radius: 10, y: 4)
         .zIndex(isFocused ? 1 : 0)
@@ -85,7 +85,7 @@ struct TVProgramCell: View {
                 Text(matchedTopic)
                     .badgeLabel()
                     .foregroundStyle(MidnightPalette.topicInk)
-                    .background(MidnightPalette.topic)
+                    .background(MidnightPalette.topic, in: Theme.badgeShape)
                     .lineLimit(1)
             }
         }

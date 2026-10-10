@@ -36,7 +36,7 @@ struct ProgramDetailView: View {
     @State private var inProgressRecording: Recording?
     @State private var completedRecording: Recording?
     @State private var didChangeRecording = false
-    #if os(iOS)
+    #if !os(tvOS)
     @State private var measuredContentHeight: CGFloat = 0
     #endif
 
@@ -87,44 +87,28 @@ struct ProgramDetailView: View {
                 await checkIfScheduled()
             }
             .streamPreparingOverlay()
-        #elseif os(iOS)
-        iOSPopoverContent
-            .streamPreparingOverlay()
         #else
-        NavigationStack {
-            ScrollView {
-                programDetailContent
-            }
-            .background(Theme.background)
-            .fixedSize(horizontal: false, vertical: true)
-            .alert("Error", isPresented: .constant(scheduleError != nil)) {
-                Button("OK") { scheduleError = nil }
-            } message: {
-                if let error = scheduleError {
-                    Text(error)
-                }
-            }
-        }
-        .frame(minWidth: 320, idealWidth: 460, maxWidth: 700)
-        .fixedSize(horizontal: false, vertical: true)
-        .task {
-            await checkIfScheduled()
-        }
-        .streamPreparingOverlay()
+        popoverContent
+            .streamPreparingOverlay()
         #endif
     }
 
-    #if os(iOS)
-    /// Shown in a popover next to the tap (see `programDetailPopover`), on
-    /// iPhone and iPad: as wide as fits and as tall as its content, up to
-    /// most of the screen. Done stays pinned above the scrolling content, so
-    /// it is still there when the system gives the popover less height than
-    /// it asked for.
-    private var iOSPopoverContent: some View {
+    #if !os(tvOS)
+    /// Shown in a popover next to the tap or click (see
+    /// `programDetailPopover`): as wide as fits and as tall as its content,
+    /// up to most of the screen. Done stays pinned above the scrolling
+    /// content, so it is still there when the system gives the popover less
+    /// height than it asked for.
+    private var popoverContent: some View {
+        #if os(iOS)
         let screen = UIScreen.main.bounds.size
         let width = min(screen.width - 24, 440)
-        let headerHeight: CGFloat = 52
         let maxHeight = screen.height * 0.72
+        #else
+        let width: CGFloat = 460
+        let maxHeight: CGFloat = 640
+        #endif
+        let headerHeight: CGFloat = 52
         let contentHeight = measuredContentHeight > 0 ? measuredContentHeight : 320
         let height = min(headerHeight + contentHeight, maxHeight)
 
@@ -133,6 +117,7 @@ struct ProgramDetailView: View {
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(MidnightOutlineButtonStyle())
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, Theme.spacingMD)
             .frame(height: headerHeight)
@@ -148,11 +133,17 @@ struct ProgramDetailView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .frame(width: width)
+        #if os(iOS)
         // An ideal height, not a fixed one: the popover asks for this much,
         // and the content scrolls if it gets less.
-        .frame(width: width)
         .frame(idealHeight: height, maxHeight: height)
-        .background(MidnightPalette.railHead)
+        #else
+        // A macOS popover only follows a fixed height once the content has
+        // been measured.
+        .frame(height: height)
+        #endif
+        .midnightPopoverContentGround()
         .alert("Error", isPresented: .constant(scheduleError != nil)) {
             Button("OK") { scheduleError = nil }
         } message: {
@@ -171,13 +162,6 @@ struct ProgramDetailView: View {
 
     private var programDetailContent: some View {
         VStack(alignment: .leading, spacing: Theme.spacingMD) {
-            #if os(macOS)
-            HStack {
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-            }
-            #endif
             // Content area
             ZStack(alignment: .trailing) {
                 VStack(alignment: .leading, spacing: Theme.spacingMD) {
@@ -254,7 +238,7 @@ struct ProgramDetailView: View {
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.surface.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
 
                     // Description section
                     if program.desc != nil || program.genres != nil || program.seriesInfo != nil {
@@ -278,7 +262,7 @@ struct ProgramDetailView: View {
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.surface.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
                     }
 
                     actionSection
@@ -399,7 +383,7 @@ struct ProgramDetailView: View {
         }
         .padding()
         .background(Theme.surface.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 
     private func descriptionSection(_ description: String) -> some View {
@@ -422,7 +406,7 @@ struct ProgramDetailView: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 
     #if DISPATCHERPVR
@@ -1091,7 +1075,7 @@ struct ProgramDetailView: View {
     #endif
 }
 
-#if os(iOS)
+#if !os(tvOS)
 private struct ProgramDetailFullHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
@@ -1121,10 +1105,10 @@ private struct TVProgramPopupButtonStyle: ButtonStyle {
             .padding(.horizontal, Theme.spacingLG)
             .padding(.vertical, Theme.spacingMD)
             .frame(maxWidth: .infinity)
-            .background(backgroundColor(configuration: configuration))
+            .background(backgroundColor(configuration: configuration), in: MidnightControlShape())
             .foregroundStyle(foregroundColor)
             .overlay {
-                Rectangle().strokeBorder(isFocused ? MidnightPalette.ink : Color.clear, lineWidth: 3)
+                MidnightControlShape().strokeBorder(isFocused ? MidnightPalette.ink : Color.clear, lineWidth: 3)
             }
             .scaleEffect(configuration.isPressed ? 0.98 : isFocused ? 1.02 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: configuration.isPressed)

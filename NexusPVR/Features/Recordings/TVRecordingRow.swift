@@ -67,7 +67,7 @@ struct TVRecordingRow: View {
                         .foregroundStyle(isFocused ? MidnightPalette.selectedInk : MidnightPalette.accentSoft)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(isFocused ? MidnightPalette.selectedSub.opacity(0.2) : MidnightPalette.barSoft)
+                        .background(isFocused ? MidnightPalette.selectedSub.opacity(0.2) : MidnightPalette.barSoft, in: Theme.badgeShape)
                 }
                 Text(title)
                     .font(.archivo(Theme.scaledFont(23), .extraBold))
@@ -81,7 +81,7 @@ struct TVRecordingRow: View {
                         .lineLimit(1)
                         .badgeLabel()
                         .foregroundStyle(MidnightPalette.topicInk)
-                        .background(MidnightPalette.topic)
+                        .background(MidnightPalette.topic, in: Theme.badgeShape)
                 }
             }
 
@@ -199,21 +199,21 @@ struct TVRecordingRow: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .background(Theme.recording)
+                .background(Theme.recording, in: Theme.badgeShape)
         case .pending, .conflict:
             Text(status == .conflict ? "Conflict" : "Scheduled")
                 .midnightBadge(size)
                 .foregroundStyle(status == .conflict ? MidnightPalette.danger : subInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .overlay { Rectangle().strokeBorder(isFocused ? MidnightPalette.selectedSub : MidnightPalette.line, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(isFocused ? MidnightPalette.selectedSub : MidnightPalette.line, lineWidth: 1) }
         case .failed:
             Text("Failed")
                 .midnightBadge(size)
                 .foregroundStyle(MidnightPalette.danger)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.danger, lineWidth: 1) }
         default:
             WatchStateChip(state: watchState, size: size)
         }

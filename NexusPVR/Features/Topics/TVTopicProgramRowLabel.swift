@@ -125,14 +125,14 @@ struct TVTopicProgramRowLabel: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .background(Theme.recording)
+                .background(Theme.recording, in: Theme.badgeShape)
         } else if isScheduled {
             Text("Scheduled")
                 .midnightBadge(size)
                 .foregroundStyle(subInk)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .overlay { Rectangle().strokeBorder(isFocused ? MidnightPalette.selectedSub : MidnightPalette.line, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(isFocused ? MidnightPalette.selectedSub : MidnightPalette.line, lineWidth: 1) }
                 .accessibilityIdentifier("scheduled-indicator")
         } else if program.isCurrentlyAiring {
             MidnightFieldChip(text: "On now", size: size)
