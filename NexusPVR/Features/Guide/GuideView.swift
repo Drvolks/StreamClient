@@ -854,11 +854,6 @@ struct GuideView: View {
                                 Color.clear.frame(width: channelWidth, height: rowHeight)
                                 programsRow(channel)
                                     .frame(height: rowHeight)
-                                    #if !os(tvOS)
-                                    .overlay(alignment: .bottom) {
-                                        Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
-                                    }
-                                    #endif
                             }
 
                             // Channel cell pinned to visible left edge (after safe area)
@@ -1221,9 +1216,6 @@ struct GuideView: View {
             .clipped()
         }
         .frame(height: rowHeight)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
-        }
     }
 
     /// The accent now-line through the rows, while now is in the window.
@@ -1829,9 +1821,6 @@ struct GuideView: View {
             .frame(width: channelWidth, height: rowHeight)
             .overlay(alignment: .trailing) {
                 Rectangle().fill(MidnightPalette.line).frame(width: 1)
-            }
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
             }
         }
         .buttonStyle(.plain)

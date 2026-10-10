@@ -53,7 +53,7 @@ struct GuideProgramCell: View {
             .padding(.leading, 10 + (isAiring ? leadingPadding : 0))
             .padding(.trailing, 8)
         }
-        .frame(width: max(width - 2, 0), height: height)
+        .frame(width: max(width - Theme.guideCellGap, 0), height: height - Theme.guideCellGap)
         .overlay(alignment: .leading) {
             if let barColor {
                 Rectangle().fill(barColor).frame(width: 4)
@@ -61,11 +61,11 @@ struct GuideProgramCell: View {
         }
         .overlay {
             if isHovering && !isSelected {
-                Rectangle().strokeBorder(MidnightPalette.accent.opacity(0.7), lineWidth: 1)
+                Theme.guideCellShape.strokeBorder(MidnightPalette.accent.opacity(0.7), lineWidth: 1)
             }
         }
-        .clipped()
-        .contentShape(Rectangle())
+        .clipShape(Theme.guideCellShape)
+        .contentShape(Theme.guideCellShape)
         .onHover { isHovering = $0 }
     }
 

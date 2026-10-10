@@ -174,6 +174,18 @@ enum Theme {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
     }
 
+    /// Guide programme cells: rounded, with a gap around each, so they read
+    /// as separate plates and not as a ruled table.
+    static var guideCellShape: RoundedRectangle {
+        #if os(tvOS)
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        #else
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        #endif
+    }
+    /// How much narrower and shorter than its slot a guide cell is drawn.
+    static let guideCellGap: CGFloat = 4
+
     /// Corners of a row's action strip.
     #if os(macOS)
     static let stripRadius: CGFloat = 8
