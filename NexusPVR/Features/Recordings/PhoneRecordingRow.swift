@@ -4,9 +4,9 @@
 //
 //  A recording in the iOS lists (Midnight): episode chip and title with the
 //  watch state, air time and channel, tags, description, duration and size,
-//  then a resume or recording-progress bar. The macOS row's action strip
-//  has no room here: tap plays (or opens the details), swipe deletes, and
-//  the context menu has the rest.
+//  an action strip (play, play from the beginning, info, delete), then a
+//  resume or recording-progress bar. Tapping the row itself still plays (or
+//  opens the details), swipe deletes, and the context menu has the rest.
 //
 
 #if os(iOS)
@@ -20,6 +20,11 @@ struct PhoneRecordingRow: View {
     var showsEpisodeTitle = false
     /// A duration problem found while checking the stream, if any.
     var durationWarning: String?
+    /// Resumes a part-watched recording, plays any other from the start.
+    let onPlay: () -> Void
+    let onPlayFromBeginning: () -> Void
+    let onInfo: () -> Void
+    let onDelete: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -87,11 +92,16 @@ struct PhoneRecordingRow: View {
                     .lineLimit(2)
             }
 
-            if let facts = factsLine {
-                Text(facts)
-                    .midnightMeta(10.5)
-                    .foregroundStyle(MidnightPalette.inkFaint)
+            HStack(alignment: .bottom, spacing: 8) {
+                if let facts = factsLine {
+                    Text(facts)
+                        .midnightMeta(10.5)
+                        .foregroundStyle(MidnightPalette.inkFaint)
+                }
+                Spacer(minLength: 0)
+                actionStrip
             }
+            .padding(.top, 3)
 
             if status == .recording {
                 TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -111,8 +121,37 @@ struct PhoneRecordingRow: View {
             Rectangle().fill(MidnightPalette.lineSoft).frame(height: 1)
         }
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("recording-row-\(recording.id)")
+    }
+
+    private var actionStrip: some View {
+        let playable = status.isPlayable || status == .recording
+        // Starting over only means something once the recording has been played.
+        let canStartOver = playable && watchState != .new
+        let isResumable: Bool = if case .resume = watchState { true } else { false }
+        return MidnightActionStrip {
+            MidnightActionCell(
+                systemImage: "play.fill",
+                help: isResumable ? "Resume" : "Play",
+                isEnabled: playable,
+                isDimmed: !playable,
+                action: onPlay
+            )
+            MidnightActionCell(
+                systemImage: "gobackward",
+                help: "Play from the beginning",
+                isEnabled: canStartOver,
+                isDimmed: !canStartOver,
+                action: onPlayFromBeginning
+            )
+            MidnightActionCell(systemImage: "info.circle", help: "Info", action: onInfo)
+            MidnightActionCell(
+                systemImage: "trash",
+                help: status.isScheduled ? "Cancel recording" : "Delete",
+                action: onDelete
+            )
+        }
     }
 
     private func progressBar(_ fraction: Double, fill: AnyShapeStyle) -> some View {

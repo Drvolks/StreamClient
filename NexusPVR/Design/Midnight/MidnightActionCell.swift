@@ -2,7 +2,7 @@
 //  MidnightActionCell.swift
 //  nextpvr-apple-client
 //
-//  One icon cell of a macOS action strip (channel cards, recording rows).
+//  One icon cell of an action strip (channel cards, recording rows).
 //  Hovering fills it with the accent field (or `hoverFill`) and inverts the
 //  icon. A dimmed cell stays clickable only when `isEnabled`.
 //

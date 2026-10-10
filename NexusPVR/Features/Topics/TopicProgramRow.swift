@@ -141,29 +141,30 @@ struct TopicProgramRow: View {
         }
     }
 
-    /// Records, or cancels the recording; a 44pt target on a 34pt box.
+    /// Records, or cancels the recording: a one-cell action strip, like the
+    /// recordings rows'.
     private var recordButton: some View {
         let isSet = vm.isScheduled || vm.isRecording
-        return Button {
-            vm.toggleRecording(using: client, onChanged: onRecordingChanged)
-        } label: {
-            Group {
-                if vm.isProcessing {
-                    ProgressView()
-                } else {
-                    Image(systemName: isSet ? "record.circle.fill" : "record.circle")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(isSet ? Theme.recording : MidnightPalette.ink)
+        return MidnightActionStrip {
+            Button {
+                vm.toggleRecording(using: client, onChanged: onRecordingChanged)
+            } label: {
+                Group {
+                    if vm.isProcessing {
+                        ProgressView()
+                    } else {
+                        Image(systemName: isSet ? "record.circle.fill" : "record.circle")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(isSet ? Theme.recording : MidnightPalette.ink)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
-            .frame(width: 34, height: 34)
-            .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
-            .frame(width: 44, height: 44, alignment: .trailing)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(vm.isProcessing)
+            .accessibilityLabel(isSet ? "Cancel recording" : "Record")
         }
-        .buttonStyle(.plain)
-        .disabled(vm.isProcessing)
-        .accessibilityLabel(isSet ? "Cancel recording" : "Record")
     }
 }
 #endif
