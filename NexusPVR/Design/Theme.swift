@@ -174,6 +174,13 @@ enum Theme {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
     }
 
+    /// Corners of a row's action strip.
+    #if os(macOS)
+    static let stripRadius: CGFloat = 8
+    #else
+    static let stripRadius: CGFloat = 10
+    #endif
+
     /// A one-off corner radius. Always zero under Midnight; call sites keep
     /// the value they would use if corners ever came back.
     static func radius(_ value: CGFloat) -> CGFloat {

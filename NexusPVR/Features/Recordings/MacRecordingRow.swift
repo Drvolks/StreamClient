@@ -224,7 +224,11 @@ struct MacRecordingRow: View {
             )
         }
         .frame(width: 34 * 4 + 3, height: 34)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous)
+                .strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
+        }
     }
 
     private var divider: some View {

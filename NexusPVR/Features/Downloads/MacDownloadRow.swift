@@ -214,7 +214,11 @@ struct MacDownloadRow: View {
             .accessibilityIdentifier("download-remove-button")
         }
         .frame(width: CGFloat(cellCount) * 34 + CGFloat(cellCount - 1), height: 34)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous)
+                .strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
+        }
     }
 
     private var cellCount: Int {

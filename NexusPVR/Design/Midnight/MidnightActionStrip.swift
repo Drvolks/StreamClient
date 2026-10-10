@@ -15,7 +15,7 @@ struct MidnightActionStrip<Content: View>: View {
     /// Side of one cell: the strip's height, and each cell's width.
     static var cellSide: CGFloat { 40 }
 
-    private let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+    private let shape = RoundedRectangle(cornerRadius: Theme.stripRadius, style: .continuous)
 
     var body: some View {
         HStack(spacing: 0) {
