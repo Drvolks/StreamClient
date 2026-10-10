@@ -50,8 +50,6 @@ struct GuideView: View {
     private let hourWidth: CGFloat = 300
     private let channelWidth: CGFloat = 194
     private let rowHeight: CGFloat = 58
-    /// The program shown in the detail bar under the grid.
-    @State private var macSelection: ProgramDetail?
     #else
     private let hourWidth: CGFloat = Theme.hourColumnWidth
     private let channelWidth: CGFloat = Theme.channelColumnWidth
@@ -257,9 +255,6 @@ struct GuideView: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            #if os(macOS)
-            macOSDetailBar
-            #endif
         }
         #if os(iOS)
         .overlay(alignment: .top) {
@@ -435,67 +430,6 @@ struct GuideView: View {
                 }
             }
         )
-    }
-
-    private var macOSDetailBar: some View {
-        let program = macSelection?.program
-        let channel = macSelection?.channel
-        return MacGuideDetailBar(
-            program: program,
-            channel: channel,
-            primaryAction: program.flatMap { program in channel.flatMap { macPrimaryAction(program: program, channel: $0) } },
-            recordTitle: program.flatMap(macRecordTitle(for:)),
-            onPrimary: {
-                guard let program, let channel else { return }
-                if program.isCurrentlyAiring {
-                    playLiveChannel(channel)
-                } else {
-                    playCatchup(program: program, channel: channel)
-                }
-            },
-            onRecord: {
-                guard let program, let channel else { return }
-                toggleRecording(program: program, channel: channel)
-            },
-            onDetails: {
-                guard let program, let channel else { return }
-                selectedProgramDetail = (program: program, channel: channel)
-            },
-            onClear: {
-                macSelection = nil
-            }
-        )
-    }
-
-    private func macPrimaryAction(program: Program, channel: Channel) -> MacGuideDetailBar.PrimaryAction? {
-        if program.isCurrentlyAiring { return .watchLive }
-        #if DISPATCHERPVR
-        if program.hasEnded && viewModel.isCatchupAvailable(program, on: channel) { return .watchReplay }
-        #endif
-        return nil
-    }
-
-    private func macRecordTitle(for program: Program) -> String? {
-        guard !appState.hideRecordings, !program.hasEnded else { return nil }
-        return viewModel.isScheduledRecording(program) ? "Cancel Recording" : "Record"
-    }
-
-    private func playCatchup(program: Program, channel: Channel) {
-        #if DISPATCHERPVR
-        Task {
-            do {
-                try await CatchupPlayback.start(
-                    program: program,
-                    channel: channel,
-                    client: client,
-                    appState: appState,
-                    guideReturnTime: program.startDate
-                )
-            } catch {
-                streamError = error.localizedDescription
-            }
-        }
-        #endif
     }
     #endif
 
@@ -1966,18 +1900,17 @@ struct GuideView: View {
                     isCurrentlyRecording: isRecording,
                     isCatchupAvailable: catchupAvailable,
                     matchedTopic: viewModel.keywordMatchByProgramId[program.id],
-                    isSelected: macSelection?.program.id == program.id && macSelection?.channel.id == channel.id,
+                    // Stays lit while its details are open.
+                    isSelected: selectedProgramDetail?.program.id == program.id
+                        && selectedProgramDetail?.channel.id == channel.id,
                     leadingPadding: leadingPad
                 )
-                .onTapGesture(count: 2) {
-                    selectedProgramDetail = (program: program, channel: channel)
-                }
                 .onTapGesture {
-                    macSelection = ProgramDetail(program: program, channel: channel)
+                    selectedProgramDetail = (program: program, channel: channel)
                 }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction {
-                    macSelection = ProgramDetail(program: program, channel: channel)
+                    selectedProgramDetail = (program: program, channel: channel)
                 }
                 .contextMenu {
                     programContextMenu(program: program, channel: channel, isScheduled: isScheduled)
@@ -2082,18 +2015,6 @@ struct GuideView: View {
                         Label("Details", systemImage: "info.circle")
                     }
                     }
-
-    /// Schedules `program`, or cancels its recording when one is already set.
-    private func toggleRecording(program: Program, channel: Channel) {
-        Task {
-            if viewModel.isScheduledRecording(program), let recId = viewModel.recordingId(for: program) {
-                try? await client.cancelRecording(recordingId: recId)
-            } else {
-                try? await client.scheduleRecording(program: program, channel: channel)
-            }
-            await viewModel.reloadRecordings(client: client)
-        }
-    }
     #endif
 
     @ViewBuilder
