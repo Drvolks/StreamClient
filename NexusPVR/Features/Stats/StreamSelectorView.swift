@@ -78,8 +78,9 @@ struct StreamSelectorView: View {
             .padding(.horizontal, Theme.spacingSM)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surfaceHighlight)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusSM))
+            // A rounded rectangle, not the buttons' capsule: the label can
+            // run to two lines.
+            .background(Theme.surfaceHighlight, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
