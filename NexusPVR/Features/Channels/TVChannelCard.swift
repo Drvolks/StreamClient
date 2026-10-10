@@ -20,6 +20,9 @@ struct TVChannelCard: View {
     var matchedTopic: String?
     var isScheduledRecording = false
     var isCurrentlyRecording = false
+    /// Grows or shrinks the card's contents with its width at a fixed
+    /// "Channels per Row" (#177); 1 in the adaptive grid.
+    var scale: CGFloat = 1
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -28,14 +31,14 @@ struct TVChannelCard: View {
             MidnightChannelPlate(
                 channel: channel,
                 iconURL: iconURL,
-                logoInsets: EdgeInsets(top: 14, leading: 40, bottom: 14, trailing: 40),
-                nameSize: Theme.scaledFont(22)
+                logoInsets: EdgeInsets(top: 14 * scale, leading: 40 * scale, bottom: 14 * scale, trailing: 40 * scale),
+                nameSize: Theme.scaledFont(22) * scale
             )
-            .frame(height: Theme.scaledMetric(96))
+            .frame(height: Theme.scaledMetric(96) * scale)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8 * scale) {
                 Text(channel.name)
-                    .font(.archivo(Theme.scaledFont(21), .extraBold))
+                    .font(.archivo(Theme.scaledFont(21) * scale, .extraBold))
                     .textCase(.uppercase)
                     .foregroundStyle(MidnightPalette.ink)
                     .lineLimit(1)
@@ -44,23 +47,23 @@ struct TVChannelCard: View {
 
                 if let program = currentProgram {
                     Text(program.cleanName)
-                        .font(.archivo(Theme.scaledFont(17)))
+                        .font(.archivo(Theme.scaledFont(17) * scale))
                         .foregroundStyle(MidnightPalette.cellRestSub)
                         .lineLimit(2, reservesSpace: true)
                     progressBar(program.progress(at: now))
                     Text("until \(GuideCellTimeLabel.time(program.endDate))")
-                        .midnightMeta(Theme.scaledFont(14))
+                        .midnightMeta(Theme.scaledFont(14) * scale)
                         .foregroundStyle(MidnightPalette.inkFaint)
                 } else {
                     Text("No program info")
-                        .font(.archivo(Theme.scaledFont(17)))
+                        .font(.archivo(Theme.scaledFont(17) * scale))
                         .foregroundStyle(MidnightPalette.inkFaint)
                         .lineLimit(2, reservesSpace: true)
                     progressBar(0).hidden()
-                    Text(" ").midnightMeta(Theme.scaledFont(14)).hidden()
+                    Text(" ").midnightMeta(Theme.scaledFont(14) * scale).hidden()
                 }
             }
-            .padding(EdgeInsets(top: 12, leading: 16, bottom: 16, trailing: 16))
+            .padding(EdgeInsets(top: 12 * scale, leading: 16 * scale, bottom: 16 * scale, trailing: 16 * scale))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(MidnightPalette.cellRest)
@@ -96,7 +99,7 @@ struct TVChannelCard: View {
                     .frame(width: geo.size.width * min(max(fraction, 0), 1))
             }
         }
-        .frame(height: 4)
+        .frame(height: 4 * scale)
     }
 }
 #endif

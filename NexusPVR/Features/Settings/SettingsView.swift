@@ -99,6 +99,7 @@ struct SettingsView: View {
         case landingTab
         case theme
         case uiFontSize
+        case channelsPerRow
         /// Move or remove one topic (Settings > Topics).
         case topic(String)
     }
@@ -271,6 +272,9 @@ struct SettingsView: View {
             tvRow("Theme", value: theme.label) { activeTVPopup = .theme }
             tvRow("Text Size", value: uiFontSize.displayName, subtitle: "Scales text and rows across the app") {
                 activeTVPopup = .uiFontSize
+            }
+            tvRow("Channels per Row", value: ChannelGridLayout.label(appState.channelsPerRow), subtitle: "Fewer per row makes each channel card larger") {
+                activeTVPopup = .channelsPerRow
             }
         case .playback:
             #if !DISPATCHERPVR
@@ -781,6 +785,8 @@ struct SettingsView: View {
             return "Theme"
         case .uiFontSize:
             return "Text Size"
+        case .channelsPerRow:
+            return "Channels per Row"
         case .topic(let keyword):
             return keyword
         }
@@ -932,6 +938,21 @@ struct SettingsView: View {
                     appState.uiFontSize = size
                     var prefs = UserPreferences.load()
                     prefs.uiFontSize = size
+                    prefs.save()
+                }
+            }
+        case .channelsPerRow:
+            let options: [Int?] = [nil] + ChannelGridLayout.columnOptions
+            return options.map { columns in
+                TVPopupOption(
+                    id: "settings-popup-channels-per-row-\(ChannelGridLayout.label(columns))",
+                    title: ChannelGridLayout.label(columns),
+                    isCurrent: appState.channelsPerRow == columns,
+                    isDestructive: false
+                ) {
+                    appState.channelsPerRow = columns
+                    var prefs = UserPreferences.load()
+                    prefs.channelsPerRow = columns
                     prefs.save()
                 }
             }

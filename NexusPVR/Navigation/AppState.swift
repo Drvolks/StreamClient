@@ -184,6 +184,9 @@ final class AppState: ObservableObject {
     @Published var uiFontSize: UIFontSize = UserPreferences.load().uiFontSize {
         didSet { Theme.uiFontSize = uiFontSize }
     }
+
+    /// Columns in the tvOS Channels grid (#177); nil = Auto.
+    @Published var channelsPerRow: Int? = ChannelGridLayout.columns(UserPreferences.load().channelsPerRow)
     #endif
 
     /// Whether recording-related UI (tabs, menus, buttons) should be shown.

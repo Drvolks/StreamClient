@@ -42,6 +42,11 @@ struct PVRApp: App {
                let landing = UserPreferences.LandingTabOption(rawValue: arguments[index + 1]) {
                 demoPrefs.landingTab = landing
             }
+            // `--demo-channels-per-row 3` fixes the tvOS Channels grid (#177).
+            if let index = arguments.firstIndex(of: "--demo-channels-per-row"),
+               arguments.indices.contains(index + 1) {
+                demoPrefs.channelsPerRow = Int(arguments[index + 1])
+            }
             UserPreferences.demoStore = demoPrefs
         }
 
@@ -133,6 +138,10 @@ struct PVRApp: App {
                     // the same Apple ID syncs a new value.
                     if prefs.uiFontSize != appState.uiFontSize {
                         appState.uiFontSize = prefs.uiFontSize
+                    }
+                    let channelsPerRow = ChannelGridLayout.columns(prefs.channelsPerRow)
+                    if channelsPerRow != appState.channelsPerRow {
+                        appState.channelsPerRow = channelsPerRow
                     }
                     #endif
                 }

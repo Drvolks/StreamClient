@@ -171,6 +171,7 @@ Stored in `UserPreferences` struct (Core/Models/UserPreferences.swift), synced v
 - `keywords` - Topic keywords for program matching
 - `seekBackwardSeconds` - Default 10
 - `seekForwardSeconds` - Default 30
+- `channelsPerRow` - tvOS Channels grid columns (#177); nil = Auto (adaptive). `ChannelGridLayout` holds the options and scales `TVChannelCard`'s contents with the card width; `AppState.channelsPerRow` applies it live. `--demo-channels-per-row <n>` sets it in demo mode
 - `outputProfileId` - Dispatcharr Output Profile for live TV (#161); nil = Original. `DispatcherClient.liveStreamURL` validates it against `/api/core/outputprofiles/` and appends `?output_profile=<id>`, falling back to the plain URL with a `streamQualityNotice` when unavailable
 
 Also defines `PlayerStats` struct for MPV playback statistics.

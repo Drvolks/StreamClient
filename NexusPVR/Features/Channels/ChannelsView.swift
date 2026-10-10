@@ -44,6 +44,9 @@ struct ChannelsView: View {
     /// no neighbor to its left, i.e. it sits in the leftmost column.
     @State private var lastKnownFocusedChannelId: Int?
     @State private var headerDrawerKind: ChannelsDrawerKind?
+    /// Width of the channel grid, which sets how large a card's contents
+    /// draw at a fixed column count (#177).
+    @State private var channelGridWidth: CGFloat = 0
     @FocusState private var focusedDrawerItemId: String?
     #endif
 
@@ -57,6 +60,10 @@ struct ChannelsView: View {
     /// Minimum 2 visible columns on iPhone, scales up for iPad / macOS / tvOS.
     private var columns: [GridItem] {
         #if os(tvOS)
+        // A fixed count when the user picked one in Settings (#177).
+        if let count = appState.channelsPerRow {
+            return Array(repeating: GridItem(.flexible(), spacing: Theme.spacingMD), count: count)
+        }
         return [
             GridItem(.adaptive(minimum: 320, maximum: 420), spacing: Theme.spacingMD)
         ]
@@ -584,7 +591,12 @@ struct ChannelsView: View {
                         now: now,
                         matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
                         isScheduledRecording: rec != nil,
-                        isCurrentlyRecording: rec?.recordingStatus == .recording
+                        isCurrentlyRecording: rec?.recordingStatus == .recording,
+                        scale: ChannelGridLayout.cardScale(
+                            columns: appState.channelsPerRow,
+                            gridWidth: channelGridWidth,
+                            spacing: Theme.spacingMD
+                        )
                     )
                 }
                 .accessibilityIdentifier("channel-card-\(channel.id)")
@@ -605,6 +617,7 @@ struct ChannelsView: View {
                 #endif
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { channelGridWidth = $0 }
         .padding(Theme.spacingMD)
         #endif
     }
