@@ -16,21 +16,21 @@ extension View {
         onDismiss: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (Item) -> Content
     ) -> some View {
-        #if os(iOS)
-        modifier(TapAnchoredPopover(item: item, onDismiss: onDismiss, popoverContent: content))
-        #else
+        #if os(tvOS)
         detailCover(item: item, onDismiss: onDismiss, content: content)
+        #else
+        modifier(TapAnchoredPopover(item: item, onDismiss: onDismiss, popoverContent: content))
         #endif
     }
 }
 
-#if os(iOS)
+#if !os(tvOS)
 extension View {
-    /// iOS 26 gives a popover its own Liquid Glass ground; earlier systems
+    /// OS 26 gives a popover its own Liquid Glass ground; earlier systems
     /// get Midnight's opaque one.
     @ViewBuilder
     func midnightPopoverGround() -> some View {
-        if #available(iOS 26, *) {
+        if #available(iOS 26, macOS 26, *) {
             self
         } else {
             presentationBackground(MidnightPalette.railHead)
@@ -41,7 +41,7 @@ extension View {
     /// the glass.
     @ViewBuilder
     func midnightPopoverContentGround() -> some View {
-        if #available(iOS 26, *) {
+        if #available(iOS 26, macOS 26, *) {
             self
         } else {
             background(MidnightPalette.railHead)
@@ -69,6 +69,9 @@ private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: Vie
             } action: { frame in
                 frameInWindow = frame
             }
+            #if os(macOS)
+            .onAppear { ClickLocationRecorder.start() }
+            #endif
             .onChange(of: item?.id) {
                 guard let item else {
                     presented = nil
@@ -97,14 +100,32 @@ private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: Vie
     /// Left to itself the system sometimes picked the side with less room
     /// and squeezed the popover.
     private func roomierArrowEdge() -> Edge {
-        guard let tap = TouchLocationRecorder.lastLocation else { return .top }
-        return tap.y < UIScreen.main.bounds.height / 2 ? .top : .bottom
+        guard let tap = lastTap, let height = containerHeight else { return .top }
+        return tap.y < height / 2 ? .top : .bottom
+    }
+
+    /// The tap or click that asked for the popover, in window coordinates.
+    private var lastTap: CGPoint? {
+        #if os(iOS)
+        TouchLocationRecorder.lastLocation
+        #else
+        ClickLocationRecorder.lastLocation
+        #endif
+    }
+
+    /// Height of the screen (iOS) or window (macOS) the tap landed in.
+    private var containerHeight: CGFloat? {
+        #if os(iOS)
+        UIScreen.main.bounds.height
+        #else
+        ClickLocationRecorder.lastWindowHeight
+        #endif
     }
 
     /// A small rect at the last tap, in this view's coordinates; the middle
     /// of the view when no tap is known.
     private func anchorRect() -> CGRect {
-        guard let tap = TouchLocationRecorder.lastLocation, frameInWindow != .zero else {
+        guard let tap = lastTap, frameInWindow != .zero else {
             return CGRect(x: frameInWindow.width / 2, y: frameInWindow.height / 2, width: 1, height: 1)
         }
         return CGRect(x: tap.x - frameInWindow.minX - 1, y: tap.y - frameInWindow.minY - 1, width: 2, height: 2)

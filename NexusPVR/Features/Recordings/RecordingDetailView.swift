@@ -22,7 +22,7 @@ struct RecordingDetailView: View {
     @State private var deleteError: String?
     @State private var isCancellingSeries = false
 
-    #if os(iOS)
+    #if !os(tvOS)
     @State private var measuredContentHeight: CGFloat = 0
     #endif
 
@@ -50,24 +50,26 @@ struct RecordingDetailView: View {
                 }
             }
             .streamPreparingOverlay()
-        #elseif os(iOS)
-        iOSPopoverContent
-            .streamPreparingOverlay()
         #else
-        macOSContent
+        popoverContent
             .streamPreparingOverlay()
         #endif
     }
 
-    #if os(iOS)
-    /// Shown in a popover next to the tap (see `programDetailPopover`), like
+    #if !os(tvOS)
+    /// Shown in a popover next to the tap or click (see `programDetailPopover`), like
     /// a programme's details: as wide as fits and as tall as its content,
     /// up to most of the screen, with Done pinned above the scrolling content.
-    private var iOSPopoverContent: some View {
+    private var popoverContent: some View {
+        #if os(iOS)
         let screen = UIScreen.main.bounds.size
         let width = min(screen.width - 24, 440)
-        let headerHeight: CGFloat = 52
         let maxHeight = screen.height * 0.72
+        #else
+        let width: CGFloat = 460
+        let maxHeight: CGFloat = 640
+        #endif
+        let headerHeight: CGFloat = 52
         let contentHeight = measuredContentHeight > 0 ? measuredContentHeight : 320
         let height = min(headerHeight + contentHeight, maxHeight)
 
@@ -76,6 +78,7 @@ struct RecordingDetailView: View {
                 Spacer()
                 Button("Done") { dismiss() }
                     .buttonStyle(MidnightOutlineButtonStyle())
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, Theme.spacingMD)
             .frame(height: headerHeight)
@@ -91,10 +94,16 @@ struct RecordingDetailView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .frame(width: width)
+        #if os(iOS)
         // An ideal height, not a fixed one: the popover asks for this much,
         // and the content scrolls if it gets less.
-        .frame(width: width)
         .frame(idealHeight: height, maxHeight: height)
+        #else
+        // A macOS popover only follows a fixed height once the content has
+        // been measured.
+        .frame(height: height)
+        #endif
         .midnightPopoverContentGround()
         .alert("Error", isPresented: .constant(deleteError != nil)) {
             Button("OK") { deleteError = nil }
@@ -119,40 +128,6 @@ struct RecordingDetailView: View {
         }
         .padding(.horizontal)
         .padding(.bottom)
-    }
-    #endif
-
-    #if os(macOS)
-    private var macOSContent: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.spacingLG) {
-                    headerSection
-                    infoSection
-                    if recording.desc != nil || recording.seriesInfo != nil {
-                        descriptionSection
-                    }
-                    actionSection
-                }
-                .padding()
-            }
-            .background(Theme.background)
-            .navigationTitle("Recording Details")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .alert("Error", isPresented: .constant(deleteError != nil)) {
-                Button("OK") { deleteError = nil }
-            } message: {
-                if let error = deleteError {
-                    Text(error)
-                }
-            }
-        }
-        .frame(minWidth: 320, idealWidth: 460, maxWidth: 700)
-        .fixedSize(horizontal: false, vertical: true)
     }
     #endif
 
@@ -695,7 +670,7 @@ struct RecordingDetailView: View {
     }
 }
 
-#if os(iOS)
+#if !os(tvOS)
 private struct RecordingFullHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {

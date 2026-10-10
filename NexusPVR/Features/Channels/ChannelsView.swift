@@ -287,7 +287,7 @@ struct ChannelsView: View {
             }
         }
         .background(MidnightGradients.ground(colorScheme))
-        .sheet(item: $cardDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
+        .programDetailPopover(item: $cardDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
             ProgramDetailView(
                 program: detail.program,
                 channel: detail.channel,
