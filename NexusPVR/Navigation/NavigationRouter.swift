@@ -210,8 +210,13 @@ struct IOSNavigation: View {
     @State private var lastSearchedText = ""
     @FocusState private var isSearchFocused: Bool
 
+    /// The window's safe area as the menu uses it. Kept in state so the menu
+    /// follows a turn from one landscape to the other, which changes neither
+    /// the size class nor anything else this view observes (#176).
+    @State private var sidebarSafeArea = EdgeInsets()
+
     private var sidebarWidth: CGFloat {
-        320 + Self.windowSafeArea.leading
+        320 + sidebarSafeArea.leading
     }
 
     var body: some View {
@@ -333,9 +338,18 @@ struct IOSNavigation: View {
                     .transition(.opacity)
             }
         }
+        .onAppear { sidebarSafeArea = Self.windowSafeArea }
+        .onChange(of: isSidebarOpen) { sidebarSafeArea = Self.windowSafeArea }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            // The notification arrives before the interface has turned.
+            Task {
+                try? await Task.sleep(for: .milliseconds(450))
+                sidebarSafeArea = Self.windowSafeArea
+            }
+        }
         .overlay(alignment: .leading) {
             HStack(spacing: 0) {
-                sidebarInner(safeArea: Self.windowSafeArea)
+                sidebarInner(safeArea: sidebarSafeArea)
                     .frame(width: sidebarWidth)
                     .background(Theme.surface)
                     .clipShape(
@@ -517,7 +531,9 @@ struct IOSNavigation: View {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first
         guard let insets = window?.safeAreaInsets else { return EdgeInsets() }
-        return EdgeInsets(top: insets.top, leading: insets.left, bottom: insets.bottom, trailing: insets.right)
+        // Sideways, only the Dynamic Island's side needs clearing (#176).
+        let island = IslandInsets.current
+        return EdgeInsets(top: insets.top, leading: island.left, bottom: insets.bottom, trailing: island.right)
     }
 
     // MARK: - Sidebar Content

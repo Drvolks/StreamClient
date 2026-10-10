@@ -155,6 +155,11 @@ All API responses use `Codable` structs in `Core/Models/`:
 - **Remote Control**: MPV player handles play/pause, seek via Siri Remote
 - **Larger UI**: Theme provides larger sizes for tvOS (e.g., `cellHeight: 100` vs `60`, `iconSize: 80` vs `48`)
 
+## iPhone landscape and the Dynamic Island (#176)
+
+- iPhone supports portrait and both landscapes. A landscape iPhone reports the same safe-area inset on both sides, though only one has the island in it; `IslandInsets.current` gives the inset of the island's side only (`IslandSide` from the scene's interface orientation).
+- Full-bleed layouts use it instead of the raw safe area: the guide grid (`GuideView`, clipped and inset on the island's side, edge to edge on the other) and the iOS menu (`sidebarSafeArea`). Views laid out by the system (lists, toolbars) already respect both sides.
+
 ## Video Player (MPV)
 
 All player code lives in `Features/Player/PlayerView.swift`:

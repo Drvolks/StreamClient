@@ -231,6 +231,11 @@ struct GuideView: View {
     #endif
     @State private var rootLeadingSafeArea: CGFloat = 0
     @State private var rootTopSafeArea: CGFloat = 0
+    #if os(iOS)
+    /// Insets that keep the grid clear of the Dynamic Island on a landscape
+    /// iPhone, whichever side it is on (#176).
+    @State private var islandInsets = IslandInsets()
+    #endif
 
     private var contentView: some View {
         VStack(spacing: 0) {
@@ -267,17 +272,24 @@ struct GuideView: View {
         .background(GeometryReader { geo in
             Color.clear
                 .onAppear {
-                    rootLeadingSafeArea = geo.safeAreaInsets.leading
                     #if os(iOS)
                     if UIDevice.current.userInterfaceIdiom != .phone {
+                        rootLeadingSafeArea = geo.safeAreaInsets.leading
                         rootTopSafeArea = geo.safeAreaInsets.top
                     }
                     #else
+                    rootLeadingSafeArea = geo.safeAreaInsets.leading
                     rootTopSafeArea = geo.safeAreaInsets.top
                     #endif
                 }
                 .onChange(of: geo.safeAreaInsets.leading) { _, new in
+                    #if os(iOS)
+                    if UIDevice.current.userInterfaceIdiom != .phone {
+                        rootLeadingSafeArea = new
+                    }
+                    #else
                     rootLeadingSafeArea = new
+                    #endif
                 }
                 .onChange(of: geo.safeAreaInsets.top) { _, new in
                     #if os(iOS)
@@ -368,6 +380,10 @@ struct GuideView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
             refreshPhoneSafeAreasFromWindow()
         }
+        // A turn from one landscape straight to the other takes longer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            refreshPhoneSafeAreasFromWindow()
+        }
     }
 
     private func refreshPhoneSafeAreasFromWindow() {
@@ -376,8 +392,12 @@ struct GuideView: View {
         let windows = scenes.flatMap(\.windows)
         guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return }
         let insets = window.safeAreaInsets
-        // Use live per-orientation values (do not keep stale larger inset)
-        rootLeadingSafeArea = insets.left
+        // Only the Dynamic Island's side is inset (#176). The scroll view
+        // still reaches under it, so the pinned channel column has to step
+        // over an island on the left.
+        let island = IslandInsets.current
+        islandInsets = island
+        rootLeadingSafeArea = island.left
         // Visual compensation: raw top inset sits slightly too low for the guide header.
         rootTopSafeArea = (verticalSizeClass == .some(.compact)) ? 0 : max(0, insets.top - 40)
     }
@@ -990,6 +1010,16 @@ struct GuideView: View {
                 #endif
             }
         }
+        #if os(iOS)
+        // On an iPhone the grid runs edge to edge, except on the side the
+        // Dynamic Island is on (#176). A scroll view keeps drawing into the
+        // safe area next to it, so it is clipped to its own width; the clip
+        // is stretched vertically to leave the rows under the bars alone.
+        .clipShape(Rectangle().scale(x: UIDevice.current.userInterfaceIdiom == .phone ? 1 : 20, y: 20))
+        .padding(.leading, islandInsets.left)
+        .padding(.trailing, islandInsets.right)
+        .ignoresSafeArea(.container, edges: UIDevice.current.userInterfaceIdiom == .phone ? .horizontal : [])
+        #endif
         .onChange(of: scenePhase) {
             if scenePhase == .active
                 && !preservesGuidePositionAfterCatchup
