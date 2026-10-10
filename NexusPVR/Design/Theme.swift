@@ -302,7 +302,7 @@ struct CardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(isSelected ? Theme.surfaceHighlight : Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 }
 

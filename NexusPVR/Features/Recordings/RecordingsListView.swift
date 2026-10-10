@@ -194,7 +194,7 @@ private struct RecordingsListContentView: View {
                 }
             }
             #endif
-            .detailCover(item: $selectedRecording) { recording in
+            .programDetailPopover(item: $selectedRecording) { recording in
                 RecordingDetailView(recording: recording)
                     .environmentObject(client)
                     .environmentObject(appState)
