@@ -211,7 +211,11 @@ final class AppState: ObservableObject {
                     do {
                         let status = try await client.getProxyStatus()
                         let newCount = status.count ?? status.channels?.count ?? 0
-                        self?.activeStreamCount = newCount
+                        // Assigning an unchanged value still re-renders
+                        // every view observing AppState.
+                        if self?.activeStreamCount != newCount {
+                            self?.activeStreamCount = newCount
+                        }
                     } catch {
                         // Silently ignore - badge just won't update
                     }
@@ -219,7 +223,9 @@ final class AppState: ObservableObject {
                         let accounts = try await client.getM3UAccounts()
                         let activeAccounts = accounts.filter { $0.isActive && !$0.locked }
                         let hasErrors = activeAccounts.contains { $0.status != "success" }
-                        self?.hasM3UErrors = hasErrors
+                        if self?.hasM3UErrors != hasErrors {
+                            self?.hasM3UErrors = hasErrors
+                        }
                     } catch {
                         // Silently ignore
                     }
@@ -381,7 +387,9 @@ final class AppState: ObservableObject {
                 try await client.authenticate()
             }
             let (_, recording, _) = try await client.getAllRecordings()
-            activeRecordingCount = recording.count
+            if activeRecordingCount != recording.count {
+                activeRecordingCount = recording.count
+            }
         } catch {
             // Silently ignore transient errors; keep last known badge state.
         }
