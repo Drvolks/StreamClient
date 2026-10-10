@@ -459,8 +459,59 @@ struct AppStateTests {
         #expect(AppState.tab(for: .completedRecordings) == .recordings)
         #if DISPATCHERPVR
         #expect(AppState.tab(for: .stats) == .stats)
+        #expect(AppState.tab(for: .vodMovies) == .vod)
+        #expect(AppState.tab(for: .vodSeries) == .vod)
         #endif
     }
+
+    #if DISPATCHERPVR
+    @Test("An On Demand landing opens on its own index")
+    func vodLandingOpensItsIndex() {
+        AppState.testLandingTabOverride = .vodSeries
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        #expect(state.selectedTab == .vod)
+        #expect(state.vodKind == .series)
+    }
+
+    @Test("An On Demand landing falls back to Guide when the server has no VOD")
+    func vodLandingFallsBackWithoutVOD() {
+        AppState.testLandingTabOverride = .vodMovies
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.applyVODCounts(.none)
+        #expect(state.selectedTab == .guide)
+    }
+
+    @Test("An On Demand landing switches to the kind the server has")
+    func vodLandingSwitchesToAvailableKind() {
+        AppState.testLandingTabOverride = .vodSeries
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.applyVODCounts(VODCounts(movies: 4, series: 0))
+        #expect(state.selectedTab == .vod)
+        #expect(state.vodKind == .movies)
+    }
+
+    @Test("isLandingOptionAvailable gates On Demand landings on the server's counts")
+    func isLandingOptionAvailableGatesVOD() {
+        let moviesOnly = VODCounts(movies: 4, series: 0)
+        #expect(AppState.isLandingOptionAvailable(.vodMovies, forUserLevel: 10) == false)
+        #expect(AppState.isLandingOptionAvailable(.vodMovies, forUserLevel: 10, vodCounts: moviesOnly) == true)
+        #expect(AppState.isLandingOptionAvailable(.vodSeries, forUserLevel: 10, vodCounts: moviesOnly) == false)
+    }
+
+    @Test("applyLandingTab opens the On Demand index for a VOD landing")
+    func applyLandingTabVOD() {
+        AppState.testLandingTabOverride = .guide
+        defer { AppState.testLandingTabOverride = nil }
+        let state = AppState()
+        state.applyVODCounts(VODCounts(movies: 4, series: 2))
+        state.applyLandingTab(.vodSeries)
+        #expect(state.selectedTab == .vod)
+        #expect(state.vodKind == .series)
+    }
+    #endif
 
     @Test("isLandingOptionAvailable returns true for guide and channels at any level")
     func isLandingOptionAvailableAlwaysForGuideAndChannels() {

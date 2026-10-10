@@ -1017,7 +1017,11 @@ struct SettingsView: View {
 
     private var availableLandingOptions: [LandingTabOption] {
         LandingTabOption.allCases.filter { option in
-            AppState.isLandingOptionAvailable(option, forUserLevel: appState.userLevel, hideRecordings: hideRecordings)
+            #if DISPATCHERPVR
+            return AppState.isLandingOptionAvailable(option, forUserLevel: appState.userLevel, hideRecordings: hideRecordings, vodCounts: appState.vodCounts)
+            #else
+            return AppState.isLandingOptionAvailable(option, forUserLevel: appState.userLevel, hideRecordings: hideRecordings)
+            #endif
         }
     }
 

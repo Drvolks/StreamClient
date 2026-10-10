@@ -141,7 +141,7 @@ final class AppState: ObservableObject {
     /// for servers without VOD. Drives whether the On Demand menu shows.
     @Published var vodCounts: VODCounts = .none
     /// Which half of the library the On Demand page lists.
-    @Published var vodKind: VODKind = .movies
+    @Published var vodKind: VODKind = AppState.initialVODKind()
     /// The movie or series whose page is open; nil shows the poster index.
     @Published var selectedVODItem: VODItem?
     var showsVOD: Bool { !vodCounts.isEmpty }
@@ -518,6 +518,26 @@ final class AppState: ObservableObject {
         return tab(for: prefs.landingTab)
     }
 
+    #if DISPATCHERPVR
+    /// The half of the On Demand library a landing option opens; nil for
+    /// every other landing (#192).
+    static func vodKind(for option: LandingTabOption) -> VODKind? {
+        switch option {
+        case .vodMovies: return .movies
+        case .vodSeries: return .series
+        default: return nil
+        }
+    }
+
+    /// The On Demand index to start on: the landing page's when it is one,
+    /// Movies otherwise. The counts aren't known yet at launch, so
+    /// `applyVODCounts` corrects this once the server has answered.
+    static func initialVODKind() -> VODKind {
+        let option = testLandingTabOverride ?? UserPreferences.load().landingTab
+        return vodKind(for: option) ?? .movies
+    }
+    #endif
+
     /// Map a `LandingTabOption` to the corresponding `Tab`.
     /// The mapping is one-way and centralized so that preferences can be
     /// applied consistently across all platforms and launch paths.
@@ -528,6 +548,7 @@ final class AppState: ObservableObject {
         case .completedRecordings: return .recordings
         #if DISPATCHERPVR
         case .stats: return .stats
+        case .vodMovies, .vodSeries: return .vod
         #endif
         }
     }
@@ -535,13 +556,16 @@ final class AppState: ObservableObject {
     /// Whether a landing option's target tab is available to the current
     /// user. The Completed Recordings landing requires `userLevel >= 1`
     /// (recordings access) and the Status landing (Dispatcharr only)
-    /// requires `userLevel >= 1`; the other landings are always available.
+    /// requires `userLevel >= 1`; an On Demand landing requires the server
+    /// to have titles of that kind (`vodCounts`); the other landings are
+    /// always available.
     /// Used by both the Settings picker (to filter out unavailable
     /// options) and `applyLandingTab` (to redirect to Guide if needed).
     static func isLandingOptionAvailable(
         _ option: LandingTabOption,
         forUserLevel userLevel: Int,
-        hideRecordings: Bool = false
+        hideRecordings: Bool = false,
+        vodCounts: VODCounts = .none
     ) -> Bool {
         switch option {
         case .guide, .channels:
@@ -556,6 +580,10 @@ final class AppState: ObservableObject {
             #else
             return userLevel >= 1
             #endif
+        case .vodMovies:
+            return vodCounts.movies > 0
+        case .vodSeries:
+            return vodCounts.series > 0
         #endif
         }
     }
@@ -591,13 +619,23 @@ final class AppState: ObservableObject {
     /// lands on a hidden/non-existent destination.
     func applyLandingTab(_ option: LandingTabOption) {
         let resolved: LandingTabOption
-        if Self.isLandingOptionAvailable(option, forUserLevel: userLevel, hideRecordings: hideRecordings) {
+        #if DISPATCHERPVR
+        let counts = vodCounts
+        #else
+        let counts = VODCounts.none
+        #endif
+        if Self.isLandingOptionAvailable(option, forUserLevel: userLevel, hideRecordings: hideRecordings, vodCounts: counts) {
             resolved = option
         } else {
             resolved = .guide
         }
         let target = Self.tab(for: resolved)
         selectedTab = target
+        #if DISPATCHERPVR
+        if let kind = Self.vodKind(for: resolved) {
+            showVOD(kind)
+        }
+        #endif
         if resolved == .completedRecordings {
             recordingsFilter = .completed
             selectedRecordingsSeriesName = ""

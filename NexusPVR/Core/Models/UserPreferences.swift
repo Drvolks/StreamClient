@@ -163,6 +163,10 @@ nonisolated struct UserPreferences: Codable {
         case completedRecordings = "CompletedRecordings"
         #if DISPATCHERPVR
         case stats = "Stats"
+        /// The On Demand poster indexes (#192). Only offered while the
+        /// server has titles of that kind.
+        case vodMovies = "VODMovies"
+        case vodSeries = "VODSeries"
         #endif
 
         var id: String { rawValue }
@@ -174,6 +178,8 @@ nonisolated struct UserPreferences: Codable {
             case .completedRecordings: return "Completed Recordings"
             #if DISPATCHERPVR
             case .stats: return "Status"
+            case .vodMovies: return "On Demand Movies"
+            case .vodSeries: return "On Demand Series"
             #endif
             }
         }
