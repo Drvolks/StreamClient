@@ -85,7 +85,7 @@ struct TVProgramCell: View {
                 Text(matchedTopic)
                     .badgeLabel()
                     .foregroundStyle(MidnightPalette.topicInk)
-                    .background(MidnightPalette.topic)
+                    .background(MidnightPalette.topic, in: Theme.badgeShape)
                     .lineLimit(1)
             }
         }

@@ -394,7 +394,7 @@ struct VODDetailView: View {
                 .foregroundStyle(MidnightPalette.ink)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("vod-back-button")

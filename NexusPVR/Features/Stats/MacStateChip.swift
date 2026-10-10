@@ -25,17 +25,17 @@ struct MacStateChip: View {
             Text(label)
                 .badgeLabel()
                 .foregroundStyle(MidnightPalette.fieldInk)
-                .background { Rectangle().fill(MidnightGradients.field(colorScheme)) }
+                .background { Theme.badgeShape.fill(MidnightGradients.field(colorScheme)) }
         case "error":
             Text(label)
                 .badgeLabel()
                 .foregroundStyle(MidnightPalette.danger)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.danger, lineWidth: 1) }
         default:
             Text(label)
                 .badgeLabel()
                 .foregroundStyle(MidnightPalette.inkSoft)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.line, lineWidth: 1) }
         }
     }
 }

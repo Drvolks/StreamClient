@@ -230,6 +230,11 @@ struct IOSNavigation: View {
                                 ToolbarItem(placement: .principal) {
                                     iOSGuideToolbarContent
                                 }
+                                if !epgCache.channelProfiles.isEmpty || epgCache.hasPopulatedChannelGroups {
+                                    ToolbarItem(placement: .automatic) {
+                                        iOSGuideFilterButton
+                                    }
+                                }
                             }
                             .toolbarBackground(MidnightPalette.railHead, for: .navigationBar)
                             .toolbarBackground(.visible, for: .navigationBar)
@@ -484,21 +489,26 @@ struct IOSNavigation: View {
                 .foregroundStyle(Theme.accent)
             }
             #endif
-
-            if !epgCache.channelProfiles.isEmpty || epgCache.hasPopulatedChannelGroups {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        guideViewModel.showFilters.toggle()
-                    }
-                } label: {
-                    Image(systemName: guideViewModel.hasActiveFilters
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(guideViewModel.hasActiveFilters ? Theme.accent : Theme.textPrimary)
-                }
-            }
         }
+    }
+
+    /// Its own toolbar item, like the Channels page's, so the system gives
+    /// it the same glass button.
+    private var iOSGuideFilterButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                guideViewModel.showFilters.toggle()
+            }
+        } label: {
+            Image(systemName: guideViewModel.hasActiveFilters
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(guideViewModel.hasActiveFilters ? Theme.accent : Theme.textPrimary)
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(guideViewModel.showFilters ? "Hide filters" : "Show filters")
     }
 
     // MARK: - Window Safe Area (read from UIKit)
@@ -1069,9 +1079,10 @@ struct IOSNavigation: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13))
-                .foregroundStyle(Theme.textTertiary)
+                .foregroundStyle(Theme.textSecondary)
 
-            TextField("Search...", text: $searchText)
+            // Brighter than the default prompt, which fades into the glass.
+            TextField("Search...", text: $searchText, prompt: Text("Search...").foregroundStyle(Theme.textSecondary))
                 .font(.archivo(14, .semibold))
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("global-search-field")
@@ -1105,9 +1116,7 @@ struct IOSNavigation: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
+        .midnightFloatingGlass(in: Capsule(), interactive: true)
     }
 
     // MARK: - Search Dropdown
@@ -1195,9 +1204,7 @@ struct IOSNavigation: View {
             }
             .disabled(programMatchCount == 0)
         }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius(16)))
-        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
+        .midnightFloatingGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 #endif
@@ -2629,8 +2636,8 @@ struct MacOSNavigation: View {
         .frame(height: MacGuideHeaderMetrics.searchHeight)
         // Closure form: a plain colour background would bleed up into the
         // title bar's safe area.
-        .background { Rectangle().fill(MidnightPalette.inputBg) }
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .background { MidnightControlShape().fill(MidnightPalette.inputBg) }
+        .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
 
     // MARK: - macOS Search Dropdown
@@ -2721,7 +2728,11 @@ struct MacOSNavigation: View {
             .disabled(programMatchCount == 0)
         }
         .background(MidnightPalette.railHead)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous)
+                .strokeBorder(MidnightPalette.line, lineWidth: 1)
+        }
         .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 2)
     }
 }

@@ -29,9 +29,9 @@ struct ChannelsView: View {
     // name + start time for servers where epgEventId doesn't line up.
     @State private var recordingsByEventId: [Int: Recording] = [:]
     @State private var recordingsByNameAndStart: [String: Recording] = [:]
-    #if os(macOS)
-    /// The current program whose detail sheet is open (card "Info" action).
-    @State private var macDetail: ProgramDetail?
+    #if !os(tvOS)
+    /// The current program whose detail is open (card "Info" action).
+    @State private var cardDetail: ProgramDetail?
     #endif
     @Environment(\.colorScheme) private var colorScheme
     #if os(tvOS)
@@ -244,6 +244,15 @@ struct ChannelsView: View {
                 if let error = streamError { Text(error) }
             }
             .background(MidnightGradients.ground(colorScheme))
+            .programDetailPopover(item: $cardDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
+                ProgramDetailView(
+                    program: detail.program,
+                    channel: detail.channel,
+                    initialRecordingId: recording(for: detail.program)?.id
+                )
+                .environmentObject(client)
+                .environmentObject(appState)
+            }
         }
         .task {
             await tickCurrentTime()
@@ -278,7 +287,7 @@ struct ChannelsView: View {
             }
         }
         .background(MidnightGradients.ground(colorScheme))
-        .sheet(item: $macDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
+        .sheet(item: $cardDetail, onDismiss: { Task { await loadRecordings() } }) { detail in
             ProgramDetailView(
                 program: detail.program,
                 channel: detail.channel,
@@ -542,6 +551,24 @@ struct ChannelsView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
+        #elseif os(iOS)
+        LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
+            ForEach(visibleChannels) { channel in
+                phoneCard(for: channel)
+                    #if DISPATCHERPVR
+                    .contextMenu {
+                        if channel.isCatchup && channel.catchupDays > 0 {
+                            Button {
+                                appState.selectedCatchupChannel = channel
+                            } label: {
+                                Label("Show Catch-up Programs", systemImage: "clock.arrow.circlepath")
+                            }
+                        }
+                    }
+                    #endif
+            }
+        }
+        .padding(Theme.spacingMD)
         #else
         LazyVGrid(columns: columns, spacing: Theme.spacingMD) {
             ForEach(visibleChannels) { channel in
@@ -550,7 +577,6 @@ struct ChannelsView: View {
                 } label: {
                     let program = epgCache.currentProgram(for: channel, at: now)
                     let rec = program.flatMap { recording(for: $0) }
-                    #if os(tvOS)
                     TVChannelCard(
                         channel: channel,
                         iconURL: try? client.channelIconURL(channelId: channel.id),
@@ -560,27 +586,12 @@ struct ChannelsView: View {
                         isScheduledRecording: rec != nil,
                         isCurrentlyRecording: rec?.recordingStatus == .recording
                     )
-                    #else
-                    PhoneChannelCard(
-                        channel: channel,
-                        iconURL: try? client.channelIconURL(channelId: channel.id),
-                        currentProgram: program,
-                        now: now,
-                        matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
-                        isScheduledRecording: rec != nil,
-                        isCurrentlyRecording: rec?.recordingStatus == .recording
-                    )
-                    #endif
                 }
                 .accessibilityIdentifier("channel-card-\(channel.id)")
-                #if os(tvOS)
                 .buttonStyle(ChannelGridCardButtonStyle())
                 .focusEffectDisabled()
                 .focused($focusedChannelId, equals: channel.id)
                 .zIndex(focusedChannelId == channel.id ? 1 : 0)
-                #else
-                .buttonStyle(.plain)
-                #endif
                 #if DISPATCHERPVR
                 .contextMenu {
                     if channel.isCatchup && channel.catchupDays > 0 {
@@ -1000,11 +1011,44 @@ struct ChannelsView: View {
             },
             onInfo: {
                 guard let program else { return }
-                macDetail = ProgramDetail(program: program, channel: channel)
+                cardDetail = ProgramDetail(program: program, channel: channel)
             }
         )
     }
+    #endif
 
+    #if os(iOS)
+    private func phoneCard(for channel: Channel) -> some View {
+        let program = epgCache.currentProgram(for: channel, at: now)
+        let rec = program.flatMap { recording(for: $0) }
+        return PhoneChannelCard(
+            channel: channel,
+            iconURL: try? client.channelIconURL(channelId: channel.id),
+            currentProgram: program,
+            now: now,
+            matchedTopic: program.flatMap { TopicMatcher.matchedKeyword(for: $0, in: appState.topicKeywords) },
+            isScheduledRecording: rec != nil,
+            isCurrentlyRecording: rec?.recordingStatus == .recording,
+            canWatchFromStart: program.map { canWatchFromStart(channel: channel, program: $0, recording: rec) } ?? false,
+            showsRecord: !appState.hideRecordings,
+            onWatch: { play(channel: channel) },
+            onWatchFromStart: {
+                guard let program else { return }
+                watchFromStart(channel: channel, program: program, recording: rec)
+            },
+            onRecord: {
+                guard let program else { return }
+                toggleRecording(channel: channel, program: program, recording: rec)
+            },
+            onInfo: {
+                guard let program else { return }
+                cardDetail = ProgramDetail(program: program, channel: channel)
+            }
+        )
+    }
+    #endif
+
+    #if !os(tvOS)
     /// Catch-up can restart the airing program on Dispatcharr; otherwise an
     /// in-progress recording of it can be played from its start.
     private func canWatchFromStart(channel: Channel, program: Program, recording: Recording?) -> Bool {
@@ -1106,7 +1150,7 @@ private struct ChannelGridCardFocusWrapper<Content: View>: View {
     var body: some View {
         content()
             .overlay {
-                Rectangle()
+                RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous)
                     .strokeBorder(isFocused ? MidnightPalette.accent : Color.clear, lineWidth: 4)
             }
             .shadow(color: isFocused ? .black.opacity(0.4) : .clear, radius: 14, x: 0, y: 6)
@@ -1144,9 +1188,9 @@ private struct TVPillFieldFocusWrapper<Content: View>: View {
             .foregroundStyle(isFocused ? MidnightPalette.selectedInk : unfocusedForeground)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
+            .background(isFocused ? MidnightPalette.selectedBg : Color.clear, in: MidnightControlShape())
             .overlay {
-                Rectangle().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
+                MidnightControlShape().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
             }
             .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: isFocused)

@@ -14,6 +14,8 @@ struct TVDetailPanel<Content: View>: View {
     var maxHeight: CGFloat = 860
     @ViewBuilder let content: Content
 
+    private let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+
     var body: some View {
         ZStack {
             Color.black.opacity(0.6)
@@ -23,10 +25,11 @@ struct TVDetailPanel<Content: View>: View {
                 .frame(maxHeight: maxHeight)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(MidnightPalette.railHead)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
                 .overlay(alignment: .top) {
                     Rectangle().fill(MidnightPalette.accent).frame(height: 4)
                 }
+                .clipShape(shape)
+                .overlay { shape.strokeBorder(MidnightPalette.line, lineWidth: 1) }
         }
     }
 }

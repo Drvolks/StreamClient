@@ -52,7 +52,7 @@ struct TVVODEpisodeRow: View {
                         .foregroundStyle(isFocused ? MidnightPalette.selectedInk : MidnightPalette.accentSoft)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(isFocused ? MidnightPalette.selectedSub.opacity(0.2) : MidnightPalette.barSoft)
+                        .background(isFocused ? MidnightPalette.selectedSub.opacity(0.2) : MidnightPalette.barSoft, in: Theme.badgeShape)
                 }
                 Text(episode.displayName)
                     .font(.archivo(Theme.scaledFont(23), .extraBold))
@@ -108,7 +108,7 @@ struct TVVODEpisodeRow: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .overlay {
-                    Rectangle().strokeBorder(isFocused ? MidnightPalette.selectedInk : MidnightPalette.accent, lineWidth: 1)
+                    Theme.badgeShape.strokeBorder(isFocused ? MidnightPalette.selectedInk : MidnightPalette.accent, lineWidth: 1)
                 }
         }
     }

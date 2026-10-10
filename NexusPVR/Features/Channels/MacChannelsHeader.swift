@@ -98,8 +98,8 @@ struct MacChannelsHeader: View {
         .frame(width: MacGuideHeaderMetrics.searchWidth, height: MacGuideHeaderMetrics.searchHeight)
         // Closure form: a plain colour background would bleed up into the
         // title bar's safe area.
-        .background { Rectangle().fill(MidnightPalette.inputBg) }
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .background { MidnightControlShape().fill(MidnightPalette.inputBg) }
+        .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
     }
 }
 #endif

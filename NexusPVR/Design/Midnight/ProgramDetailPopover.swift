@@ -25,6 +25,30 @@ extension View {
 }
 
 #if os(iOS)
+extension View {
+    /// iOS 26 gives a popover its own Liquid Glass ground; earlier systems
+    /// get Midnight's opaque one.
+    @ViewBuilder
+    func midnightPopoverGround() -> some View {
+        if #available(iOS 26, *) {
+            self
+        } else {
+            presentationBackground(MidnightPalette.railHead)
+        }
+    }
+
+    /// The same choice for the popover's content, which must not paint over
+    /// the glass.
+    @ViewBuilder
+    func midnightPopoverContentGround() -> some View {
+        if #available(iOS 26, *) {
+            self
+        } else {
+            background(MidnightPalette.railHead)
+        }
+    }
+}
+
 private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: ViewModifier {
     @Binding var item: Item?
     let onDismiss: (() -> Void)?
@@ -57,7 +81,7 @@ private struct TapAnchoredPopover<Item: Identifiable, PopoverContent: View>: Vie
             .popover(item: $presented, attachmentAnchor: .rect(.rect(anchor)), arrowEdge: arrowEdge) { value in
                 popoverContent(value)
                     .presentationCompactAdaptation(.popover)
-                    .presentationBackground(MidnightPalette.railHead)
+                    .midnightPopoverGround()
             }
             .onChange(of: presented?.id) {
                 // Dismissed by tapping outside: clear the caller's item too.

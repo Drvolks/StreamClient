@@ -102,7 +102,8 @@ struct MacGuideHeader: View {
             stepperButton("chevron.right", label: "Next day", isEnabled: true, action: onNextDay)
         }
         .frame(height: MacGuideHeaderMetrics.searchHeight)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .clipShape(MidnightControlShape())
+        .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
         .fixedSize()
     }
 
@@ -162,7 +163,8 @@ struct MacGuideHeader: View {
             }
             .padding(.horizontal, 10)
             .frame(height: MacGuideHeaderMetrics.searchHeight)
-            .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+            .clipShape(MidnightControlShape())
+            .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

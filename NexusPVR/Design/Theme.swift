@@ -160,6 +160,20 @@ enum Theme {
     static let cornerRadiusMD: CGFloat = radius(12)
     static let cornerRadiusLG: CGFloat = radius(20)
 
+    /// Channel cards and the panels of a programme's details. Larger on
+    /// tvOS, where both are.
+    #if os(tvOS)
+    static let panelRadius: CGFloat = 20
+    #else
+    static let panelRadius: CGFloat = 14
+    #endif
+
+    /// Outline of the status tags and chips (NEW, LIVE, REC, topic tags,
+    /// RESUME...): lightly rounded.
+    static var badgeShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+    }
+
     /// A one-off corner radius. Always zero under Midnight; call sites keep
     /// the value they would use if corners ever came back.
     static func radius(_ value: CGFloat) -> CGFloat {
@@ -221,7 +235,7 @@ struct NewBadge: View {
             .badgeLabel(compact: compact)
             .foregroundStyle(.white)
             .background(Theme.success)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
+            .clipShape(Theme.badgeShape)
     }
 }
 
@@ -240,7 +254,7 @@ struct LiveBadge: View {
             .badgeLabel(compact: compact)
             .foregroundStyle(onAccentField ? Theme.accent : Theme.textOnAccent)
             .background(onAccentField ? Theme.textOnAccent : Theme.accent)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
+            .clipShape(Theme.badgeShape)
     }
 }
 
@@ -259,7 +273,7 @@ struct RecBadge: View {
             .badgeLabel(compact: compact)
             .foregroundStyle(.white)
             .background(Theme.recording)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
+            .clipShape(Theme.badgeShape)
             .opacity(isActive ? 1.0 : 0.6)
     }
 }
@@ -276,7 +290,7 @@ struct CatchupBadge: View {
             .badgeLabel(compact: compact)
             .foregroundStyle(.white)
             .background(Theme.catchup)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius(3)))
+            .clipShape(Theme.badgeShape)
     }
 }
 
@@ -302,7 +316,13 @@ struct AccentButtonStyle: ButtonStyle {
             .padding(.vertical, Theme.spacingMD)
             .background(isEnabled ? Theme.accent : Theme.textTertiary)
             .foregroundStyle(Theme.textOnAccent)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+            // Theme.swift also builds into the tvOS Top Shelf extensions,
+            // which don't carry the Midnight components.
+            #if os(tvOS)
+            .clipShape(Capsule())
+            #else
+            .clipShape(MidnightControlShape())
+            #endif
             .scaleEffect(configuration.isPressed ? 0.95 : isFocused ? 1.05 : 1)
             .shadow(color: isFocused ? Theme.accent.opacity(0.6) : .clear, radius: isFocused ? 12 : 0)
             .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
@@ -317,7 +337,13 @@ struct SecondaryButtonStyle: ButtonStyle {
             .padding(.vertical, Theme.spacingMD)
             .background(Theme.surfaceElevated)
             .foregroundStyle(Theme.textPrimary)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+            // Theme.swift also builds into the tvOS Top Shelf extensions,
+            // which don't carry the Midnight components.
+            #if os(tvOS)
+            .clipShape(Capsule())
+            #else
+            .clipShape(MidnightControlShape())
+            #endif
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }

@@ -48,8 +48,9 @@ struct MacChannelCard: View {
             actionStrip
         }
         .background(MidnightPalette.cellRest)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
         .overlay {
-            Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous).strokeBorder(MidnightPalette.lineSoft, lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("channel-card-\(channel.id)")
@@ -106,7 +107,7 @@ struct MacChannelCard: View {
                     .lineLimit(1)
                     .badgeLabel()
                     .foregroundStyle(MidnightPalette.topicInk)
-                    .background(MidnightPalette.topic)
+                    .background(MidnightPalette.topic, in: Theme.badgeShape)
             }
         }
         .frame(height: 15, alignment: .leading)

@@ -72,7 +72,8 @@ struct MacCalendarHeader: View {
             stepperButton("chevron.right", label: viewMode == .day ? "Next day" : "Next week", isEnabled: true, action: onForward)
         }
         .frame(height: MacGuideHeaderMetrics.searchHeight)
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .clipShape(MidnightControlShape())
+        .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
         .fixedSize()
     }
 
@@ -115,7 +116,8 @@ struct MacCalendarHeader: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        .clipShape(MidnightControlShape())
+        .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
         .fixedSize()
     }
 }

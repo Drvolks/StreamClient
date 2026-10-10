@@ -162,7 +162,7 @@ struct MacDownloadRow: View {
             Text("Failed")
                 .badgeLabel()
                 .foregroundStyle(MidnightPalette.danger)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.danger, lineWidth: 1) }
         }
     }
 

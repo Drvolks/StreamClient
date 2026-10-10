@@ -33,7 +33,7 @@ struct MacStreamCard: View {
                     Text(profileName)
                         .badgeLabel()
                         .foregroundStyle(MidnightPalette.accentSoft)
-                        .background(MidnightPalette.barSoft)
+                        .background(MidnightPalette.barSoft, in: Theme.badgeShape)
                 }
                 Spacer()
                 MacStateChip(state: channel.state)

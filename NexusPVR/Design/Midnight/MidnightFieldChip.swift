@@ -21,6 +21,6 @@ struct MidnightFieldChip: View {
             .foregroundStyle(MidnightPalette.fieldInk)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(MidnightGradients.field(colorScheme))
+            .background(MidnightGradients.field(colorScheme), in: Theme.badgeShape)
     }
 }

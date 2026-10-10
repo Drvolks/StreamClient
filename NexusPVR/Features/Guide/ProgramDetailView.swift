@@ -152,7 +152,7 @@ struct ProgramDetailView: View {
         // and the content scrolls if it gets less.
         .frame(width: width)
         .frame(idealHeight: height, maxHeight: height)
-        .background(MidnightPalette.railHead)
+        .midnightPopoverContentGround()
         .alert("Error", isPresented: .constant(scheduleError != nil)) {
             Button("OK") { scheduleError = nil }
         } message: {
@@ -254,7 +254,7 @@ struct ProgramDetailView: View {
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.surface.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
 
                     // Description section
                     if program.desc != nil || program.genres != nil || program.seriesInfo != nil {
@@ -278,7 +278,7 @@ struct ProgramDetailView: View {
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.surface.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
                     }
 
                     actionSection
@@ -399,7 +399,7 @@ struct ProgramDetailView: View {
         }
         .padding()
         .background(Theme.surface.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 
     private func descriptionSection(_ description: String) -> some View {
@@ -422,7 +422,7 @@ struct ProgramDetailView: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 
     #if DISPATCHERPVR
@@ -1121,10 +1121,10 @@ private struct TVProgramPopupButtonStyle: ButtonStyle {
             .padding(.horizontal, Theme.spacingLG)
             .padding(.vertical, Theme.spacingMD)
             .frame(maxWidth: .infinity)
-            .background(backgroundColor(configuration: configuration))
+            .background(backgroundColor(configuration: configuration), in: MidnightControlShape())
             .foregroundStyle(foregroundColor)
             .overlay {
-                Rectangle().strokeBorder(isFocused ? MidnightPalette.ink : Color.clear, lineWidth: 3)
+                MidnightControlShape().strokeBorder(isFocused ? MidnightPalette.ink : Color.clear, lineWidth: 3)
             }
             .scaleEffect(configuration.isPressed ? 0.98 : isFocused ? 1.02 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: configuration.isPressed)

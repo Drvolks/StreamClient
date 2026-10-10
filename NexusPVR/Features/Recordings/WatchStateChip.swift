@@ -29,13 +29,13 @@ struct WatchStateChip: View {
             .padding(.vertical, size / 3)
             .background {
                 if case .resume = state {
-                    Rectangle().fill(MidnightGradients.field(colorScheme))
+                    Theme.badgeShape.fill(MidnightGradients.field(colorScheme))
                 }
             }
             .overlay {
                 switch state {
-                case .new: Rectangle().strokeBorder(isFocused ? MidnightPalette.selectedInk : MidnightPalette.accent, lineWidth: 1)
-                case .watched: Rectangle().strokeBorder(isFocused ? MidnightPalette.selectedSub : MidnightPalette.line, lineWidth: 1)
+                case .new: Theme.badgeShape.strokeBorder(isFocused ? MidnightPalette.selectedInk : MidnightPalette.accent, lineWidth: 1)
+                case .watched: Theme.badgeShape.strokeBorder(isFocused ? MidnightPalette.selectedSub : MidnightPalette.line, lineWidth: 1)
                 case .resume: EmptyView()
                 }
             }

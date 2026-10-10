@@ -775,9 +775,9 @@ private struct TVPopupActionButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(backgroundColor(configuration: configuration))
             .foregroundStyle(foregroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+            .clipShape(MidnightControlShape())
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadiusMD)
+                MidnightControlShape()
                     .stroke(isFocused ? Color.white : Color.clear, lineWidth: 2)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : isFocused ? 1.02 : 1.0)

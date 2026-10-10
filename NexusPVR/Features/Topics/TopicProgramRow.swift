@@ -129,12 +129,12 @@ struct TopicProgramRow: View {
             Text("Recording")
                 .badgeLabel()
                 .foregroundStyle(.white)
-                .background(Theme.recording)
+                .background(Theme.recording, in: Theme.badgeShape)
         } else if vm.isScheduled {
             Text("Scheduled")
                 .badgeLabel()
                 .foregroundStyle(MidnightPalette.inkSoft)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.line, lineWidth: 1) }
                 .accessibilityIdentifier("scheduled-indicator")
         } else if program.isCurrentlyAiring {
             MidnightFieldChip(text: "On now", size: 9)
@@ -157,7 +157,7 @@ struct TopicProgramRow: View {
                 }
             }
             .frame(width: 34, height: 34)
-            .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+            .overlay { MidnightControlShape().strokeBorder(MidnightPalette.line, lineWidth: 1) }
             .frame(width: 44, height: 44, alignment: .trailing)
             .contentShape(Rectangle())
         }

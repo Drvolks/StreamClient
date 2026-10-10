@@ -126,7 +126,7 @@ struct GuideProgramCell: View {
                     .lineLimit(1)
                     .badgeLabel()
                     .foregroundStyle(MidnightPalette.topicInk)
-                    .background(MidnightPalette.topic)
+                    .background(MidnightPalette.topic, in: Theme.badgeShape)
             }
         }
         .fixedSize()

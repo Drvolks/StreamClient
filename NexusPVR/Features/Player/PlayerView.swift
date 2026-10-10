@@ -453,8 +453,7 @@ struct PlayerView: View {
                         .foregroundStyle(.white)
                 }
                 .padding(Theme.spacingLG)
-                .background(.black.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                .playerHUDGround()
             }
 
             // Seeking overlay for catch-up (#119) — a catch-up seek lands on an
@@ -472,8 +471,7 @@ struct PlayerView: View {
                         .foregroundStyle(.white)
                 }
                 .padding(Theme.spacingLG)
-                .background(.black.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadiusMD))
+                .playerHUDGround()
                 // Declared above controlsOverlay in the ZStack, so without an
                 // explicit zIndex it rendered behind the center pause button
                 // (equal default zIndex falls back to declaration order).
@@ -1329,18 +1327,20 @@ struct PlayerView: View {
         }
     }
 
+    @ViewBuilder
     private func playerControlIcon(systemName: String, size: CGFloat, padding: CGFloat = 10) -> some View {
-        Image(systemName: systemName)
+        let icon = Image(systemName: systemName)
             .font(.system(size: size))
             .foregroundStyle(.white)
             .padding(padding)
-            .background(.black.opacity(0.35), in: Circle())
-            .overlay {
-                Circle()
-                    .stroke(.white.opacity(0.15), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.85), radius: 4, x: 0, y: 1)
-            .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 2)
+        if #available(iOS 26, macOS 26, tvOS 26, *) {
+            // Dark glass whatever the app theme: the icons are white.
+            icon
+                .glassEffect(.regular.interactive(), in: Circle())
+                .environment(\.colorScheme, .dark)
+        } else {
+            icon.playerControlDisc()
+        }
     }
 
     private var bottomControls: some View {
@@ -2451,3 +2451,27 @@ struct PlayerView: View {
     .environmentObject(PVRClient())
 }
 #endif
+
+private extension View {
+    /// The dark disc behind a player control, where there is no Liquid Glass.
+    func playerControlDisc() -> some View {
+        background(.black.opacity(0.35), in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(.white.opacity(0.15), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.85), radius: 4, x: 0, y: 1)
+            .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 2)
+    }
+
+    /// Ground of the "Buffering" and "Seeking" notices over the video.
+    @ViewBuilder
+    func playerHUDGround() -> some View {
+        if #available(iOS 26, macOS 26, tvOS 26, *) {
+            glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .environment(\.colorScheme, .dark)
+        } else {
+            background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+}

@@ -30,15 +30,15 @@ private struct MidnightOutlineButtonBody: View {
             .foregroundStyle(isDestructive ? MidnightPalette.danger : MidnightPalette.ink)
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(isHovering ? MidnightPalette.hoverTint : .clear)
+            .background(isHovering ? MidnightPalette.hoverTint : .clear, in: MidnightControlShape())
             .overlay {
-                Rectangle().strokeBorder(
+                MidnightControlShape().strokeBorder(
                     configuration.isPressed ? MidnightPalette.accentSoft
                         : isHovering ? MidnightPalette.accent : MidnightPalette.line,
                     lineWidth: 1
                 )
             }
-            .contentShape(Rectangle())
+            .contentShape(MidnightControlShape())
             .opacity(isEnabled ? 1 : 0.45)
             .onHover { isHovering = $0 }
     }

@@ -27,14 +27,14 @@ private struct MidnightFieldButtonBody: View {
             .foregroundStyle(MidnightPalette.fieldInk)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background(MidnightGradients.field(colorScheme))
+            .background(MidnightGradients.field(colorScheme), in: MidnightControlShape())
             .overlay {
                 if isHovering {
-                    Rectangle().strokeBorder(MidnightPalette.accentSoft, lineWidth: 1)
+                    MidnightControlShape().strokeBorder(MidnightPalette.accentSoft, lineWidth: 1)
                 }
             }
             .opacity(configuration.isPressed ? 0.82 : isEnabled ? 1 : 0.45)
-            .contentShape(Rectangle())
+            .contentShape(MidnightControlShape())
             .onHover { isHovering = $0 }
     }
 }

@@ -42,7 +42,7 @@ struct PhoneRecordingRow: View {
                         .foregroundStyle(MidnightPalette.accentSoft)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(MidnightPalette.barSoft)
+                        .background(MidnightPalette.barSoft, in: Theme.badgeShape)
                         .fixedSize()
                 }
                 Text(title)
@@ -68,7 +68,7 @@ struct PhoneRecordingRow: View {
                             .lineLimit(1)
                             .badgeLabel()
                             .foregroundStyle(MidnightPalette.topicInk)
-                            .background(MidnightPalette.topic)
+                            .background(MidnightPalette.topic, in: Theme.badgeShape)
                     }
                 }
             }
@@ -177,21 +177,21 @@ struct PhoneRecordingRow: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .background(Theme.recording)
+                .background(Theme.recording, in: Theme.badgeShape)
         case .pending, .conflict:
             Text(status == .conflict ? "Conflict" : "Scheduled")
                 .midnightBadge(9)
                 .foregroundStyle(status == .conflict ? MidnightPalette.danger : MidnightPalette.inkSoft)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.line, lineWidth: 1) }
         case .failed:
             Text("Failed")
                 .midnightBadge(9)
                 .foregroundStyle(MidnightPalette.danger)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.danger, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.danger, lineWidth: 1) }
         default:
             WatchStateChip(state: watchState)
         }

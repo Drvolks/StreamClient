@@ -27,7 +27,7 @@ struct VODEpisodeRow: View {
                         .foregroundStyle(MidnightPalette.accentSoft)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(MidnightPalette.barSoft)
+                        .background(MidnightPalette.barSoft, in: Theme.badgeShape)
                         .fixedSize()
                 }
                 Text(episode.displayName)
@@ -88,7 +88,7 @@ struct VODEpisodeRow: View {
                 .foregroundStyle(MidnightPalette.accentSoft)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .overlay { Rectangle().strokeBorder(MidnightPalette.accent, lineWidth: 1) }
+                .overlay { Theme.badgeShape.strokeBorder(MidnightPalette.accent, lineWidth: 1) }
         }
     }
 }

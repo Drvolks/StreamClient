@@ -32,9 +32,9 @@ struct TVMidnightOutlineLabel: View {
         .foregroundStyle(ink)
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
-        .background(isFocused ? (isDestructive ? MidnightPalette.danger : MidnightPalette.selectedBg) : Color.clear)
+        .background(isFocused ? (isDestructive ? MidnightPalette.danger : MidnightPalette.selectedBg) : Color.clear, in: MidnightControlShape())
         .overlay {
-            Rectangle().strokeBorder(
+            MidnightControlShape().strokeBorder(
                 isFocused ? Color.clear : (isDestructive ? MidnightPalette.danger : MidnightPalette.line),
                 lineWidth: 1
             )

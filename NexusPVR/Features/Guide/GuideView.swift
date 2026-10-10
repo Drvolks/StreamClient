@@ -1508,9 +1508,9 @@ struct GuideView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(isActive ? MidnightPalette.selectedBg : MidnightPalette.inputBg)
+        .background(isActive ? MidnightPalette.selectedBg : MidnightPalette.inputBg, in: MidnightControlShape())
         .overlay {
-            Rectangle().strokeBorder(isActive ? Color.clear : MidnightPalette.line, lineWidth: 1)
+            MidnightControlShape().strokeBorder(isActive ? Color.clear : MidnightPalette.line, lineWidth: 1)
         }
         .scaleEffect(isActive ? 1.04 : 1.0)
         .animation(.easeInOut(duration: 0.14), value: isActive)
@@ -1548,9 +1548,9 @@ struct GuideView: View {
         )
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
+        .background(isFocused ? MidnightPalette.selectedBg : Color.clear, in: MidnightControlShape())
         .overlay {
-            Rectangle().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
+            MidnightControlShape().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
         }
         .scaleEffect(isFocused ? 1.04 : 1.0)
         .animation(.easeInOut(duration: 0.14), value: isFocused)
@@ -1607,9 +1607,9 @@ struct GuideView: View {
             )
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isFocused ? MidnightPalette.selectedBg : Color.clear)
+            .background(isFocused ? MidnightPalette.selectedBg : Color.clear, in: MidnightControlShape())
             .overlay {
-                Rectangle().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
+                MidnightControlShape().strokeBorder(isFocused ? Color.clear : MidnightPalette.line, lineWidth: 1)
             }
             .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.easeInOut(duration: 0.14), value: isFocused)
