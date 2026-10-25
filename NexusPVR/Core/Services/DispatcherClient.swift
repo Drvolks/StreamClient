@@ -9,7 +9,7 @@ import Foundation
 import Combine
 
 @MainActor
-final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding {
+final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding, DispatcharrAppDataTransport {
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isConnecting = false
 
@@ -26,6 +26,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding 
     /// its fixed 25h window, so support can't be assumed.
     private var gridWindowSupport: Bool?
     private var gridWindowProbe: Task<Data?, Error>?
+    /// Copy of the playback positions in the user's app data on the server
+    /// (#199), on servers that have the endpoint.
+    private(set) lazy var positionSync = DispatcharrPositionSync(transport: self)
     private var authInProgress: Task<Void, Error>?
     /// Set when the token endpoint answered 429: no sign-in is attempted
     /// before this time, so retries don't keep the server's limit tripped.
@@ -112,6 +115,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding 
         gridWindowSupport = nil
         gridWindowProbe?.cancel()
         gridWindowProbe = nil
+        positionSync.reset()
         tvgIdToChannelIds = [:]
         epgDataIdToChannelIds = [:]
         channelIdToUUID = [:]
@@ -1704,10 +1708,28 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding 
     func setRecordingPosition(recordingId: Int, positionSeconds: Int) async throws {
         guard !config.isDemoMode else { return }
         // Dispatcharr doesn't track playback positions, so they live in a
-        // store synced between this user's devices through iCloud (#183).
+        // store synced between this user's devices through iCloud (#183),
+        // and through the server's app data where it has it (#199).
         var positions = RecordingPositionStore.load()
         positions.set(recordingId: recordingId, position: positionSeconds)
         positions.save()
+    }
+
+    // MARK: - App data (#199)
+
+    var appDataSyncAllowed: Bool {
+        config.isConfigured && !config.isDemoMode
+    }
+
+    func appDataResponse(key: String?, method: String, body: Data?) async throws -> (data: Data, status: Int) {
+        guard let url = DispatcharrAppData.url(baseURL: baseURL, key: key) else {
+            throw PVRClientError.invalidResponse
+        }
+        // A key that holds nothing yet answers 404; that's not a failure.
+        let (data, response) = try await authenticatedResponse(
+            url, method: method, body: body, expectedStatusCodes: [404]
+        )
+        return (data, response.statusCode)
     }
 
     private func fetchProgramDetails(eventId: Int) async throws -> DispatcharrProgram {

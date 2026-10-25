@@ -172,6 +172,9 @@ struct PVRApp: App {
                     handleDeepLink(url)
                 }
                 .onChange(of: scenePhase) { _, newPhase in
+                    #if DISPATCHERPVR
+                    syncPlaybackPositions(for: newPhase)
+                    #endif
                     guard newPhase == .active else { return }
                     validateAuthenticationOnForeground()
                 }
@@ -187,6 +190,33 @@ struct PVRApp: App {
     /// popovers follow the override too (#108).
     private func applyAppearance(_ theme: AppTheme) {
         NSApplication.shared.appearance = theme.nsAppearance
+    }
+    #endif
+
+    #if DISPATCHERPVR
+    /// Server copy of the playback positions (#199): fetch what other devices
+    /// saved when the app comes back, and send a pending save before it is
+    /// suspended.
+    private func syncPlaybackPositions(for phase: ScenePhase) {
+        guard client.isConfigured else { return }
+        switch phase {
+        case .active:
+            Task { await client.positionSync.syncNow() }
+        case .background:
+            #if os(iOS) || os(tvOS)
+            let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Position sync")
+            Task {
+                await client.positionSync.flush()
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                }
+            }
+            #else
+            Task { await client.positionSync.flush() }
+            #endif
+        default:
+            break
+        }
     }
     #endif
 

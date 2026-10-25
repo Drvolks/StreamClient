@@ -9,7 +9,7 @@
 
 import Foundation
 
-nonisolated struct VODProgressStore: Codable, Equatable, Sendable {
+nonisolated struct VODProgressStore: ServerSyncedPositionStore {
     /// Includes cleared items, kept at position 0 so that "mark as unwatched"
     /// reaches the other devices instead of being undone by their copy.
     private(set) var entries: [String: VODProgress] = [:]
@@ -27,6 +27,8 @@ nonisolated struct VODProgressStore: Codable, Equatable, Sendable {
         defaults === UserDefaults.standard && UserPreferences.demoStore == nil
     }
 
+    var entryCount: Int { entries.count }
+
     /// nil for an item that was never played or has been cleared.
     subscript(uuid: String) -> VODProgress? {
         guard let progress = entries[uuid], progress.position > 0 else { return nil }
@@ -41,14 +43,14 @@ nonisolated struct VODProgressStore: Codable, Equatable, Sendable {
         entries[uuid] = VODProgress(
             position: watched ? duration : position,
             duration: duration,
-            updatedAt: date
+            updatedAt: date.wholeMilliseconds
         )
         prune()
     }
 
     mutating func clear(uuid: String, at date: Date = Date()) {
         guard let existing = entries[uuid] else { return }
-        entries[uuid] = VODProgress(position: 0, duration: existing.duration, updatedAt: date)
+        entries[uuid] = VODProgress(position: 0, duration: existing.duration, updatedAt: date.wholeMilliseconds)
     }
 
     /// Takes the newer entry per item from `other`.
@@ -61,12 +63,16 @@ nonisolated struct VODProgressStore: Codable, Equatable, Sendable {
     }
 
     private mutating func prune() {
-        guard entries.count > Self.maxEntries else { return }
+        keepNewest(Self.maxEntries)
+    }
+
+    mutating func keepNewest(_ count: Int) {
+        guard entries.count > count else { return }
         // Keys break timestamp ties so every device drops the same entries.
         let oldestFirst = entries.sorted {
             $0.value.updatedAt != $1.value.updatedAt ? $0.value.updatedAt < $1.value.updatedAt : $0.key < $1.key
         }
-        for (key, _) in oldestFirst.prefix(entries.count - Self.maxEntries) {
+        for (key, _) in oldestFirst.prefix(entries.count - max(count, 0)) {
             entries.removeValue(forKey: key)
         }
     }
@@ -79,12 +85,17 @@ nonisolated struct VODProgressStore: Codable, Equatable, Sendable {
         data.flatMap { try? JSONDecoder().decode(VODProgressStore.self, from: $0) }
     }
 
-    /// Saves locally, and publishes to iCloud when `defaults` is the app's own.
-    func save(to defaults: UserDefaults = .standard) {
+    /// Saves locally, and publishes to iCloud when `defaults` is the app's
+    /// own. `announcing` tells the server sync (#199) a position changed
+    /// here; it is false for positions that came from the server.
+    func save(to defaults: UserDefaults = .standard, announcing: Bool = true) {
         guard let encoded else { return }
         defaults.set(encoded, forKey: Self.storageKey)
         if Self.syncsWithCloud(defaults) {
             Self.ubiquitousStore.set(encoded, forKey: Self.storageKey)
+            if announcing {
+                NotificationCenter.default.post(name: .playbackPositionSaved, object: nil)
+            }
         }
     }
 

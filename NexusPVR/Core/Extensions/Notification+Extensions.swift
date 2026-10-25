@@ -19,4 +19,8 @@ nonisolated extension Notification.Name {
     /// Posted after a VOD movie's or episode's local playback position was
     /// saved, so open On Demand pages refresh their watch state (#17).
     static let vodProgressDidChange = Notification.Name("vodProgressDidChange")
+    /// Posted when a recording or VOD position was saved on this device (not
+    /// merged in from elsewhere), so `DispatcharrPositionSync` sends it to the
+    /// server (#199).
+    static let playbackPositionSaved = Notification.Name("playbackPositionSaved")
 }

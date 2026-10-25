@@ -118,6 +118,12 @@ struct NavigationRouter: View {
         .task {
             await appState.refreshVODAvailability(client: client)
         }
+        .task {
+            // Positions kept in the server's app data (#199): pick up what
+            // other devices saved, then send each new save shortly after.
+            client.positionSync.start()
+            await client.positionSync.syncNow()
+        }
         #endif
         .onChange(of: appState.userLevel) { level in
             #if DISPATCHERPVR

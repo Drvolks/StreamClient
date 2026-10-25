@@ -9,7 +9,7 @@
 
 import Foundation
 
-nonisolated struct RecordingPositionStore: Codable, Equatable, Sendable {
+nonisolated struct RecordingPositionStore: ServerSyncedPositionStore {
     private(set) var entries: [String: RecordingPosition] = [:]
 
     static let storageKey = "RecordingPositions_Dispatcharr"
@@ -27,6 +27,8 @@ nonisolated struct RecordingPositionStore: Codable, Equatable, Sendable {
 
     subscript(recordingId: Int) -> RecordingPosition? { entries[String(recordingId)] }
 
+    var entryCount: Int { entries.count }
+
     /// The position to resume from, nil when there is none (never played, or
     /// reset to the beginning).
     func resumePosition(for recordingId: Int) -> Int? {
@@ -35,7 +37,7 @@ nonisolated struct RecordingPositionStore: Codable, Equatable, Sendable {
     }
 
     mutating func set(recordingId: Int, position: Int, at date: Date = Date()) {
-        entries[String(recordingId)] = RecordingPosition(position: max(0, position), updatedAt: date)
+        entries[String(recordingId)] = RecordingPosition(position: max(0, position), updatedAt: date.wholeMilliseconds)
         prune()
     }
 
@@ -61,12 +63,16 @@ nonisolated struct RecordingPositionStore: Codable, Equatable, Sendable {
     }
 
     private mutating func prune() {
-        guard entries.count > Self.maxEntries else { return }
+        keepNewest(Self.maxEntries)
+    }
+
+    mutating func keepNewest(_ count: Int) {
+        guard entries.count > count else { return }
         // Keys break timestamp ties so every device drops the same entries.
         let oldestFirst = entries.sorted {
             $0.value.updatedAt != $1.value.updatedAt ? $0.value.updatedAt < $1.value.updatedAt : $0.key < $1.key
         }
-        for (key, _) in oldestFirst.prefix(entries.count - Self.maxEntries) {
+        for (key, _) in oldestFirst.prefix(entries.count - max(count, 0)) {
             entries.removeValue(forKey: key)
         }
     }
@@ -103,11 +109,16 @@ nonisolated struct RecordingPositionStore: Codable, Equatable, Sendable {
         defaults.set(encoded, forKey: Self.storageKey)
     }
 
-    /// Saves locally and publishes to iCloud.
-    func save() {
+    /// Saves locally and publishes to iCloud. `announcing` tells the server
+    /// sync (#199) a position changed here; it is false for positions that
+    /// came from the server in the first place.
+    func save(announcing: Bool = true) {
         guard let encoded else { return }
         UserDefaults.standard.set(encoded, forKey: Self.storageKey)
         Self.ubiquitousStore.set(encoded, forKey: Self.storageKey)
+        if announcing {
+            NotificationCenter.default.post(name: .playbackPositionSaved, object: nil)
+        }
     }
 
     // MARK: - Sync
