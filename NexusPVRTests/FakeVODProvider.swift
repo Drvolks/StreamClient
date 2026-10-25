@@ -77,14 +77,14 @@ final class FakeVODProvider: VODProviding {
         return streams[id] ?? []
     }
 
-    func vodMovieStreamURL(uuid: String, stream: VODStream?) throws -> URL {
+    func vodMovieStreamURL(uuid: String, stream: VODStream?) async throws -> URL {
         guard let url = DispatcharrVODRequest.movieStreamURL(baseURL: "http://fake.local", uuid: uuid, stream: stream) else {
             throw PVRClientError.invalidResponse
         }
         return url
     }
 
-    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) throws -> URL {
+    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) async throws -> URL {
         guard let url = DispatcharrVODRequest.episodeStreamURL(baseURL: "http://fake.local", uuid: uuid, stream: stream) else {
             throw PVRClientError.invalidResponse
         }

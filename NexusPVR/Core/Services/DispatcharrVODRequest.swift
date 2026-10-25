@@ -68,6 +68,15 @@ nonisolated enum DispatcharrVODRequest {
         return proxyURL("\(baseURL)/proxy/vod/episode/\(uuid)", stream: stream)
     }
 
+    /// Where the proxy's answer to a bare VOD URL sends the player: the
+    /// session URL from a redirect, nil for anything else.
+    static func sessionLocation(status: Int, location: String?) -> String? {
+        guard (300...399).contains(status),
+              let location = location?.trimmingCharacters(in: .whitespaces),
+              !location.isEmpty else { return nil }
+        return location
+    }
+
     private static func proxyURL(_ string: String, stream: VODStream?) -> URL? {
         guard let stream else { return URL(string: string) }
         guard var components = URLComponents(string: string) else { return nil }

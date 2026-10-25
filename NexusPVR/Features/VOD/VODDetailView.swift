@@ -476,9 +476,13 @@ struct VODDetailView: View {
     }
 
     private func play(_ playable: VODPlayable, fromBeginning: Bool = false) {
+        Task { await startPlayback(playable, fromBeginning: fromBeginning) }
+    }
+
+    private func startPlayback(_ playable: VODPlayable, fromBeginning: Bool) async {
         do {
             let stream = viewModel.selectedStream
-            let url = try playable.isEpisode
+            let url = try await playable.isEpisode
                 ? client.vodEpisodeStreamURL(uuid: playable.uuid, stream: stream)
                 : client.vodMovieStreamURL(uuid: playable.uuid, stream: stream)
             // The demo clip is shorter than the positions the demo library

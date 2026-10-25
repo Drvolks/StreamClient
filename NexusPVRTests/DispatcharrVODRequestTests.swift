@@ -72,6 +72,18 @@ struct DispatcharrVODRequestTests {
                 == "\(base)/proxy/vod/episode/def-456")
     }
 
+    @Test("The player starts on the session URL the proxy redirects to")
+    func sessionLocation() {
+        let location = "/proxy/vod/movie/abc/vod_1792952351673_1843?stream_id=43451&m3u_account_id=7"
+        #expect(DispatcharrVODRequest.sessionLocation(status: 301, location: location) == location)
+        #expect(DispatcharrVODRequest.sessionLocation(status: 302, location: " \(location) ") == location)
+        // No redirect (an older server streaming straight away, or an error):
+        // keep the bare URL.
+        #expect(DispatcharrVODRequest.sessionLocation(status: 206, location: nil) == nil)
+        #expect(DispatcharrVODRequest.sessionLocation(status: 500, location: nil) == nil)
+        #expect(DispatcharrVODRequest.sessionLocation(status: 301, location: "") == nil)
+    }
+
     @Test("A title without a uuid has no stream URL")
     func streamNeedsUUID() {
         #expect(DispatcharrVODRequest.movieStreamURL(baseURL: base, uuid: "") == nil)

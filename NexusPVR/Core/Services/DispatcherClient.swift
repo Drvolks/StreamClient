@@ -2308,20 +2308,51 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
         return try await authenticatedRequest(url)
     }
 
-    func vodMovieStreamURL(uuid: String, stream: VODStream?) throws -> URL {
+    func vodMovieStreamURL(uuid: String, stream: VODStream?) async throws -> URL {
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
         guard let url = DispatcharrVODRequest.movieStreamURL(baseURL: baseURL, uuid: uuid, stream: stream) else {
             throw PVRClientError.invalidResponse
         }
-        return url
+        return await vodSessionURL(for: url)
     }
 
-    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) throws -> URL {
+    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) async throws -> URL {
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
         guard let url = DispatcharrVODRequest.episodeStreamURL(baseURL: baseURL, uuid: uuid, stream: stream) else {
             throw PVRClientError.invalidResponse
         }
-        return url
+        return await vodSessionURL(for: url)
+    }
+
+    /// The per-session URL Dispatcharr redirects a VOD request to, so the
+    /// player starts on it.
+    ///
+    /// The player has to stay on one session: each new session takes another
+    /// provider connection, and on an account limited to one, Dispatcharr
+    /// fails over to another source (possibly a broken one) instead. Players
+    /// keep to the session by caching the redirect, but the FFmpeg 8.0.1 in
+    /// the app's mpv misreads its `Cache-Control: private, max-age=…` (sent
+    /// since Dispatcharr 0.33.0) as already expired, so every seek went back
+    /// to the bare URL and minted a new session. Starting mpv on the session
+    /// URL leaves it nothing to go back to.
+    ///
+    /// Only the redirect is read: Dispatcharr mints the session without
+    /// contacting the provider. Anything unexpected keeps the bare URL, which
+    /// is what the player got before.
+    private func vodSessionURL(for url: URL) async -> URL {
+        do {
+            let response = try await unredirectedStreamResponse(url)
+            guard let location = DispatcharrVODRequest.sessionLocation(
+                status: response.statusCode,
+                location: response.value(forHTTPHeaderField: "Location")
+            ), let sessionURL = makeAbsoluteURL(from: location) else {
+                return url
+            }
+            return sessionURL
+        } catch {
+            print("[Dispatcharr] VOD session redirect not resolved: \(error.localizedDescription)")
+            return url
+        }
     }
 
     func vodImageURL(_ reference: String?) -> URL? {

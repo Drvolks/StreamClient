@@ -21,9 +21,10 @@ protocol VODProviding: AnyObject {
     /// The sources of a title, when the server lists them. An empty list
     /// means there is nothing to choose between.
     func getVODStreams(kind: VODKind, id: Int) async throws -> [VODStream]
-    /// `stream` nil lets the server pick the source.
-    func vodMovieStreamURL(uuid: String, stream: VODStream?) throws -> URL
-    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) throws -> URL
+    /// `stream` nil lets the server pick the source. Async: the URL handed to
+    /// the player is the session one the proxy redirects to.
+    func vodMovieStreamURL(uuid: String, stream: VODStream?) async throws -> URL
+    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) async throws -> URL
     /// Resolves an image reference from a VOD response, which may be an
     /// absolute URL or a path on the server.
     func vodImageURL(_ reference: String?) -> URL?
