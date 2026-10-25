@@ -20,8 +20,11 @@ nonisolated enum DispatcharrHLS {
 
     /// Sets `?output_format=` on a live URL, keeping its other query items
     /// (an `output_profile`, say).
+    /// Auto and Server default must be resolved first (`DispatcharrLiveFormat`);
+    /// passed here unresolved, they leave the URL as it was.
     static func applying(format: LiveStreamFormat, to url: URL) -> URL {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        guard format.isConcrete,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
         var items = components.queryItems ?? []
         items.removeAll { $0.name == formatQueryItemName }
         items.append(URLQueryItem(name: formatQueryItemName, value: format.rawValue))

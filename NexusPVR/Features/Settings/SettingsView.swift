@@ -130,7 +130,11 @@ struct SettingsView: View {
             await client.ensureOutputProfilesLoaded()
         }
         .task {
-            await client.ensureHLSSupportProbed()
+            // What Server default would play (#204) is read again each time
+            // Settings opens, so a change made in Dispatcharr shows up here.
+            if await client.ensureHLSSupportProbed() == true {
+                await client.refreshServerOutputFormat()
+            }
         }
         #endif
         #if os(macOS)
@@ -301,7 +305,7 @@ struct SettingsView: View {
             #else
             tvRow("Live TV Output Profile", value: outputProfileLabel) { activeTVPopup = .outputProfile }
             if client.hlsOutputSupported == true {
-                tvRow("Live TV Format", value: liveStreamFormat.label, subtitle: liveStreamFormat.summary) {
+                tvRow("Live TV Format", value: liveFormatLabel(liveStreamFormat), subtitle: liveStreamFormat.summary) {
                     activeTVPopup = .liveStreamFormat
                 }
             }
@@ -934,7 +938,7 @@ struct SettingsView: View {
             return LiveStreamFormat.allCases.map { format in
                 TVPopupOption(
                     id: "settings-popup-live-format-\(format.rawValue)",
-                    title: format.label,
+                    title: liveFormatLabel(format),
                     isCurrent: liveStreamFormat == format,
                     isDestructive: false
                 ) {
@@ -1301,6 +1305,13 @@ struct SettingsView: View {
         var prefs = UserPreferences.load()
         prefs.outputProfileId = id
         prefs.save()
+    }
+
+    /// A Live TV Format choice as listed; Server default also names what it
+    /// currently resolves to, once known.
+    private func liveFormatLabel(_ format: LiveStreamFormat) -> String {
+        guard format == .serverDefault, let resolved = client.serverOutputFormat else { return format.label }
+        return "\(format.label) (\(resolved.label))"
     }
 
     private func saveLiveStreamFormat(_ format: LiveStreamFormat) {
@@ -1696,7 +1707,7 @@ extension SettingsView {
                 MidnightPicker(
                     title: "Live TV Format",
                     selection: $liveStreamFormat,
-                    options: LiveStreamFormat.allCases.map { ($0.label, $0) }
+                    options: LiveStreamFormat.allCases.map { (liveFormatLabel($0), $0) }
                 )
                 .accessibilityIdentifier("settings-live-format")
             }

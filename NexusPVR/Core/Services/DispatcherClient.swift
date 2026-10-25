@@ -29,6 +29,11 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
     /// Whether the server has native HLS live output that this user can stop
     /// (#193). nil until probed; Settings only offers the format when true.
     @Published private(set) var hlsOutputSupported: Bool?
+    /// What Dispatcharr would pick for this user (their Output Format
+    /// override, else the server default), for the Server default choice
+    /// (#204). nil until read; read once per session and again whenever
+    /// Settings opens.
+    @Published private(set) var serverOutputFormat: LiveStreamFormat?
     private var hlsProbe: Task<Bool?, Never>?
     /// Token of the HLS session the last live URL opened, stopped when
     /// playback ends or another channel opens.
@@ -131,6 +136,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
         gridWindowProbe?.cancel()
         gridWindowProbe = nil
         hlsOutputSupported = nil
+        serverOutputFormat = nil
         hlsProbe?.cancel()
         hlsProbe = nil
         activeHLSToken = nil
@@ -1936,10 +1942,49 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
         // Live TV format (#193), only on servers with HLS output: older ones
         // keep exactly the URLs they always got.
         guard await ensureHLSSupportProbed() == true else { return profiledURL }
-        let format = UserPreferences.load().liveStreamFormat
+        let format = await resolvedLiveStreamFormat()
         let formattedURL = DispatcharrHLS.applying(format: format, to: profiledURL)
         guard format == .hls else { return formattedURL }
         return await openHLSSession(at: formattedURL)
+    }
+
+    /// The format to ask for now: Auto looks at the current network, Server
+    /// default at what Dispatcharr would pick (#204).
+    private func resolvedLiveStreamFormat() async -> LiveStreamFormat {
+        let choice = UserPreferences.load().liveStreamFormat
+        var serverChoice: LiveStreamFormat?
+        if choice == .serverDefault {
+            serverChoice = serverOutputFormat
+            if serverChoice == nil {
+                serverChoice = await refreshServerOutputFormat()
+            }
+        }
+        return DispatcharrLiveFormat.resolve(
+            choice,
+            onExpensiveNetwork: networkPath.isExpensive,
+            serverChoice: serverChoice
+        )
+    }
+
+    /// Reads the user's Output Format override and the server default, and
+    /// caches what they resolve to. nil when either can't be read, which
+    /// plays MPEG-TS until the next try.
+    @discardableResult
+    func refreshServerOutputFormat() async -> LiveStreamFormat? {
+        guard config.isConfigured, !config.isDemoMode,
+              let meURL = URL(string: "\(baseURL)/api/accounts/users/me/"),
+              let settingsURL = URL(string: "\(baseURL)/api/core/settings/") else { return nil }
+        do {
+            let user: DispatcharrUserOutputFormat = try await authenticatedRequest(meURL)
+            let settings: [DispatcharrCoreSetting] = try await fetchAllPages(settingsURL)
+            let serverDefault = settings.first { $0.key == DispatcharrCoreSetting.streamSettingsKey }?.defaultOutputFormat
+            let format = DispatcharrLiveFormat.serverChoice(userOverride: user.outputFormat, serverDefault: serverDefault)
+            serverOutputFormat = format
+            return format
+        } catch {
+            print("[Dispatcharr] Server output format unavailable: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - HLS live output (#193)
