@@ -38,6 +38,9 @@ nonisolated struct UserPreferences: Codable {
     /// profile id, so the choice is validated against the connected server's
     /// active profiles at play time rather than trusted blindly.
     var outputProfileId: Int? = nil
+    /// Dispatcharr live TV format (#193). Only sent to servers that have HLS
+    /// output; MPEG-TS, the default, is what the app always played.
+    var liveStreamFormat: LiveStreamFormat = .mpegts
     /// User-selectable tvOS UI font size (#107). Default `.medium`
     /// preserves the pre-feature visual output exactly — existing
     /// users see zero change on first launch after upgrade.
@@ -208,6 +211,7 @@ nonisolated struct UserPreferences: Codable {
         case streamQuality
         case cellularStreamQuality
         case outputProfileId
+        case liveStreamFormat
         case uiFontSize
         case channelsPerRow
         case preferredSubtitleLanguage
@@ -251,6 +255,9 @@ nonisolated struct UserPreferences: Codable {
         cellularStreamQuality = try container.decodeIfPresent(StreamQuality.self, forKey: .cellularStreamQuality)
         // Prefs written before #161 have no `outputProfileId`: Original.
         outputProfileId = try container.decodeIfPresent(Int.self, forKey: .outputProfileId)
+        // Prefs written before #193, or by a later version with a format this
+        // one doesn't know, play MPEG-TS.
+        liveStreamFormat = (try? container.decodeIfPresent(LiveStreamFormat.self, forKey: .liveStreamFormat)) ?? .mpegts
         // Forward- and backward-compat: a blob without `uiFontSize`
         // (any prefs written before #107) decodes to .medium so
         // existing users see no visual change.
@@ -283,6 +290,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(streamQuality, forKey: .streamQuality)
         try container.encodeIfPresent(cellularStreamQuality, forKey: .cellularStreamQuality)
         try container.encodeIfPresent(outputProfileId, forKey: .outputProfileId)
+        try container.encode(liveStreamFormat, forKey: .liveStreamFormat)
         try container.encode(uiFontSize, forKey: .uiFontSize)
         try container.encodeIfPresent(channelsPerRow, forKey: .channelsPerRow)
         try container.encodeIfPresent(preferredSubtitleLanguage, forKey: .preferredSubtitleLanguage)

@@ -26,6 +26,13 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
     /// its fixed 25h window, so support can't be assumed.
     private var gridWindowSupport: Bool?
     private var gridWindowProbe: Task<Data?, Error>?
+    /// Whether the server has native HLS live output that this user can stop
+    /// (#193). nil until probed; Settings only offers the format when true.
+    @Published private(set) var hlsOutputSupported: Bool?
+    private var hlsProbe: Task<Bool?, Never>?
+    /// Token of the HLS session the last live URL opened, stopped when
+    /// playback ends or another channel opens.
+    private var activeHLSToken: String?
     /// Copy of the playback positions in the user's app data on the server
     /// (#199), on servers that have the endpoint.
     private(set) lazy var positionSync: DispatcharrPositionSync = {
@@ -123,6 +130,10 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
         gridWindowSupport = nil
         gridWindowProbe?.cancel()
         gridWindowProbe = nil
+        hlsOutputSupported = nil
+        hlsProbe?.cancel()
+        hlsProbe = nil
+        activeHLSToken = nil
         positionSync.reset()
         tvgIdToChannelIds = [:]
         epgDataIdToChannelIds = [:]
@@ -1898,6 +1909,9 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
         streamQualityNotice = nil
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
 
+        // Free the previous channel's HLS session before opening another (#193).
+        await stopLiveStream()
+
         let baseStreamURL = try baseLiveStreamURL(channelId: channelId)
 
         // Output Profile (#161): validated against the server's active list on
@@ -1917,7 +1931,140 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
                 errorDetail: notice
             ))
         }
-        return DispatcharrOutputProfile.applying(profileId: resolution.profileId, to: baseStreamURL)
+        let profiledURL = DispatcharrOutputProfile.applying(profileId: resolution.profileId, to: baseStreamURL)
+
+        // Live TV format (#193), only on servers with HLS output: older ones
+        // keep exactly the URLs they always got.
+        guard await ensureHLSSupportProbed() == true else { return profiledURL }
+        let format = UserPreferences.load().liveStreamFormat
+        let formattedURL = DispatcharrHLS.applying(format: format, to: profiledURL)
+        guard format == .hls else { return formattedURL }
+        return await openHLSSession(at: formattedURL)
+    }
+
+    // MARK: - HLS live output (#193)
+
+    /// Probes once per server whether it has HLS output, and whether this
+    /// user may stop HLS sessions. nil when the answer couldn't be read.
+    @discardableResult
+    func ensureHLSSupportProbed() async -> Bool? {
+        if let hlsOutputSupported { return hlsOutputSupported }
+        guard config.isConfigured, !config.isDemoMode else { return nil }
+        // Streamer-level XC accounts have no REST token to stop a session with.
+        if useOutputEndpoints && accessToken == nil {
+            hlsOutputSupported = false
+            return false
+        }
+        if let hlsProbe { return await hlsProbe.value }
+        let probe = Task { () -> Bool? in
+            guard let url = DispatcharrHLS.probeURL(baseURL: self.baseURL),
+                  let answer = try? await self.authenticatedResponse(url, expectedStatusCodes: [403, 404, 405]) else {
+                return nil
+            }
+            return DispatcharrHLS.supportsHLS(probeStatus: answer.1.statusCode)
+        }
+        hlsProbe = probe
+        let supported = await probe.value
+        if hlsProbe == probe {
+            hlsProbe = nil
+            if let supported {
+                hlsOutputSupported = supported
+                print("[Dispatcharr] HLS live output \(supported ? "available" : "not available")")
+            }
+        }
+        return supported
+    }
+
+    /// Asks for `url` without following the redirect, so the session token
+    /// can be read off it, and returns the playlist for the player. Anything
+    /// unexpected plays MPEG-TS instead, with a notice saying why.
+    private func openHLSSession(at url: URL) async -> URL {
+        let mpegtsURL = DispatcharrHLS.applying(format: .mpegts, to: url)
+        let result: DispatcharrHLS.OpenResult
+        do {
+            let response = try await unredirectedStreamResponse(url)
+            result = DispatcharrHLS.openResult(
+                status: response.statusCode,
+                location: response.value(forHTTPHeaderField: "Location"),
+                tokenHeader: response.value(forHTTPHeaderField: DispatcharrHLS.sessionTokenHeader)
+            )
+        } catch {
+            noteHLSFallback("HLS couldn't be started (\(error.localizedDescription)). Playing MPEG-TS instead.")
+            return mpegtsURL
+        }
+        switch result {
+        case .session(let token, let location):
+            guard let playlist = makeAbsoluteURL(from: location) else {
+                noteHLSFallback("HLS couldn't be started. Playing MPEG-TS instead.")
+                return mpegtsURL
+            }
+            activeHLSToken = token
+            return playlist
+        case .redirect(let location):
+            return makeAbsoluteURL(from: location) ?? mpegtsURL
+        case .streaming:
+            noteHLSFallback("The server sent MPEG-TS instead of HLS.")
+            return mpegtsURL
+        case .failed(let status):
+            noteHLSFallback("HLS isn't available for this channel right now (HTTP \(status)). Playing MPEG-TS instead.")
+            return mpegtsURL
+        }
+    }
+
+    private func noteHLSFallback(_ notice: String) {
+        streamQualityNotice = [streamQualityNotice, notice].compactMap { $0 }.joined(separator: " ")
+        logNetworkEvent(NetworkEvent(
+            timestamp: Date(),
+            method: "GET",
+            path: "/proxy/ts/stream (HLS fallback)",
+            statusCode: nil,
+            isSuccess: false,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: notice
+        ))
+    }
+
+    /// The first response to a live stream request, with redirects left
+    /// unfollowed and the body never read, after one sign-in retry on 401.
+    private func unredirectedStreamResponse(_ url: URL) async throws -> HTTPURLResponse {
+        for attempt in 0..<2 {
+            if !isAuthenticated {
+                try await authenticate()
+            }
+            var request = URLRequest(url: url)
+            for (field, value) in streamAuthHeaders() {
+                request.setValue(value, forHTTPHeaderField: field)
+            }
+            let (bytes, response) = try await session.bytes(for: request, delegate: DispatcharrNoRedirectDelegate())
+            // Stop here: a redirect has nothing to read, and a stream never ends.
+            bytes.task.cancel()
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PVRClientError.invalidResponse
+            }
+            guard httpResponse.statusCode == 401, attempt == 0 else { return httpResponse }
+            if useApiKeyAuth {
+                isAuthenticated = false
+            } else {
+                do {
+                    try await refreshAccessToken()
+                } catch {
+                    DispatcharrSessionStore.clear()
+                    isAuthenticated = false
+                }
+            }
+        }
+        throw PVRClientError.sessionExpired
+    }
+
+    /// Stops the HLS session the last live URL opened, so the server frees
+    /// the connection now rather than when it notices the player stopped
+    /// polling. Best-effort; a 404 means it was already gone.
+    func stopLiveStream() async {
+        guard let token = activeHLSToken else { return }
+        activeHLSToken = nil
+        guard let url = DispatcharrHLS.sessionURL(baseURL: baseURL, token: token) else { return }
+        _ = try? await authenticatedResponse(url, method: "DELETE", expectedStatusCodes: [404])
     }
 
     /// The live URL before any output-profile query is applied — the exact

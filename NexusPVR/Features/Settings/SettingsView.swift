@@ -44,6 +44,8 @@ struct SettingsView: View {
     @State private var guideProfileIds: [Int] = UserPreferences.load().guideProfileIds
     /// Selected Dispatcharr Output Profile id (#161); nil is Original.
     @State private var outputProfileId: Int? = UserPreferences.load().outputProfileId
+    /// Live TV format (#193), offered only on servers with HLS output.
+    @State private var liveStreamFormat: LiveStreamFormat = UserPreferences.load().liveStreamFormat
     #endif
     @ObservedObject private var eventLog: NetworkEventLog
 
@@ -94,6 +96,7 @@ struct SettingsView: View {
         case streamQuality
         #else
         case outputProfile
+        case liveStreamFormat
         #endif
         case renderer
         case landingTab
@@ -125,6 +128,9 @@ struct SettingsView: View {
         #if DISPATCHERPVR
         .task {
             await client.ensureOutputProfilesLoaded()
+        }
+        .task {
+            await client.ensureHLSSupportProbed()
         }
         #endif
         #if os(macOS)
@@ -294,6 +300,11 @@ struct SettingsView: View {
             tvRow("Live TV Quality", value: streamQuality.label) { activeTVPopup = .streamQuality }
             #else
             tvRow("Live TV Output Profile", value: outputProfileLabel) { activeTVPopup = .outputProfile }
+            if client.hlsOutputSupported == true {
+                tvRow("Live TV Format", value: liveStreamFormat.label, subtitle: liveStreamFormat.summary) {
+                    activeTVPopup = .liveStreamFormat
+                }
+            }
             #endif
             tvRow("Seek Backward", value: "\(seekBackwardSeconds)s") { activeTVPopup = .seekBackward }
             tvRow("Seek Forward", value: "\(seekForwardSeconds)s") { activeTVPopup = .seekForward }
@@ -797,6 +808,8 @@ struct SettingsView: View {
         #else
         case .outputProfile:
             return "Live TV Output Profile"
+        case .liveStreamFormat:
+            return "Live TV Format"
         #endif
         case .subtitleMode:
             return "Subtitles"
@@ -915,6 +928,17 @@ struct SettingsView: View {
                     isDestructive: false
                 ) {
                     saveOutputProfile(choice.id)
+                }
+            }
+        case .liveStreamFormat:
+            return LiveStreamFormat.allCases.map { format in
+                TVPopupOption(
+                    id: "settings-popup-live-format-\(format.rawValue)",
+                    title: format.label,
+                    isCurrent: liveStreamFormat == format,
+                    isDestructive: false
+                ) {
+                    saveLiveStreamFormat(format)
                 }
             }
         #endif
@@ -1160,6 +1184,9 @@ struct SettingsView: View {
         .onChange(of: outputProfileId) { _ in
             saveOutputProfile(outputProfileId)
         }
+        .onChange(of: liveStreamFormat) { _ in
+            saveLiveStreamFormat(liveStreamFormat)
+        }
         #endif
         .onChange(of: subtitleMode) { _ in
             var prefs = UserPreferences.load()
@@ -1273,6 +1300,14 @@ struct SettingsView: View {
         outputProfileId = id
         var prefs = UserPreferences.load()
         prefs.outputProfileId = id
+        prefs.save()
+    }
+
+    private func saveLiveStreamFormat(_ format: LiveStreamFormat) {
+        liveStreamFormat = format
+        var prefs = UserPreferences.load()
+        guard prefs.liveStreamFormat != format else { return }
+        prefs.liveStreamFormat = format
         prefs.save()
     }
     #endif
@@ -1655,6 +1690,16 @@ extension SettingsView {
                 selection: $outputProfileId,
                 options: outputProfileChoices.map { ($0.label, $0.id) }
             )
+        }
+        if client.hlsOutputSupported == true {
+            MacSettingsRow(title: "Live TV Format", subtitle: liveStreamFormat.summary) {
+                MidnightPicker(
+                    title: "Live TV Format",
+                    selection: $liveStreamFormat,
+                    options: LiveStreamFormat.allCases.map { ($0.label, $0) }
+                )
+                .accessibilityIdentifier("settings-live-format")
+            }
         }
         #else
         MacSettingsRow(title: "Live TV Quality") {

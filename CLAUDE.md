@@ -144,6 +144,11 @@ The app communicates with NextPVR server via JSON API:
 - Runs at launch (`NavigationRouter`), on foreground, a few seconds after a local save (`.playbackPositionSaved`, posted by the stores' `save(announcing:)`; positions merged in from the server save with `announcing: false`), and flushes on backgrounding. Over the size limit it keeps the newest entries; a 413 retries once with half, other refusals leave the key alone for the session. iCloud KVS stays in place.
 - Settings › Server shows "Playback Positions: Synced via server / via iCloud" from `DispatcherClient.syncsPositionsViaServer` (fed by `positionSync.onSupportChange`); hidden in demo mode.
 
+### Dispatcharr HLS live output (#193)
+- Server support is probed once per server with a GET on `/api/proxy/hls/sessions/probe/` (`DispatcharrHLS.probeURL`): 405 = HLS output and this user may stop sessions; 403 (not a Standard user), 404, or an older server's catch-all 200 = not offered.
+- With HLS chosen, `liveStreamURL` requests `/proxy/ts/stream/<uuid>?output_format=hls` itself without following the redirect (`DispatcharrNoRedirectDelegate`, body never read), keeps the token (`X-Dispatcharr-Session-Token`, or the `/proxy/hls/<token>/index.m3u8` path) and hands mpv the playlist URL. Never probe a live URL that may answer MPEG-TS: closing it can tear the channel down (Dispatcharr's default shutdown delay is 0).
+- `stopLiveStream()` sends `DELETE /api/proxy/hls/sessions/<token>/` (404 = already gone). It runs where the player already ends live playback (dismiss, PiP closed) and at the start of the next `liveStreamURL`. Any failure to open HLS plays MPEG-TS with a `streamQualityNotice`.
+
 ### Response Models
 All API responses use `Codable` structs in `Core/Models/`:
 - `Channel` - Channel with id, name, number, hasIcon, streamURL
@@ -185,6 +190,7 @@ Stored in `UserPreferences` struct (Core/Models/UserPreferences.swift), synced v
 - `seekForwardSeconds` - Default 30
 - `channelsPerRow` - tvOS Channels grid columns (#177); nil = Auto (adaptive). `ChannelGridLayout` holds the options and scales `TVChannelCard`'s contents with the card width; `AppState.channelsPerRow` applies it live. `--demo-channels-per-row <n>` sets it in demo mode
 - `outputProfileId` - Dispatcharr Output Profile for live TV (#161); nil = Original. `DispatcherClient.liveStreamURL` validates it against `/api/core/outputprofiles/` and appends `?output_profile=<id>`, falling back to the plain URL with a `streamQualityNotice` when unavailable
+- `liveStreamFormat` - Dispatcharr live TV format (#193): `.mpegts` (default) or `.hls`. Only applied, and only offered in Settings, when `DispatcherClient.hlsOutputSupported` is true; then sent explicitly as `?output_format=` so a server default or per-user override doesn't change it. See "Dispatcharr HLS live output" below
 
 Also defines `PlayerStats` struct for MPV playback statistics.
 
