@@ -19,6 +19,7 @@ struct VODDetailView: View {
     @State private var playError: String?
     #if os(tvOS)
     @FocusState private var isPrimaryActionFocused: Bool
+    @State private var showingStreamPicker = false
     #endif
 
     init(item: VODItem, client: PVRClient, appState: AppState) {
@@ -185,32 +186,91 @@ struct VODDetailView: View {
     @ViewBuilder
     private var actions: some View {
         if let playable = primaryPlayable {
-            let state = viewModel.watchState(for: playable.uuid)
+            #if os(tvOS)
             HStack(spacing: 10) {
-                actionButton(primaryTitle, systemImage: "play.fill", isPrimary: true) {
-                    play(playable)
-                }
-                .accessibilityIdentifier("vod-play-button")
-                #if os(tvOS)
-                .focused($isPrimaryActionFocused)
-                #endif
-
-                if item.kind == .movies, state != .new {
-                    actionButton("Start over", systemImage: "gobackward", isPrimary: false) {
-                        play(playable, fromBeginning: true)
-                    }
-                }
-                if let remaining = remainingText(for: playable.uuid) {
-                    Text(remaining)
-                        .midnightMeta(labelSize + 2)
-                        .foregroundStyle(MidnightPalette.inkSoft)
-                }
+                playButtons(playable)
+                streamPicker
                 Spacer(minLength: 0)
             }
-            #if os(tvOS)
             .focusSection()
+            .confirmationDialog("Stream", isPresented: $showingStreamPicker, titleVisibility: .visible) {
+                ForEach(streamOptions, id: \.value) { option in
+                    Button(option.label) { viewModel.selectedStreamId = option.value }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            #else
+            // The stream picker sits beside Play when there is room, under it
+            // on a phone.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    playButtons(playable)
+                    streamPicker
+                    Spacer(minLength: 0)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        playButtons(playable)
+                        Spacer(minLength: 0)
+                    }
+                    streamPicker
+                }
+            }
             #endif
         }
+    }
+
+    @ViewBuilder
+    private func playButtons(_ playable: VODPlayable) -> some View {
+        actionButton(primaryTitle, systemImage: "play.fill", isPrimary: true) {
+            play(playable)
+        }
+        .accessibilityIdentifier("vod-play-button")
+        #if os(tvOS)
+        .focused($isPrimaryActionFocused)
+        #endif
+
+        if item.kind == .movies, viewModel.watchState(for: playable.uuid) != .new {
+            actionButton("Start over", systemImage: "gobackward", isPrimary: false) {
+                play(playable, fromBeginning: true)
+            }
+        }
+        if let remaining = remainingText(for: playable.uuid) {
+            Text(remaining)
+                .midnightMeta(labelSize + 2)
+                .foregroundStyle(MidnightPalette.inkSoft)
+        }
+    }
+
+    /// Which source to play, when the title has more than one (as in
+    /// Dispatcharr's own "Stream Selection"). Automatic leaves it to the
+    /// server's account priority.
+    @ViewBuilder
+    private var streamPicker: some View {
+        if !viewModel.streams.isEmpty {
+            #if os(tvOS)
+            actionButton(selectedStreamLabel, systemImage: "antenna.radiowaves.left.and.right", isPrimary: false) {
+                showingStreamPicker = true
+            }
+            .accessibilityIdentifier("vod-stream-picker")
+            #else
+            HStack(spacing: 8) {
+                Text("Stream")
+                    .midnightKicker(labelSize)
+                    .foregroundStyle(MidnightPalette.inkSoft)
+                MidnightPicker(title: "Stream", selection: $viewModel.selectedStreamId, options: streamOptions)
+                    .accessibilityIdentifier("vod-stream-picker")
+            }
+            #endif
+        }
+    }
+
+    private var streamOptions: [(label: String, value: Int?)] {
+        [("Automatic", nil)] + viewModel.streams.map { ($0.label, $0.id) }
+    }
+
+    private var selectedStreamLabel: String {
+        viewModel.selectedStream?.label ?? "Stream: Automatic"
     }
 
     @ViewBuilder
@@ -417,9 +477,10 @@ struct VODDetailView: View {
 
     private func play(_ playable: VODPlayable, fromBeginning: Bool = false) {
         do {
+            let stream = viewModel.selectedStream
             let url = try playable.isEpisode
-                ? client.vodEpisodeStreamURL(uuid: playable.uuid)
-                : client.vodMovieStreamURL(uuid: playable.uuid)
+                ? client.vodEpisodeStreamURL(uuid: playable.uuid, stream: stream)
+                : client.vodMovieStreamURL(uuid: playable.uuid, stream: stream)
             // The demo clip is shorter than the positions the demo library
             // pretends to have saved.
             let resume = fromBeginning || client.config.isDemoMode ? nil : viewModel.resumePosition(for: playable.uuid)

@@ -43,6 +43,12 @@ struct PosterHero<Content: View>: View {
         .background { backdrop }
         .overlay { Rectangle().strokeBorder(MidnightPalette.lineSoft, lineWidth: 1) }
         .clipped()
+        // `clipped()` trims what is drawn, not what can be touched: a
+        // scaled-to-fill image still answers taps across its full, unclipped
+        // size. Keep touches to the hero's own rectangle, so artwork that
+        // overflows can't cover the controls around it (the On Demand page's
+        // back button sits right above).
+        .contentShape(Rectangle())
     }
 
     private var poster: some View {
@@ -61,6 +67,8 @@ struct PosterHero<Content: View>: View {
         .frame(width: 130 * scale, height: 195 * scale)
         .clipped()
         .overlay { Rectangle().strokeBorder(MidnightPalette.line, lineWidth: 1) }
+        // Artwork only; see the note in `body`.
+        .allowsHitTesting(false)
     }
 
     /// The fanart, dimmed and faded into the page so the text stays readable.
@@ -84,5 +92,8 @@ struct PosterHero<Content: View>: View {
                 endPoint: .trailing
             )
         }
+        // A poster-shaped image in the backdrop field (common with IPTV
+        // providers) fills the hero's width and spills far above and below.
+        .allowsHitTesting(false)
     }
 }

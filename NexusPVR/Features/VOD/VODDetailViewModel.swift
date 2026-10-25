@@ -20,6 +20,11 @@ final class VODDetailViewModel: ObservableObject {
     /// The season whose episodes are listed.
     @Published var selectedSeasonNumber: Int?
     @Published private(set) var progressStore: VODProgressStore
+    /// The title's sources, when there is more than one to choose between.
+    @Published private(set) var streams: [VODStream] = []
+    /// The chosen source's id; nil lets the server pick (its account
+    /// priority), which is also what plays when the list can't be read.
+    @Published var selectedStreamId: Int?
 
     private let provider: any VODProviding
     private let defaults: UserDefaults
@@ -46,6 +51,8 @@ final class VODDetailViewModel: ObservableObject {
         isLoading = true
         error = nil
         defer { isLoading = false }
+        // The sources load alongside the details.
+        async let sources: Void = loadStreams()
         do {
             switch item.kind {
             case .movies:
@@ -59,6 +66,24 @@ final class VODDetailViewModel: ObservableObject {
             }
         } catch {
             self.error = error.localizedDescription
+        }
+        await sources
+    }
+
+    // MARK: - Streams
+
+    /// The source to play, nil for the server's choice.
+    var selectedStream: VODStream? {
+        streams.first { $0.id == selectedStreamId }
+    }
+
+    /// Fetches the sources. Failure only means there is no picker: playback
+    /// still works, with the server choosing.
+    private func loadStreams() async {
+        let sources = (try? await provider.getVODStreams(kind: item.kind, id: item.itemId)) ?? []
+        streams = sources.count > 1 ? sources : []
+        if let selectedStreamId, !streams.contains(where: { $0.id == selectedStreamId }) {
+            self.selectedStreamId = nil
         }
     }
 

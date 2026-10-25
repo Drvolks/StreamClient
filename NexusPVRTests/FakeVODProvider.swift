@@ -67,12 +67,28 @@ final class FakeVODProvider: VODProviding {
         return detail
     }
 
-    func vodMovieStreamURL(uuid: String) throws -> URL {
-        URL(string: "http://fake.local/proxy/vod/movie/\(uuid)")!
+    /// Sources served by `getVODStreams`, by title id.
+    var streams: [Int: [VODStream]] = [:]
+    /// Thrown by `getVODStreams` when set.
+    var streamsError: Error?
+
+    func getVODStreams(kind: VODKind, id: Int) async throws -> [VODStream] {
+        if let streamsError { throw streamsError }
+        return streams[id] ?? []
     }
 
-    func vodEpisodeStreamURL(uuid: String) throws -> URL {
-        URL(string: "http://fake.local/proxy/vod/episode/\(uuid)")!
+    func vodMovieStreamURL(uuid: String, stream: VODStream?) throws -> URL {
+        guard let url = DispatcharrVODRequest.movieStreamURL(baseURL: "http://fake.local", uuid: uuid, stream: stream) else {
+            throw PVRClientError.invalidResponse
+        }
+        return url
+    }
+
+    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) throws -> URL {
+        guard let url = DispatcharrVODRequest.episodeStreamURL(baseURL: "http://fake.local", uuid: uuid, stream: stream) else {
+            throw PVRClientError.invalidResponse
+        }
+        return url
     }
 
     func vodImageURL(_ reference: String?) -> URL? {

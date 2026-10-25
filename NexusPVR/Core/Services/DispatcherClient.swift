@@ -2300,17 +2300,25 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
         return try await authenticatedRequest(url)
     }
 
-    func vodMovieStreamURL(uuid: String) throws -> URL {
+    func getVODStreams(kind: VODKind, id: Int) async throws -> [VODStream] {
+        guard !config.isDemoMode else { return [] }
+        guard let url = DispatcharrVODRequest.streamsURL(baseURL: baseURL, kind: kind, id: id) else {
+            throw PVRClientError.invalidResponse
+        }
+        return try await authenticatedRequest(url)
+    }
+
+    func vodMovieStreamURL(uuid: String, stream: VODStream?) throws -> URL {
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
-        guard let url = DispatcharrVODRequest.movieStreamURL(baseURL: baseURL, uuid: uuid) else {
+        guard let url = DispatcharrVODRequest.movieStreamURL(baseURL: baseURL, uuid: uuid, stream: stream) else {
             throw PVRClientError.invalidResponse
         }
         return url
     }
 
-    func vodEpisodeStreamURL(uuid: String) throws -> URL {
+    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) throws -> URL {
         guard !config.isDemoMode else { return DemoDataProvider.demoVideoURL }
-        guard let url = DispatcharrVODRequest.episodeStreamURL(baseURL: baseURL, uuid: uuid) else {
+        guard let url = DispatcharrVODRequest.episodeStreamURL(baseURL: baseURL, uuid: uuid, stream: stream) else {
             throw PVRClientError.invalidResponse
         }
         return url

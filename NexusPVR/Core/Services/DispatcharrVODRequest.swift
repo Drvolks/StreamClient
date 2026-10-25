@@ -50,15 +50,28 @@ nonisolated enum DispatcharrVODRequest {
         URL(string: "\(baseURL)/api/vod/series/\(id)/provider-info/?include_episodes=true")
     }
 
-    /// The proxy answers with a redirect to a per-session URL, which the
-    /// player follows on its own.
-    static func movieStreamURL(baseURL: String, uuid: String) -> URL? {
-        guard !uuid.isEmpty else { return nil }
-        return URL(string: "\(baseURL)/proxy/vod/movie/\(uuid)")
+    /// Every source of a title (`VODStream`).
+    static func streamsURL(baseURL: String, kind: VODKind, id: Int) -> URL? {
+        URL(string: "\(baseURL)/api/vod/\(kind.apiPath)/\(id)/providers/")
     }
 
-    static func episodeStreamURL(baseURL: String, uuid: String) -> URL? {
+    /// The proxy answers with a redirect to a per-session URL, which the
+    /// player follows on its own. `stream` picks the source; nil leaves the
+    /// choice to the server (its account priority).
+    static func movieStreamURL(baseURL: String, uuid: String, stream: VODStream? = nil) -> URL? {
         guard !uuid.isEmpty else { return nil }
-        return URL(string: "\(baseURL)/proxy/vod/episode/\(uuid)")
+        return proxyURL("\(baseURL)/proxy/vod/movie/\(uuid)", stream: stream)
+    }
+
+    static func episodeStreamURL(baseURL: String, uuid: String, stream: VODStream? = nil) -> URL? {
+        guard !uuid.isEmpty else { return nil }
+        return proxyURL("\(baseURL)/proxy/vod/episode/\(uuid)", stream: stream)
+    }
+
+    private static func proxyURL(_ string: String, stream: VODStream?) -> URL? {
+        guard let stream else { return URL(string: string) }
+        guard var components = URLComponents(string: string) else { return nil }
+        components.queryItems = stream.queryItems
+        return components.url
     }
 }

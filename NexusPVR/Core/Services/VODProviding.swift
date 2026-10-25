@@ -18,8 +18,12 @@ protocol VODProviding: AnyObject {
     func getVODItems(kind: VODKind, page: Int, pageSize: Int, search: String?, category: String?) async throws -> VODPage
     func getVODMovieDetail(id: Int) async throws -> VODMovieDetail
     func getVODSeriesDetail(id: Int) async throws -> VODSeriesDetail
-    func vodMovieStreamURL(uuid: String) throws -> URL
-    func vodEpisodeStreamURL(uuid: String) throws -> URL
+    /// The sources of a title, when the server lists them. An empty list
+    /// means there is nothing to choose between.
+    func getVODStreams(kind: VODKind, id: Int) async throws -> [VODStream]
+    /// `stream` nil lets the server pick the source.
+    func vodMovieStreamURL(uuid: String, stream: VODStream?) throws -> URL
+    func vodEpisodeStreamURL(uuid: String, stream: VODStream?) throws -> URL
     /// Resolves an image reference from a VOD response, which may be an
     /// absolute URL or a path on the server.
     func vodImageURL(_ reference: String?) -> URL?
