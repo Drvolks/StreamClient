@@ -267,6 +267,19 @@ struct SettingsView: View {
                 }
                 .buttonStyle(TVMidnightButtonStyle())
                 .accessibilityIdentifier("settings-server-row")
+                #if DISPATCHERPVR
+                if !client.config.isDemoMode {
+                    // Information only, so not focusable.
+                    TVSettingsRowLabel(title: "Playback Positions", subtitle: positionSyncDetail) {
+                        Text(positionSyncValue)
+                            .font(.archivo(Theme.scaledFont(19), .extraBold))
+                            .foregroundStyle(MidnightPalette.accentSoft)
+                            .lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("settings-position-sync")
+                }
+                #endif
         case .general:
             tvRow("Landing Page", value: displayedLandingTab.label) { activeTVPopup = .landingTab }
             tvRow("Theme", value: theme.label) { activeTVPopup = .theme }
@@ -657,6 +670,18 @@ struct SettingsView: View {
             return publicIP
         }
         return "\(publicIP) (\(location))"
+    }
+
+    /// Where recording and On Demand positions are kept (#199): on the
+    /// server when it has the app-data endpoint, otherwise iCloud only.
+    private var positionSyncValue: String {
+        client.syncsPositionsViaServer ? "Synced via server" : "Synced via iCloud"
+    }
+
+    private var positionSyncDetail: String {
+        client.syncsPositionsViaServer
+            ? "Recording and On Demand positions follow your Dispatcharr login"
+            : "Recording and On Demand positions follow your Apple ID"
     }
 
     /// iOS / macOS variant of `environmentSubtitle`. Substitutes a
@@ -1535,6 +1560,17 @@ extension SettingsView {
                     .foregroundStyle(MidnightPalette.danger)
             }
         }
+        #if DISPATCHERPVR
+        if !client.config.isDemoMode {
+            MacSettingsRow(title: "Playback Positions", subtitle: positionSyncDetail) {
+                Text(verbatim: positionSyncValue)
+                    .midnightMeta(13, weight: .semibold)
+                    .foregroundStyle(MidnightPalette.ink)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("settings-position-sync")
+            }
+        }
+        #endif
         CustomHostSettingsRows()
         MacSettingsRow(title: "Unlink this device", subtitle: Self.unlinkSubtitle) {
             Button("Unlink") { showingUnlinkConfirm = true }

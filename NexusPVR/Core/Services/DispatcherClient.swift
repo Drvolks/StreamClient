@@ -28,7 +28,15 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
     private var gridWindowProbe: Task<Data?, Error>?
     /// Copy of the playback positions in the user's app data on the server
     /// (#199), on servers that have the endpoint.
-    private(set) lazy var positionSync = DispatcharrPositionSync(transport: self)
+    private(set) lazy var positionSync: DispatcharrPositionSync = {
+        let sync = DispatcharrPositionSync(transport: self)
+        sync.onSupportChange = { [weak self, unowned sync] _ in
+            self?.syncsPositionsViaServer = sync.syncsWithServer
+        }
+        return sync
+    }()
+    /// Mirrors `positionSync.syncsWithServer` for Settings (#199).
+    @Published private(set) var syncsPositionsViaServer = false
     private var authInProgress: Task<Void, Error>?
     /// Set when the token endpoint answered 429: no sign-in is attempted
     /// before this time, so retries don't keep the server's limit tripped.

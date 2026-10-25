@@ -142,6 +142,7 @@ The app communicates with NextPVR server via JSON API:
 - A third copy lives in Dispatcharr's per-user app data (`/api/accounts/users/me/app-data/<key>/`), so positions follow the Dispatcharr user, not only the Apple ID. Keys: `DispatcharrAppData.recordingPositionsKey` / `.vodProgressKey`. The value is the store's own JSON with `updatedAt` in whole milliseconds since 1970 (`DispatcharrAppData.encode`); stores round new dates to the millisecond so a round trip compares equal.
 - `DispatcharrPositionSync` (owned by `DispatcherClient.positionSync`): probes once per session. An older server's catch-all route answers the collection path with the web app's HTML and a 200, so support means a JSON body with `limits`. Each sync GETs a key, merges it into the local copy, then PUTs the merged result if it differs (no server locking; the next merge repairs a lost write).
 - Runs at launch (`NavigationRouter`), on foreground, a few seconds after a local save (`.playbackPositionSaved`, posted by the stores' `save(announcing:)`; positions merged in from the server save with `announcing: false`), and flushes on backgrounding. Over the size limit it keeps the newest entries; a 413 retries once with half, other refusals leave the key alone for the session. iCloud KVS stays in place.
+- Settings › Server shows "Playback Positions: Synced via server / via iCloud" from `DispatcherClient.syncsPositionsViaServer` (fed by `positionSync.onSupportChange`); hidden in demo mode.
 
 ### Response Models
 All API responses use `Codable` structs in `Core/Models/`:

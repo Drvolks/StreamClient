@@ -232,6 +232,20 @@ struct DispatcharrPositionSyncTests {
         #expect(serverRecordings(server)?[1]?.position == 600)
     }
 
+    @Test("Settings is told when the server starts or stops keeping positions")
+    func supportChanges() async {
+        let server = FakeAppDataServer()
+        let sync = makeSync(server, InMemoryPositionStorage())
+        var reported: [Bool] = []
+        sync.onSupportChange = { _ in reported.append(sync.syncsWithServer) }
+
+        await sync.syncNow()
+        await sync.syncNow()
+        sync.reset()
+
+        #expect(reported == [true, false], "once when found, once when forgotten")
+    }
+
     @Test("A reset forgets the server, so a new one is probed")
     func resetProbesAgain() async {
         let server = FakeAppDataServer(kind: .legacy)

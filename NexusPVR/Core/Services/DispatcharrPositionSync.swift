@@ -25,7 +25,19 @@ final class DispatcharrPositionSync {
     private let debounce: Duration
 
     /// nil until probed, once per session.
-    private(set) var support: DispatcharrAppData.Support?
+    private(set) var support: DispatcharrAppData.Support? {
+        didSet {
+            if support != oldValue { onSupportChange?(support) }
+        }
+    }
+    /// Called when `support` changes, so Settings can say where positions
+    /// are kept.
+    var onSupportChange: ((DispatcharrAppData.Support?) -> Void)?
+    /// Whether positions are being kept on the server too.
+    var syncsWithServer: Bool {
+        if case .supported = support { return true }
+        return false
+    }
     /// Entry caps learned from `value_too_large` / `total_too_large`, so the
     /// next sync doesn't send a value the server just refused.
     private var serverEntryCaps: [String: Int] = [:]
