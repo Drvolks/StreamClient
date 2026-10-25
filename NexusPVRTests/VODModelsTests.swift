@@ -215,6 +215,18 @@ struct VODModelsTests {
         #expect(category.filterValue == "Sci-Fi|movie")
     }
 
+    @Test("A category is enabled when at least one account turns it on")
+    func categoryEnabledState() throws {
+        let on = try decode(VODCategory.self, #"{"id":1,"name":"A","category_type":"movie","m3u_accounts":[{"category":1,"m3u_account":2,"enabled":false},{"category":1,"m3u_account":3,"enabled":true}]}"#)
+        let off = try decode(VODCategory.self, #"{"id":2,"name":"B","category_type":"movie","m3u_accounts":[{"category":2,"m3u_account":2,"enabled":false}]}"#)
+        let noAccounts = try decode(VODCategory.self, #"{"id":3,"name":"C","category_type":"movie","m3u_accounts":[]}"#)
+        let olderServer = try decode(VODCategory.self, #"{"id":4,"name":"D","category_type":"movie"}"#)
+        #expect(on.isEnabled)
+        #expect(!off.isEnabled)
+        #expect(!noAccounts.isEnabled)
+        #expect(olderServer.isEnabled)
+    }
+
     // MARK: - Playables
 
     @Test("An episode's player title names the series, the code and the episode")

@@ -2078,7 +2078,7 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding 
         }
         let categories: [VODCategory] = try await fetchAllPages(url)
         return categories
-            .filter { $0.categoryType == kind.categoryType }
+            .filter { $0.categoryType == kind.categoryType && $0.isEnabled }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
