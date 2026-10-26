@@ -86,6 +86,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var sourceURL: URL?
     private var streamHeaders: [String: String] = [:]
     private var lastPlaybackError: String?
+    /// The audio output last written to the event log, e.g. "avfoundation
+    /// (5.1)". Only touched on the event loop.
+    private var lastAudioOutput: String?
     private var hasTriedMasterPlaylistFallback = false
     private var masterVariantCandidates: [URL] = []
     private var failedVariantURLs: Set<String> = []
@@ -910,13 +913,20 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         mpv_set_option_string(mpv, "ao", "coreaudio,avfoundation")
         mpv_set_option_string(mpv, "audio-buffer", "0.5")  // Larger buffer on macOS to avoid coreaudio race with raw TS streams
         mpv_set_option_string(mpv, "audio-wait-open", "0.5")  // Delay opening audio device until data is ready (prevents NULL buffer crash with raw TS streams)
-        #elseif os(tvOS)
-        mpv_set_option_string(mpv, "ao", "audiounit")
+        #else
+        // iOS/tvOS (#209): AVFoundation (AVSampleBufferAudioRenderer) first.
+        // It hands the source layout to the system, which downmixes to the
+        // route itself, and never asks the route for its channel layout,
+        // which audiounit does and which fails on tvOS 26.4 (no audio at all
+        // in stock mpv; MPVKit patch 0006 falls back to stereo instead).
+        // audiounit stays as the fallback if avfoundation fails to open.
+        mpv_set_option_string(mpv, "ao", "avfoundation,audiounit")
+        #if os(tvOS)
         mpv_set_option_string(mpv, "audio-buffer", "0.5")
         mpv_set_option_string(mpv, "audio-wait-open", "0.5")
         #else
-        mpv_set_option_string(mpv, "ao", "audiounit")
         mpv_set_option_string(mpv, "audio-buffer", "0.2")
+        #endif
         #endif
         let audioChannels = UserPreferences.load().audioChannels
         mpv_set_option_string(mpv, "audio-channels", audioChannels)
@@ -1195,6 +1205,36 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Writes which audio output opened, and with what layout, to the event
+    /// log whenever it changes (#209), so a silent fallback from avfoundation
+    /// to audiounit shows up when testing on a device.
+    private func logAudioOutputIfChanged() {
+        guard let output = stringProperty("current-ao") else { return }
+        let layout = stringProperty("audio-out-params/hr-channels")
+        let description = layout.map { "\(output) (\($0))" } ?? output
+        guard description != lastAudioOutput else { return }
+        lastAudioOutput = description
+        print("MPV: audio output = \(description)")
+        networkEventLogger.log(NetworkEvent(
+            timestamp: Date(),
+            method: "INFO",
+            path: "audio output",
+            statusCode: nil,
+            isSuccess: true,
+            durationMs: 0,
+            responseSize: 0,
+            errorDetail: "Audio output: \(description)",
+            host: NetworkEvent.hostLabel(for: currentURL)
+        ))
+    }
+
+    private func stringProperty(_ name: String) -> String? {
+        guard let mpv, let cString = mpv_get_property_string(mpv, name) else { return nil }
+        defer { mpv_free(cString) }
+        let value = String(cString: cString)
+        return value.isEmpty ? nil : value
+    }
+
     private func handleEvent(_ event: mpv_event) {
         switch event.event_id {
         case MPV_EVENT_LOG_MESSAGE:
@@ -1311,6 +1351,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         case MPV_EVENT_AUDIO_RECONFIG:
             print("MPV: Audio reconfigured")
+            logAudioOutputIfChanged()
 
         case MPV_EVENT_VIDEO_RECONFIG:
             print("MPV: Video reconfigured")

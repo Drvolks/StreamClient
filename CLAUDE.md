@@ -182,6 +182,7 @@ All player code lives in `Features/Player/PlayerView.swift`:
 - `MPVContainerView` struct - Platform wrapper (NSViewRepresentable on macOS, UIViewRepresentable on iOS/tvOS)
 - `PlayerView` - Main SwiftUI view wrapping the player
 - Seek times configurable in settings (separate backward/forward)
+- Audio output (#209): macOS `ao=coreaudio,avfoundation`; iOS/tvOS `ao=avfoundation,audiounit` (AVSampleBufferAudioRenderer, which downmixes to the route itself; audiounit is the fallback and relies on MPVKit patch 0006, since on tvOS 26.4 it can't read the output's channel layout and stock mpv opens no audio). The Event Log gets an "Audio output: …" line (output and layout) whenever it changes.
 
 ## User Preferences
 
