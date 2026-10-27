@@ -37,7 +37,7 @@ Day and week views of your topic matches laid out on a visual timeline. Color-co
 Full-text search across all program titles, subtitles, and descriptions. Results link directly to program details and recording controls.
 
 ### Video Player
-Hardware-accelerated playback powered by MPV with Metal rendering. Features include:
+Hardware-accelerated playback powered by MPV, displayed through AVFoundation (which also provides Picture-in-Picture). Features include:
 - Configurable seek forward/backward durations
 - Audio track selection
 - Playback statistics overlay (FPS, bitrate, codec, dropped frames)

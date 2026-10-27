@@ -16,7 +16,6 @@ struct RecordingDetailView: View {
     #endif
 
     let recording: Recording
-    private var canPlayInProgress: Bool { UserPreferences.load().currentGPUAPI == .pixelbuffer }
 
     @State private var isDeleting = false
     @State private var deleteError: String?
@@ -209,12 +208,11 @@ struct RecordingDetailView: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: "play.fill")
-                                        Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
+                                        Text("Watch from Beginning")
                                     }
                                     .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(TVPopupActionButtonStyle(variant: .accent))
-                                .disabled(!canPlayInProgress)
                             }
 
                             #if !DISPATCHERPVR
@@ -224,12 +222,11 @@ struct RecordingDetailView: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: "arrow.clockwise")
-                                        Text(canPlayInProgress ? "Resume" : "Resume (requires PixelBuffer)")
+                                        Text("Resume")
                                     }
                                     .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(TVPopupActionButtonStyle(variant: .secondary))
-                                .disabled(!canPlayInProgress)
                             }
                             #endif
 
@@ -475,12 +472,11 @@ struct RecordingDetailView: View {
                 } label: {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
+                        Text("Watch from Beginning")
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(AccentButtonStyle())
-                .disabled(!canPlayInProgress)
 
                 #if !DISPATCHERPVR
                 if let position = recording.playbackPosition, position > 10 {
@@ -489,12 +485,11 @@ struct RecordingDetailView: View {
                     } label: {
                         HStack {
                             Image(systemName: "arrow.clockwise")
-                            Text(canPlayInProgress ? "Resume" : "Resume (requires PixelBuffer)")
+                            Text("Resume")
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(AccentButtonStyle())
-                    .disabled(!canPlayInProgress)
                 }
                 #endif
 

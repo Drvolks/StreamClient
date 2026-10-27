@@ -526,7 +526,6 @@ struct ProgramDetailView: View {
 
             if program.isCurrentlyAiring {
                 if let recording = inProgressRecording {
-                    let canPlayInProgress = UserPreferences.load().currentGPUAPI == .pixelbuffer
                     let streamAvailable = recording.file != nil
 
                     if streamAvailable {
@@ -535,7 +534,7 @@ struct ProgramDetailView: View {
                         } label: {
                             HStack {
                                 Image(systemName: "play.fill")
-                                Text(canPlayInProgress ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)")
+                                Text("Watch from Beginning")
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -544,7 +543,6 @@ struct ProgramDetailView: View {
                         #else
                         .buttonStyle(AccentButtonStyle())
                         #endif
-                        .disabled(!canPlayInProgress)
                     }
 
                     #if !DISPATCHERPVR
@@ -554,7 +552,7 @@ struct ProgramDetailView: View {
                         } label: {
                             HStack {
                                 Image(systemName: "arrow.clockwise")
-                                Text(canPlayInProgress ? "Resume" : "Resume (requires PixelBuffer)")
+                                Text("Resume")
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -563,7 +561,6 @@ struct ProgramDetailView: View {
                         #else
                         .buttonStyle(AccentButtonStyle())
                         #endif
-                        .disabled(!canPlayInProgress)
                     }
                     #endif
                 }

@@ -200,22 +200,19 @@ private struct RecordingsListContentView: View {
                     .environmentObject(appState)
             }
             .confirmationDialog("Play Recording", isPresented: .constant(inProgressRecording != nil), presenting: inProgressRecording) { recording in
-                let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
                 let streamAvailable = recording.file != nil
                 if streamAvailable {
-                    Button(canPlay ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)") {
+                    Button("Watch from Beginning") {
                         playRecordingFromBeginning(recording)
                         inProgressRecording = nil
                     }
-                    .disabled(!canPlay)
                 }
                 #if !DISPATCHERPVR
                 if streamAvailable, let position = recording.playbackPosition, position > 10 {
-                    Button(canPlay ? "Resume" : "Resume (requires PixelBuffer)") {
+                    Button("Resume") {
                         playRecording(recording)
                         inProgressRecording = nil
                     }
-                    .disabled(!canPlay)
                 }
                 #endif
                 if recording.channelId != nil {
@@ -228,12 +225,7 @@ private struct RecordingsListContentView: View {
                     inProgressRecording = nil
                 }
             } message: { recording in
-                let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
-                if canPlay {
-                    Text("\(recording.cleanName) is currently recording.")
-                } else {
-                    Text("Watching in-progress recordings requires the PixelBuffer renderer. You can change this in Settings > Playback.")
-                }
+                Text("\(recording.cleanName) is currently recording.")
             }
             .alert("Error", isPresented: .constant(deleteError != nil)) {
                 Button("OK") { deleteError = nil }
@@ -453,23 +445,20 @@ private struct RecordingsListContentView: View {
     @ViewBuilder
     private func recordingContextMenu(for recording: Recording) -> some View {
         if recording.recordingStatus == .recording {
-            let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
             if recording.file != nil {
                 Button {
                     playRecordingFromBeginning(recording)
                 } label: {
-                    Label(canPlay ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)", systemImage: "play.fill")
+                    Label("Watch from Beginning", systemImage: "play.fill")
                 }
-                .disabled(!canPlay)
             }
             #if !DISPATCHERPVR
             if recording.file != nil, let position = recording.playbackPosition, position > 10 {
                 Button {
                     playRecording(recording)
                 } label: {
-                    Label(canPlay ? "Resume" : "Resume (requires PixelBuffer)", systemImage: "arrow.clockwise")
+                    Label("Resume", systemImage: "arrow.clockwise")
                 }
-                .disabled(!canPlay)
             }
             #endif
             if recording.channelId != nil {

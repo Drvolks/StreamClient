@@ -11,9 +11,9 @@ import UIKit
 import SwiftUI
 import AVFoundation
 
-// iOS implementation — runtime-selected renderer (OpenGL/Metal)
+// iOS implementation — PixelBuffer renderer (AVSampleBufferDisplayLayer)
 struct MPVContainerView: UIViewRepresentable {
-    typealias UIViewType = UIView
+    typealias UIViewType = MPVPlayerPixelBufferView
 
     let url: URL
     @Binding var isPlaying: Bool
@@ -45,32 +45,6 @@ struct MPVContainerView: UIViewRepresentable {
     @Binding var setMutedFunc: ((Bool) -> Void)?
     @Binding var isMuted: Bool
 
-    private func configureCommonCallbacks(for view: MPVPlayerGLView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
-        view.onPositionUpdate = { position, dur in
-            DispatchQueue.main.async {
-                self.currentPosition = position
-                self.duration = dur
-            }
-        }
-        view.onPlaybackEnded = onPlaybackEnded
-        view.onPlaybackRestarted = onPlaybackRestarted
-        view.onVideoInfoUpdate = onVideoInfoUpdate
-    }
-
-    private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
-        view.onPositionUpdate = { position, dur in
-            DispatchQueue.main.async {
-                self.currentPosition = position
-                self.duration = dur
-            }
-        }
-        view.onPlaybackEnded = onPlaybackEnded
-        view.onPlaybackRestarted = onPlaybackRestarted
-        view.onVideoInfoUpdate = onVideoInfoUpdate
-    }
-
     private func configureCommonCallbacks(for view: MPVPlayerPixelBufferView) {
         view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         view.onPositionUpdate = { position, dur in
@@ -82,52 +56,6 @@ struct MPVContainerView: UIViewRepresentable {
         view.onPlaybackEnded = onPlaybackEnded
         view.onPlaybackRestarted = onPlaybackRestarted
         view.onVideoInfoUpdate = onVideoInfoUpdate
-    }
-
-    private func setupSeekBindings(for view: MPVPlayerGLView) {
-        DispatchQueue.main.async {
-            self.seekForward = {
-                view.seek(seconds: self.seekForwardTime)
-            }
-            self.seekBackward = {
-                view.seek(seconds: -self.seekBackwardTime)
-            }
-            self.seekToPosition = { position in
-                view.seekTo(position: position)
-            }
-            self.reloadURL = { newURL in
-                view.loadURL(newURL)
-            }
-            self.getTrackListFunc = { view.getTrackList() }
-            self.setAudioTrackFunc = { view.setAudioTrack($0) }
-            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
-            self.getSubtitleTextFunc = { view.getSubtitleText() }
-            self.setMutedFunc = { view.setMuted($0) }
-            self.isMuted = view.isMuted
-        }
-    }
-
-    private func setupSeekBindings(for view: MPVPlayerMetalView) {
-        DispatchQueue.main.async {
-            self.seekForward = {
-                view.seek(seconds: self.seekForwardTime)
-            }
-            self.seekBackward = {
-                view.seek(seconds: -self.seekBackwardTime)
-            }
-            self.seekToPosition = { position in
-                view.seekTo(position: position)
-            }
-            self.reloadURL = { newURL in
-                view.loadURL(newURL)
-            }
-            self.getTrackListFunc = { view.getTrackList() }
-            self.setAudioTrackFunc = { view.setAudioTrack($0) }
-            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
-            self.getSubtitleTextFunc = { view.getSubtitleText() }
-            self.setMutedFunc = { view.setMuted($0) }
-            self.isMuted = view.isMuted
-        }
     }
 
     private func setupSeekBindings(for view: MPVPlayerPixelBufferView) {
@@ -153,51 +81,8 @@ struct MPVContainerView: UIViewRepresentable {
         }
     }
 
-    func makeUIView(context: Context) -> UIView {
-        let gpuAPI = UserPreferences.load().iosGPUAPI
-
-        if gpuAPI == .pixelbuffer {
-            let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
-            configureCommonCallbacks(for: view)
-            view.setStreamHeaders(streamHeaders)
-            view.loadURL(url)
-            view.startPositionPolling()
-            if isRecordingInProgress {
-                view.startRecordingMonitor(url: url)
-                view.recordingMonitor?.onRecordingFinished = {
-                    print("Recording completed, normal playback mode")
-                }
-            }
-            context.coordinator.playerView = view
-            DispatchQueue.main.async {
-                self.cleanupAction = { view.cleanup() }
-                self.pixelBufferViewRef = view
-            }
-            setupSeekBindings(for: view)
-            return view
-        }
-
-        if gpuAPI == .metal {
-            let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
-            configureCommonCallbacks(for: view)
-            view.setStreamHeaders(streamHeaders)
-            view.loadURL(url)
-            view.startPositionPolling()
-            if isRecordingInProgress {
-                view.startRecordingMonitor(url: url)
-                view.recordingMonitor?.onRecordingFinished = {
-                    print("Recording completed, normal playback mode")
-                }
-            }
-            context.coordinator.playerView = view
-            DispatchQueue.main.async {
-                self.cleanupAction = { view.cleanup() }
-            }
-            setupSeekBindings(for: view)
-            return view
-        }
-
-        let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
+    func makeUIView(context: Context) -> MPVPlayerPixelBufferView {
+        let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
         configureCommonCallbacks(for: view)
         view.setStreamHeaders(streamHeaders)
         view.loadURL(url)
@@ -211,42 +96,26 @@ struct MPVContainerView: UIViewRepresentable {
         context.coordinator.playerView = view
         DispatchQueue.main.async {
             self.cleanupAction = { view.cleanup() }
+            self.pixelBufferViewRef = view
         }
         setupSeekBindings(for: view)
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        if let pbView = uiView as? MPVPlayerPixelBufferView {
-            if isPlaying { pbView.play() } else { pbView.pause() }
-            return
-        }
-        if let metalView = uiView as? MPVPlayerMetalView {
-            if isPlaying { metalView.play() } else { metalView.pause() }
-            return
-        }
-        if let glView = uiView as? MPVPlayerGLView {
-            if isPlaying { glView.play() } else { glView.pause() }
-            return
-        }
+    func updateUIView(_ uiView: MPVPlayerPixelBufferView, context: Context) {
+        if isPlaying { uiView.play() } else { uiView.pause() }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        if let pbView = uiView as? MPVPlayerPixelBufferView {
-            pbView.cleanup()
-        } else if let metalView = uiView as? MPVPlayerMetalView {
-            metalView.cleanup()
-        } else {
-            (uiView as? MPVPlayerGLView)?.cleanup()
-        }
+    static func dismantleUIView(_ uiView: MPVPlayerPixelBufferView, coordinator: Coordinator) {
+        uiView.cleanup()
     }
 
     class Coordinator {
-        var playerView: UIView?
+        var playerView: MPVPlayerPixelBufferView?
     }
 }
 
