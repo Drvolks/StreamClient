@@ -9,7 +9,7 @@
 
 import Foundation
 
-nonisolated struct VODProgressStore: ServerSyncedPositionStore {
+nonisolated struct VODProgressStore: ServerSyncedStore {
     /// Includes cleared items, kept at position 0 so that "mark as unwatched"
     /// reaches the other devices instead of being undone by their copy.
     private(set) var entries: [String: VODProgress] = [:]

@@ -3,7 +3,8 @@
 //  DispatcherPVR
 //
 //  Request building and the stored format for Dispatcharr's per-user app
-//  data, where the app keeps a copy of the playback positions (#199).
+//  data, where the app keeps a copy of the playback positions (#199) and of
+//  the topic keywords.
 //
 
 import Foundation
@@ -13,6 +14,7 @@ nonisolated enum DispatcharrAppData {
     /// them. One per store, so each stays well under the per-key limit.
     static let recordingPositionsKey = "com.drvolks.streamclient.recording-positions"
     static let vodProgressKey = "com.drvolks.streamclient.vod-progress"
+    static let topicKeywordsKey = "com.drvolks.streamclient.topic-keywords"
 
     /// The collection when `key` is nil, one key otherwise.
     static func url(baseURL: String, key: String? = nil) -> URL? {
@@ -74,7 +76,7 @@ nonisolated enum DispatcharrAppData {
 
     /// `store` cut down to its newest entries until it encodes to at most
     /// `maxBytes`, and to `maxEntries` when given.
-    static func fitted<Store: ServerSyncedPositionStore>(
+    static func fitted<Store: ServerSyncedStore>(
         _ store: Store,
         maxBytes: Int,
         maxEntries: Int? = nil

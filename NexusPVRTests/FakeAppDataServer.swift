@@ -72,15 +72,19 @@ final class FakeAppDataServer: DispatcharrAppDataTransport {
 final class InMemoryPositionStorage {
     var recordings = RecordingPositionStore()
     var vod = VODProgressStore()
+    var topics = TopicKeywordStore()
     private(set) var recordingSaves = 0
     private(set) var vodSaves = 0
+    private(set) var topicSaves = 0
 
     var storage: DispatcharrPositionSyncStorage {
         DispatcharrPositionSyncStorage(
             loadRecordings: { self.recordings },
             saveRecordings: { self.recordings = $0; self.recordingSaves += 1 },
             loadVOD: { self.vod },
-            saveVOD: { self.vod = $0; self.vodSaves += 1 }
+            saveVOD: { self.vod = $0; self.vodSaves += 1 },
+            loadTopics: { self.topics },
+            saveTopics: { self.topics = $0; self.topicSaves += 1 }
         )
     }
 }

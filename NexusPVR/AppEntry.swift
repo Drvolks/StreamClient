@@ -82,6 +82,14 @@ struct PVRApp: App {
             NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
         }
 
+        // Topic keywords edited on another device, merged per keyword.
+        if UserPreferences.demoStore == nil {
+            TopicKeywordStore.startObservingSync {
+                _ = UserPreferences.load()
+                NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
+            }
+        }
+
         #if DISPATCHERPVR
         // Recording and On Demand positions saved on another device (#183):
         // merge them in and refresh the pages showing them.
