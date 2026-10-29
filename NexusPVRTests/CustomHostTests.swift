@@ -61,7 +61,12 @@ struct CustomHostConfigTests {
     func cellularOnlyMode() {
         let c = config(mode: .cellularOnly)
         #expect(c.activeBaseURL(onExpensiveNetwork: false) == "http://192.168.1.50:8866")
+        #if os(tvOS)
+        // Apple TV only uses the custom host with Always.
+        #expect(c.activeBaseURL(onExpensiveNetwork: true) == "http://192.168.1.50:8866")
+        #else
         #expect(c.activeBaseURL(onExpensiveNetwork: true) == "https://pvr.example.com")
+        #endif
     }
 
     @Test("Always mode uses the custom host on every network")
@@ -180,7 +185,11 @@ struct CustomHostClientTests {
         let client = makeClient(mode: .cellularOnly, path: path)
         #expect(client.baseURL == "http://192.168.1.50:8866")
         path.isExpensive = true
+        #if os(tvOS)
+        #expect(client.baseURL == "http://192.168.1.50:8866")
+        #else
         #expect(client.baseURL == "https://pvr.example.com")
+        #endif
         path.isExpensive = false
         #expect(client.baseURL == "http://192.168.1.50:8866")
     }
@@ -289,18 +298,34 @@ struct WiFiCustomHostConfigTests {
         let customBaseURL = try #require(config.customHostBaseURL)
         let local = try #require(URL(string: "http://192.168.1.50:8866/pvr/recordings/42?token=secret#video"))
         let remote = try #require(URL(string: "https://pvr.example.com:443/remote/recordings/42?token=secret#video"))
-        #if os(tvOS)
-        #expect(config.routedServerURL(local, activeBaseURL: customBaseURL) == local)
-        #else
         #expect(config.routedServerURL(local, activeBaseURL: customBaseURL).absoluteString
             == "https://pvr.example.com/remote/recordings/42?token=secret#video")
         #expect(config.routedServerURL(remote, activeBaseURL: config.baseURL).absoluteString
             == "http://192.168.1.50:8866/pvr/recordings/42?token=secret#video")
-        #endif
         for string in ["https://cdn.example.com/artwork.png", "https://pvr.example.com/remote-other/artwork.png"] {
             let external = try #require(URL(string: string))
             #expect(config.routedServerURL(external, activeBaseURL: config.baseURL) == external)
         }
+    }
+
+    @Test("Apple TV uses the custom host only when set to Always", arguments: CustomHostMode.allCases)
+    func appleTVUsesOnlyAlways(mode: CustomHostMode) throws {
+        var config = ServerConfig(host: "192.168.1.50", pin: "1234", useHTTPS: false)
+        config.customHost = "https://pvr.example.com"
+        config.customHostMode = mode
+        let custom = try #require(config.customHostBaseURL)
+        #if os(tvOS)
+        let expected = mode == .always ? custom : config.baseURL
+        for expensive in [false, true] {
+            for ssid in [nil, "Home"] as [String?] {
+                #expect(config.activeBaseURL(onExpensiveNetwork: expensive, currentWiFiSSID: ssid) == expected)
+            }
+        }
+        #else
+        if mode == .always {
+            #expect(config.activeBaseURL(onExpensiveNetwork: false) == custom)
+        }
+        #endif
     }
 
     @Test("Existing custom host configurations decode without an SSID", arguments: ["cellularOnly", "always"])

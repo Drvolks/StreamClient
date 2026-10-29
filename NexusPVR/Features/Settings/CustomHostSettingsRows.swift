@@ -164,16 +164,17 @@ struct CustomHostSettingsRows: View {
         case .cellularOnly:
             #if os(macOS)
             return "Used while this Mac is on an iPhone hotspot; the address above is used on "
-                + "other networks. Applies to the next request or stream."
+                + "other networks, and on Apple TV. Applies to the next request or stream."
             #else
             return "Used on cellular or a personal hotspot; the address above is used on Wi-Fi "
-                + "and wired networks. Applies to the next request or stream."
+                + "and wired networks, and on Apple TV. Applies to the next request or stream."
             #endif
         case .always:
-            return "Every request and stream goes through the custom host."
+            return "Every request and stream goes through the custom host, on Apple TV too."
         case .outsideWiFiNetwork:
             return "Use the primary address on this Wi-Fi; otherwise use the custom host. "
-                + "An empty or unreadable Wi-Fi name uses the custom host. Applies to the next request or stream."
+                + "An empty or unreadable Wi-Fi name uses the custom host. Apple TV uses the "
+                + "address above. Applies to the next request or stream."
         }
     }
 

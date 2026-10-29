@@ -9,7 +9,8 @@ import Foundation
 
 /// When `ServerConfig.customHost` is used instead of `host`.
 ///
-/// iOS and macOS only — tvOS always uses the server address.
+/// Apple TV only honours `.always` (its Settings offer no mode); with any other
+/// mode it keeps the server address.
 nonisolated enum CustomHostMode: String, Codable, CaseIterable, Identifiable, Sendable {
     /// Only on an expensive network path: cellular on iPhone/iPad, or a personal
     /// hotspot (e.g. a Mac tethered to an iPhone). The server address is used

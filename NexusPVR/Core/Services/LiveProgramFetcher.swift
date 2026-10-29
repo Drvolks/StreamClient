@@ -69,7 +69,7 @@ enum LiveProgramFetcher {
     #if !DISPATCHERPVR
 
     private static func authenticateNextPVR(config: ServerConfig, session: URLSession) async throws -> String {
-        let baseURL = config.baseURL
+        let baseURL = config.activeBaseURL(onExpensiveNetwork: false)
         guard let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=TopShelf&format=json") else {
             throw URLError(.badURL)
         }
@@ -122,7 +122,7 @@ enum LiveProgramFetcher {
         keywords: [String], excludeChannelIds: Set<Int>, limit: Int
     ) async throws -> [TopShelfProgram] {
         let sid = try await authenticateNextPVR(config: config, session: session)
-        let channels = try await fetchNextPVRChannels(baseURL: config.baseURL, sid: sid, session: session)
+        let channels = try await fetchNextPVRChannels(baseURL: config.activeBaseURL(onExpensiveNetwork: false), sid: sid, session: session)
         let channelMap = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0.name) })
         let lowercaseKeywords = keywords.map { $0.lowercased() }
         let now = Date()
@@ -131,7 +131,7 @@ enum LiveProgramFetcher {
         // Fetch listings for channels (limit to 30 to stay in time budget)
         for channel in channels.prefix(30) {
             if excludeChannelIds.contains(channel.id) { continue }
-            guard let listings = try? await fetchNextPVRListings(baseURL: config.baseURL, sid: sid, channelId: channel.id, session: session) else { continue }
+            guard let listings = try? await fetchNextPVRListings(baseURL: config.activeBaseURL(onExpensiveNetwork: false), sid: sid, channelId: channel.id, session: session) else { continue }
 
             for program in listings where program.startDate <= now && program.endDate > now {
                 let searchText = [program.name, program.subtitle ?? "", program.desc ?? ""].joined(separator: " ").lowercased()
@@ -155,14 +155,14 @@ enum LiveProgramFetcher {
         channelIds: [Int], excludeChannelIds: Set<Int>, limit: Int
     ) async throws -> [TopShelfProgram] {
         let sid = try await authenticateNextPVR(config: config, session: session)
-        let channels = try await fetchNextPVRChannels(baseURL: config.baseURL, sid: sid, session: session)
+        let channels = try await fetchNextPVRChannels(baseURL: config.activeBaseURL(onExpensiveNetwork: false), sid: sid, session: session)
         let channelMap = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0.name) })
         let now = Date()
         var results: [TopShelfProgram] = []
 
         for channelId in channelIds {
             if excludeChannelIds.contains(channelId) { continue }
-            guard let listings = try? await fetchNextPVRListings(baseURL: config.baseURL, sid: sid, channelId: channelId, session: session) else { continue }
+            guard let listings = try? await fetchNextPVRListings(baseURL: config.activeBaseURL(onExpensiveNetwork: false), sid: sid, channelId: channelId, session: session) else { continue }
 
             if let program = listings.first(where: { $0.startDate <= now && $0.endDate > now }) {
                 results.append(TopShelfProgram(
@@ -325,7 +325,7 @@ enum LiveProgramFetcher {
     ) async throws -> (channels: [SimpleChannel], programs: [SimpleProgram], tvgIdMap: [String: [Int]], epgDataIdMap: [Int: [Int]]) {
         // Fetch channels and EPG in parallel
         async let channelsTask: [SimpleChannel] = {
-            guard let url = URL(string: "\(config.baseURL)/api/channels/channels/?page_size=10000") else { return [] }
+            guard let url = URL(string: "\(config.activeBaseURL(onExpensiveNetwork: false))/api/channels/channels/?page_size=10000") else { return [] }
             var request = URLRequest(url: url)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             let (data, _) = try await session.data(for: request)
@@ -364,7 +364,7 @@ enum LiveProgramFetcher {
                     guard let epgDataId = ch.epgDataId else { continue }
                     let channelId = ch.id
                     group.addTask {
-                        guard let url = URL(string: "\(config.baseURL)/api/epg/epgdata/\(epgDataId)/") else {
+                        guard let url = URL(string: "\(config.activeBaseURL(onExpensiveNetwork: false))/api/epg/epgdata/\(epgDataId)/") else {
                             return (channelId, nil)
                         }
                         var request = URLRequest(url: url)
@@ -405,7 +405,7 @@ enum LiveProgramFetcher {
         }
 
         let now = Date()
-        var grid = URLComponents(string: "\(config.baseURL)/api/epg/grid/")
+        var grid = URLComponents(string: "\(config.activeBaseURL(onExpensiveNetwork: false))/api/epg/grid/")
         grid?.queryItems = [
             URLQueryItem(name: "start", value: now.formatted(.iso8601)),
             URLQueryItem(name: "end", value: now.addingTimeInterval(60).formatted(.iso8601))
@@ -414,7 +414,7 @@ enum LiveProgramFetcher {
             return programs
         }
 
-        guard let url = URL(string: "\(config.baseURL)/api/epg/programs/?page_size=50000") else { return [] }
+        guard let url = URL(string: "\(config.activeBaseURL(onExpensiveNetwork: false))/api/epg/programs/?page_size=50000") else { return [] }
         return try await fetch(url)
     }
 
