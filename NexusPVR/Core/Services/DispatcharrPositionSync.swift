@@ -6,7 +6,8 @@
 //  per-user app data (#199), next to the local and iCloud copies (#183).
 //  Positions then follow the Dispatcharr user: people sharing a server but
 //  not an Apple ID, or a device signed out of iCloud, still pick up where
-//  they left off.
+//  they left off. The topic keywords ride along under their own key: they
+//  are kept per keyword, newest wins, the same way.
 //
 //  The server has no locking or partial update, so each sync reads the key,
 //  merges it into the local copy (newest entry wins), then writes the merged
@@ -46,7 +47,7 @@ final class DispatcharrPositionSync {
     private var refusedKeys: Set<String> = []
     private var lastSync: Task<Void, Never>?
     private var pendingSync: Task<Void, Never>?
-    private var observer: (any NSObjectProtocol)?
+    private var observers: [any NSObjectProtocol] = []
 
     init(transport: any DispatcharrAppDataTransport,
          storage: DispatcharrPositionSyncStorage = .standard,
@@ -58,14 +59,16 @@ final class DispatcharrPositionSync {
         self.debounce = debounce
     }
 
-    /// Call once at launch: from then on a position saved on this device is
-    /// sent to the server shortly after.
+    /// Call once at launch: from then on a position saved or a topic edited
+    /// on this device is sent to the server shortly after.
     func start() {
-        guard observer == nil else { return }
-        observer = notificationCenter.addObserver(
-            forName: .playbackPositionSaved, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.scheduleSync() }
+        guard observers.isEmpty else { return }
+        for name in [Notification.Name.playbackPositionSaved, TopicKeywordStore.didSaveNotification] {
+            observers.append(notificationCenter.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleSync() }
+            })
         }
     }
 
@@ -96,7 +99,7 @@ final class DispatcharrPositionSync {
         await syncNow()
     }
 
-    /// Reads, merges and writes both stores. Syncs run one at a time.
+    /// Reads, merges and writes every store. Syncs run one at a time.
     func syncNow() async {
         pendingSync?.cancel()
         pendingSync = nil
@@ -120,6 +123,10 @@ final class DispatcharrPositionSync {
                       load: storage.loadVOD, save: storage.saveVOD) {
             notificationCenter.post(name: .vodProgressDidChange, object: nil)
         }
+        if await sync(DispatcharrAppData.topicKeywordsKey, maxBytes: maxBytes,
+                      load: storage.loadTopics, save: storage.saveTopics) {
+            notificationCenter.post(name: .preferencesDidSync, object: nil)
+        }
     }
 
     private func resolveMaxValueBytes() async -> Int? {
@@ -139,7 +146,7 @@ final class DispatcharrPositionSync {
     }
 
     /// Syncs one key. Returns whether the local copy changed.
-    private func sync<Store: ServerSyncedPositionStore>(
+    private func sync<Store: ServerSyncedStore>(
         _ key: String,
         maxBytes: Int,
         load: () -> Store,
@@ -185,7 +192,7 @@ final class DispatcharrPositionSync {
         return localChanged
     }
 
-    private func push<Store: ServerSyncedPositionStore>(
+    private func push<Store: ServerSyncedStore>(
         _ store: Store,
         to key: String,
         maxBytes: Int,

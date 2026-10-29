@@ -1,14 +1,15 @@
 //
-//  ServerSyncedPositionStore.swift
+//  ServerSyncedStore.swift
 //  DispatcherPVR
 //
-//  What `DispatcharrPositionSync` needs from a position store to keep a copy
-//  of it in Dispatcharr's per-user app data (#199).
+//  What `DispatcharrPositionSync` needs from a store to keep a copy of it in
+//  Dispatcharr's per-user app data: the playback positions (#199) and the
+//  topic keywords.
 //
 
 import Foundation
 
-nonisolated protocol ServerSyncedPositionStore: Codable, Equatable, Sendable {
+nonisolated protocol ServerSyncedStore: Codable, Equatable, Sendable {
     init()
     var entryCount: Int { get }
     /// Takes the newer entry per item from `other`.

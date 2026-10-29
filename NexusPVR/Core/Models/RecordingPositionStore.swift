@@ -9,7 +9,7 @@
 
 import Foundation
 
-nonisolated struct RecordingPositionStore: ServerSyncedPositionStore {
+nonisolated struct RecordingPositionStore: ServerSyncedStore {
     private(set) var entries: [String: RecordingPosition] = [:]
 
     static let storageKey = "RecordingPositions_Dispatcharr"

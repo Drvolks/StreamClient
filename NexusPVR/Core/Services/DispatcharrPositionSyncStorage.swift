@@ -3,7 +3,7 @@
 //  DispatcherPVR
 //
 //  Where `DispatcharrPositionSync` reads and writes this device's copy of
-//  the position stores (#199).
+//  the position stores (#199) and the topic keywords.
 //
 
 import Foundation
@@ -16,11 +16,19 @@ struct DispatcharrPositionSyncStorage {
     var saveRecordings: (RecordingPositionStore) -> Void
     var loadVOD: () -> VODProgressStore
     var saveVOD: (VODProgressStore) -> Void
+    var loadTopics: () -> TopicKeywordStore
+    /// Also refreshes the keywords mirrored in the preferences.
+    var saveTopics: (TopicKeywordStore) -> Void
 
     static let standard = DispatcharrPositionSyncStorage(
         loadRecordings: { RecordingPositionStore.load() },
         saveRecordings: { $0.save(announcing: false) },
         loadVOD: { VODProgressStore.load() },
-        saveVOD: { $0.save(announcing: false) }
+        saveVOD: { $0.save(announcing: false) },
+        loadTopics: { TopicKeywordStore.load() },
+        saveTopics: { store in
+            store.save(announcing: false)
+            _ = UserPreferences.load()
+        }
     )
 }

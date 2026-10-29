@@ -145,6 +145,12 @@ The app communicates with NextPVR server via JSON API:
 - Runs at launch (`NavigationRouter`), on foreground, a few seconds after a local save (`.playbackPositionSaved`, posted by the stores' `save(announcing:)`; positions merged in from the server save with `announcing: false`), and flushes on backgrounding. Over the size limit it keeps the newest entries; a 413 retries once with half, other refusals leave the key alone for the session. iCloud KVS stays in place.
 - Settings › Server shows "Playback Positions: Synced via server / via iCloud" from `DispatcherClient.syncsPositionsViaServer` (fed by `positionSync.onSupportChange`); hidden in demo mode.
 
+### Topic keywords sync
+- `TopicKeywordStore` is the source of truth for topics: one `TopicKeyword` per keyword (keyed lowercased) with `order`, `updatedAt` and a `removed` flag. A removal is an entry, newest wins per keyword, and only edited keywords get a new timestamp (`setKeywords`).
+- Synced through iCloud KVS under its own key (`startObservingSync` in `AppEntry`, both variants) and, on Dispatcharr, through app data under `DispatcharrAppData.topicKeywordsKey` by `DispatcharrPositionSync` (scheduled on `TopicKeywordStore.didSaveNotification`).
+- `UserPreferences.keywords` is only a mirror: `load()` and `save()` overwrite it from the store. Edit topics through `TopicKeywordStore.edit { $0.add/remove/move }` (demo mode edits the in-memory prefs), never by setting `prefs.keywords`. The old keywords are imported once, dated 1970.
+- The store files are also in both Top Shelf targets, since `UserPreferences.swift` is.
+
 ### Dispatcharr HLS live output (#193)
 - Server support is probed once per server with a GET on `/api/proxy/hls/sessions/probe/` (`DispatcharrHLS.probeURL`): 405 = HLS output and this user may stop sessions; 403 (not a Standard user), 404, or an older server's catch-all 200 = not offered.
 - With HLS chosen, `liveStreamURL` requests `/proxy/ts/stream/<uuid>?output_format=hls` itself without following the redirect (`DispatcharrNoRedirectDelegate`, body never read), keeps the token (`X-Dispatcharr-Session-Token`, or the `/proxy/hls/<token>/index.m3u8` path) and hands mpv the playlist URL. Never probe a live URL that may answer MPEG-TS: closing it can tear the channel down (Dispatcharr's default shutdown delay is 0).

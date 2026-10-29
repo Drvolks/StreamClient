@@ -126,9 +126,9 @@ struct DispatcharrPositionSyncTests {
         let putsAfterFirstSync = server.puts
         await sync.syncNow()
 
-        #expect(putsAfterFirstSync == 2)
+        #expect(putsAfterFirstSync == 3, "recordings, On Demand, topics")
         #expect(server.puts == putsAfterFirstSync)
-        #expect(local.recordingSaves == 0 && local.vodSaves == 0)
+        #expect(local.recordingSaves == 0 && local.vodSaves == 0 && local.topicSaves == 0)
     }
 
     @Test("A value on the server the app can't read is left alone")
@@ -142,6 +142,57 @@ struct DispatcharrPositionSyncTests {
 
         #expect(String(decoding: server.values[DispatcharrAppData.recordingPositionsKey] ?? Data(), as: UTF8.self)
                 == #"{"schema":"someone-else"}"#)
+    }
+
+    // MARK: - Topic keywords
+
+    @Test("Topics added on two devices for the same Dispatcharr user both survive")
+    func topicsMergeBothWays() async throws {
+        var remote = TopicKeywordStore()
+        remote.setKeywords(["Hockey", "News"], at: date(0))
+        remote.add("Cooking", at: date(100))
+        let server = FakeAppDataServer()
+        server.store(try #require(DispatcharrAppData.encode(remote)), for: DispatcharrAppData.topicKeywordsKey)
+
+        let local = InMemoryPositionStorage()
+        local.topics.setKeywords(["Hockey", "News"], at: date(0))
+        local.topics.remove("News", at: date(50))
+        local.topics.add("Tennis", at: date(60))
+        let center = NotificationCenter()
+        nonisolated(unsafe) var didSync = 0
+        let observer = center.addObserver(forName: .preferencesDidSync, object: nil, queue: nil) { _ in didSync += 1 }
+        defer { center.removeObserver(observer) }
+        let sync = DispatcharrPositionSync(transport: server, storage: local.storage,
+                                           notificationCenter: center, debounce: .milliseconds(10))
+
+        await sync.syncNow()
+
+        #expect(Set(local.topics.keywords) == ["Hockey", "Tennis", "Cooking"])
+        #expect(local.topicSaves == 1)
+        #expect(didSync == 1, "the topic pages are told")
+        let uploaded = try #require(server.values[DispatcharrAppData.topicKeywordsKey].flatMap {
+            DispatcharrAppData.decode(TopicKeywordStore.self, from: $0)
+        })
+        #expect(uploaded == local.topics)
+    }
+
+    @Test("A topic edit on this device schedules a sync")
+    func topicEditSchedulesSync() async throws {
+        let server = FakeAppDataServer()
+        let local = InMemoryPositionStorage()
+        let center = NotificationCenter()
+        let sync = DispatcharrPositionSync(transport: server, storage: local.storage,
+                                           notificationCenter: center, debounce: .milliseconds(10))
+        sync.start()
+
+        local.topics.add("Hockey", at: date(0))
+        center.post(name: TopicKeywordStore.didSaveNotification, object: nil)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let uploaded = server.values[DispatcharrAppData.topicKeywordsKey].flatMap {
+            DispatcharrAppData.decode(TopicKeywordStore.self, from: $0)
+        }
+        #expect(uploaded?.keywords == ["Hockey"])
     }
 
     // MARK: - Limits
@@ -180,7 +231,7 @@ struct DispatcharrPositionSyncTests {
     @Test("A key the server refuses outright is left alone for the session")
     func refusedKey() async {
         let server = FakeAppDataServer()
-        server.forcedPutStatuses = [(409, "max_apps"), (409, "max_apps")]
+        server.forcedPutStatuses = [(409, "max_apps"), (409, "max_apps"), (409, "max_apps")]
         let local = InMemoryPositionStorage()
         local.recordings.set(recordingId: 1, position: 600, at: date(0))
         local.vod.record(uuid: "abc", position: 300, duration: 5400, at: date(0))
@@ -190,8 +241,8 @@ struct DispatcharrPositionSyncTests {
         let requestsAfterFirstSync = server.requests.count
         await sync.syncNow()
 
-        #expect(server.puts == 2)
-        #expect(server.requests.count == requestsAfterFirstSync, "both keys are skipped from then on")
+        #expect(server.puts == 3)
+        #expect(server.requests.count == requestsAfterFirstSync, "every key is skipped from then on")
     }
 
     // MARK: - Scheduling

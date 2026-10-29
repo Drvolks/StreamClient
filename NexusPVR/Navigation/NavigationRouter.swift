@@ -174,9 +174,13 @@ struct NavigationRouter: View {
         .onReceive(NotificationCenter.default.publisher(for: .preferencesDidSync)) { _ in
             // Keep the hide-recordings gate in sync when preferences change
             // from Settings or from another device via iCloud.
-            let hidden = UserPreferences.load().hideRecordings
-            if appState.hideRecordings != hidden {
-                appState.hideRecordings = hidden
+            let prefs = UserPreferences.load()
+            if appState.hideRecordings != prefs.hideRecordings {
+                appState.hideRecordings = prefs.hideRecordings
+            }
+            // Topics edited on another device, through iCloud or the server.
+            if appState.topicKeywords != prefs.keywords {
+                appState.topicKeywords = prefs.keywords
             }
         }
         .onDisappear {

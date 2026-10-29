@@ -293,12 +293,22 @@ nonisolated struct UserPreferences: Codable {
         let cloudPrefs = ubiquitousStore.data(forKey: storageKey).flatMap(decode)
         let localPrefs = UserDefaults.standard.data(forKey: storageKey).flatMap(decode)
 
-        if let prefs = resolvePersistence(local: localPrefs, cloud: cloudPrefs) {
+        // The keywords come from their own store, which merges per keyword:
+        // the copy in this blob may be another device's older list.
+        var prefs = resolvePersistence(local: localPrefs, cloud: cloudPrefs) ?? UserPreferences()
+        prefs.keywords = TopicKeywordStore.load().keywords
+        if localPrefs != nil || cloudPrefs != nil || !prefs.keywords.isEmpty {
             persist(prefs)
-            return prefs
         }
+        return prefs
+    }
 
-        return UserPreferences()
+    /// The keywords saved in the preferences before `TopicKeywordStore`
+    /// existed, for its one-time import.
+    static func storedKeywords() -> [String] {
+        let cloudPrefs = ubiquitousStore.data(forKey: storageKey).flatMap(decode)
+        let localPrefs = UserDefaults.standard.data(forKey: storageKey).flatMap(decode)
+        return resolvePersistence(local: localPrefs, cloud: cloudPrefs)?.keywords ?? []
     }
 
     func save() {
@@ -308,6 +318,9 @@ nonisolated struct UserPreferences: Codable {
         }
         var prefs = self
         prefs.updatedAt = Date()
+        // Keywords are edited through `TopicKeywordStore.edit`; this copy may
+        // be stale.
+        prefs.keywords = TopicKeywordStore.load().keywords
         Self.persist(prefs)
         NotificationCenter.default.post(name: Notification.Name("preferencesDidSync"), object: nil)
     }

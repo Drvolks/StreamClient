@@ -1950,29 +1950,27 @@ extension SettingsView {
         let trimmed = newTopic.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         newTopic = ""
-        guard !topicList.contains(trimmed) else { return }
-        topicList.append(trimmed)
-        saveTopics()
+        let key = TopicKeywordStore.key(for: trimmed)
+        guard !topicList.contains(where: { TopicKeywordStore.key(for: $0) == key }) else { return }
+        publishTopics(TopicKeywordStore.edit { $0.add(trimmed) })
     }
 
     private func removeTopic(_ keyword: String) {
-        topicList.removeAll { $0 == keyword }
-        saveTopics()
+        publishTopics(TopicKeywordStore.edit { $0.remove(keyword) })
     }
 
     private func moveTopic(at index: Int, by offset: Int) {
-        let destination = index + offset
-        guard topicList.indices.contains(destination) else { return }
-        topicList.swapAt(index, destination)
-        saveTopics()
+        guard topicList.indices.contains(index), topicList.indices.contains(index + offset) else { return }
+        let keyword = topicList[index]
+        publishTopics(TopicKeywordStore.edit { $0.move(keyword, by: offset) })
     }
 
-    /// Persist, then publish the list so the sidebar's topic rows and
-    /// counts follow.
-    private func saveTopics() {
-        var prefs = UserPreferences.load()
-        prefs.keywords = topicList
-        prefs.save()
+    /// Each edit goes to the keyword store on its own, timestamped, so it
+    /// merges with edits made elsewhere. Then publish the list so the
+    /// sidebar's topic rows and counts follow.
+    private func publishTopics(_ keywords: [String]) {
+        topicList = keywords
+        NotificationCenter.default.post(name: .preferencesDidSync, object: nil)
         appState.topicKeywords = topicList
         if !topicList.contains(appState.selectedTopicKeyword) {
             appState.selectedTopicKeyword = topicList.first ?? ""
