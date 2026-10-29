@@ -39,7 +39,7 @@ enum RecordingFetcher {
 
     #if !DISPATCHERPVR
     private static func fetchNextPVR(config: ServerConfig, session: URLSession, limit: Int) async throws -> [Recording] {
-        let baseURL = config.baseURL
+        let baseURL = config.activeBaseURL(onExpensiveNetwork: false)
 
         // Step 1: Initiate session
         guard let initiateURL = URL(string: "\(baseURL)/services/service?method=session.initiate&ver=1.0&device=TopShelf&format=json") else {
@@ -96,7 +96,7 @@ enum RecordingFetcher {
 
     #if DISPATCHERPVR
     private static func fetchDispatcharr(config: ServerConfig, session: URLSession, limit: Int) async throws -> [Recording] {
-        let baseURL = config.baseURL
+        let baseURL = config.activeBaseURL(onExpensiveNetwork: false)
 
         // Step 1: the session shared with the app; signs in only if needed
         let accessToken = try await DispatcharrSessionStore.accessToken(config: config, session: session)

@@ -286,6 +286,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-position-sync")
                 }
                 #endif
+                TVCustomHostSettingsRow()
         case .general:
             tvRow("Landing Page", value: displayedLandingTab.label) { activeTVPopup = .landingTab }
             tvRow("Theme", value: theme.label) { activeTVPopup = .theme }

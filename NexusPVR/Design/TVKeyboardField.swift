@@ -17,6 +17,8 @@ struct TVKeyboardField: UIViewRepresentable {
     let placeholder: String
     @Binding var requestFocus: Bool
     var returnKeyType: UIReturnKeyType = .search
+    /// URL keyboard, without capitalisation or autocorrection.
+    var isURL = false
     var onFocusChange: (Bool) -> Void = { _ in }
 
     final class Coordinator: NSObject, UITextFieldDelegate {
@@ -57,6 +59,11 @@ struct TVKeyboardField: UIViewRepresentable {
         field.tintColor = UIColor.white
         field.borderStyle = .none
         field.returnKeyType = returnKeyType
+        if isURL {
+            field.keyboardType = .URL
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+        }
         field.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
         return field
     }

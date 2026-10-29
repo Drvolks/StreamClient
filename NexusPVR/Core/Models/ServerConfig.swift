@@ -17,7 +17,9 @@ nonisolated struct ServerConfig: Codable, Equatable {
     var useHTTPS: Bool
     /// Optional second address for the same server, typically its public URL
     /// (#165). Empty when unset. Applied according to `customHostMode` on iOS and
-    /// macOS; tvOS ignores it.
+    /// macOS. Apple TV uses it only when the mode is `.always`: it has no
+    /// cellular, and the mode syncs from the other devices, where "On Cellular"
+    /// means the TV at home should keep the server address.
     var customHost: String = ""
     var customHostMode: CustomHostMode = .cellularOnly
     /// Device-local SSID. Match UTF-8 bytes exactly: case and whitespace are significant.
@@ -131,10 +133,10 @@ nonisolated struct ServerConfig: Codable, Equatable {
     /// - Parameter onExpensiveNetwork: the current path is cellular or a personal
     ///   hotspot (`NetworkPathReporting.isExpensive`).
     func usesCustomHost(onExpensiveNetwork: Bool, currentWiFiSSID: String? = nil) -> Bool {
-        #if os(tvOS)
-        return false
-        #else
         guard hasCustomHost else { return false }
+        #if os(tvOS)
+        return customHostMode == .always
+        #else
         switch customHostMode {
         case .always: return true
         case .cellularOnly: return onExpensiveNetwork
@@ -157,9 +159,6 @@ nonisolated struct ServerConfig: Codable, Equatable {
     /// Third-party/CDN URLs remain as supplied. Preserve query credentials and
     /// the path relative to either configured address, including reverse proxies.
     func routedServerURL(_ url: URL, activeBaseURL: String) -> URL {
-        #if os(tvOS)
-        return url
-        #else
         guard hasCustomHost,
               let original = URLComponents(url: url, resolvingAgainstBaseURL: true),
               var target = URLComponents(string: activeBaseURL) else { return url }
@@ -178,7 +177,6 @@ nonisolated struct ServerConfig: Codable, Equatable {
             return target.url ?? url
         }
         return url
-        #endif
     }
 
     /// This config without the custom host settings: which server and
