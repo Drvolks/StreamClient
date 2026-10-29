@@ -11,9 +11,9 @@ import UIKit
 import SwiftUI
 import AVFoundation
 
-// tvOS implementation — runtime-selected renderer (Metal/OpenGL)
+// tvOS implementation — PixelBuffer renderer (AVSampleBufferDisplayLayer)
 struct MPVContainerView: UIViewRepresentable {
-    typealias UIViewType = UIView
+    typealias UIViewType = MPVPlayerPixelBufferView
 
     let url: URL
     @Binding var isPlaying: Bool
@@ -66,68 +66,6 @@ struct MPVContainerView: UIViewRepresentable {
     var tvSelectTrack: (() -> Void)?
     var onDismissSettingsPanel: (() -> Void)?
 
-    private func configureCommonCallbacks(for view: MPVPlayerMetalView) {
-        view.onPositionUpdate = { position, dur in
-            DispatchQueue.main.async {
-                self.currentPosition = position
-                self.duration = dur
-            }
-        }
-        view.onPlaybackEnded = onPlaybackEnded
-        view.onPlaybackRestarted = onPlaybackRestarted
-        view.onVideoInfoUpdate = onVideoInfoUpdate
-        view.onPlayPause = onTogglePlayPause
-        view.onSeekForward = { multiplier in
-            let delta = self.seekForwardTime * multiplier
-            if self.onLiveSeek?(Double(delta)) != true {
-                self.onCatchupSeekStarted?()
-                view.seek(seconds: delta)
-            }
-            self.onShowControls?()
-        }
-        view.onSeekBackward = { multiplier in
-            let delta = -self.seekBackwardTime * multiplier
-            if self.onLiveSeek?(Double(delta)) != true {
-                self.onCatchupSeekStarted?()
-                view.seek(seconds: delta)
-            }
-            self.onShowControls?()
-        }
-        view.onSelect = onToggleControls
-        view.onMenu = onDismiss
-    }
-
-    private func configureCommonCallbacks(for view: MPVPlayerGLView) {
-        view.onPositionUpdate = { position, dur in
-            DispatchQueue.main.async {
-                self.currentPosition = position
-                self.duration = dur
-            }
-        }
-        view.onPlaybackEnded = onPlaybackEnded
-        view.onPlaybackRestarted = onPlaybackRestarted
-        view.onVideoInfoUpdate = onVideoInfoUpdate
-        view.onPlayPause = onTogglePlayPause
-        view.onSeekForward = { multiplier in
-            let delta = self.seekForwardTime * multiplier
-            if self.onLiveSeek?(Double(delta)) != true {
-                self.onCatchupSeekStarted?()
-                view.seek(seconds: delta)
-            }
-            self.onShowControls?()
-        }
-        view.onSeekBackward = { multiplier in
-            let delta = -self.seekBackwardTime * multiplier
-            if self.onLiveSeek?(Double(delta)) != true {
-                self.onCatchupSeekStarted?()
-                view.seek(seconds: delta)
-            }
-            self.onShowControls?()
-        }
-        view.onSelect = onToggleControls
-        view.onMenu = onDismiss
-    }
-
     private func configureCommonCallbacks(for view: MPVPlayerPixelBufferView) {
         view.onPositionUpdate = { position, dur in
             DispatchQueue.main.async {
@@ -159,52 +97,6 @@ struct MPVContainerView: UIViewRepresentable {
         view.onMenu = onDismiss
     }
 
-    private func setupSeekBindings(for view: MPVPlayerMetalView) {
-        DispatchQueue.main.async {
-            self.seekForward = {
-                view.seek(seconds: self.seekForwardTime)
-                self.onShowControls?()
-            }
-            self.seekBackward = {
-                view.seek(seconds: -self.seekBackwardTime)
-                self.onShowControls?()
-            }
-            self.seekToPosition = { position in
-                view.seekTo(position: position)
-            }
-            self.reloadURL = { newURL in
-                view.loadURL(newURL)
-            }
-            self.getTrackListFunc = { view.getTrackList() }
-            self.setAudioTrackFunc = { view.setAudioTrack($0) }
-            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
-            self.getSubtitleTextFunc = { view.getSubtitleText() }
-        }
-    }
-
-    private func setupSeekBindings(for view: MPVPlayerGLView) {
-        DispatchQueue.main.async {
-            self.seekForward = {
-                view.seek(seconds: self.seekForwardTime)
-                self.onShowControls?()
-            }
-            self.seekBackward = {
-                view.seek(seconds: -self.seekBackwardTime)
-                self.onShowControls?()
-            }
-            self.seekToPosition = { position in
-                view.seekTo(position: position)
-            }
-            self.reloadURL = { newURL in
-                view.loadURL(newURL)
-            }
-            self.getTrackListFunc = { view.getTrackList() }
-            self.setAudioTrackFunc = { view.setAudioTrack($0) }
-            self.setSubtitleTrackFunc = { view.setSubtitleTrack($0) }
-            self.getSubtitleTextFunc = { view.getSubtitleText() }
-        }
-    }
-
     private func setupSeekBindings(for view: MPVPlayerPixelBufferView) {
         DispatchQueue.main.async {
             self.seekForward = {
@@ -228,53 +120,9 @@ struct MPVContainerView: UIViewRepresentable {
         }
     }
 
-    func makeUIView(context: Context) -> UIView {
-        let gpuAPI = UserPreferences.load().tvosGPUAPI
-
-        if gpuAPI == .pixelbuffer {
-            let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
-            configureCommonCallbacks(for: view)
-            view.setStreamHeaders(streamHeaders)
-            view.loadURL(url)
-            view.startPositionPolling()
-            if isRecordingInProgress {
-                view.startRecordingMonitor(url: url)
-                view.recordingMonitor?.onRecordingFinished = {
-                    print("Recording completed, normal playback mode")
-                }
-            }
-            context.coordinator.playerView = view
-            DispatchQueue.main.async {
-                self.cleanupAction = { view.cleanup() }
-            }
-            setupSeekBindings(for: view)
-            return view
-        }
-
-        if gpuAPI == .opengl {
-            let view = MPVPlayerGLView(frame: .zero, networkEventLogger: networkEventLogger)
-            view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
-            configureCommonCallbacks(for: view)
-            view.setStreamHeaders(streamHeaders)
-            view.loadURL(url)
-            view.startPositionPolling()
-            if isRecordingInProgress {
-                view.startRecordingMonitor(url: url)
-                view.recordingMonitor?.onRecordingFinished = {
-                    print("Recording completed, normal playback mode")
-                }
-            }
-            context.coordinator.playerView = view
-            DispatchQueue.main.async {
-                self.cleanupAction = { view.cleanup() }
-            }
-            setupSeekBindings(for: view)
-            return view
-        }
-
-        let view = MPVPlayerMetalView(frame: .zero, networkEventLogger: networkEventLogger)
-        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, preferKeyframeSeek: preferKeyframeSeek)
+    func makeUIView(context: Context) -> MPVPlayerPixelBufferView {
+        let view = MPVPlayerPixelBufferView(frame: .zero, session: activePlayerSession, networkEventLogger: networkEventLogger)
+        view.setup(errorBinding: $errorMessage, isRecordingInProgress: isRecordingInProgress, recordingStartTime: recordingStartTime, preferKeyframeSeek: preferKeyframeSeek)
         configureCommonCallbacks(for: view)
         view.setStreamHeaders(streamHeaders)
         view.loadURL(url)
@@ -293,149 +141,16 @@ struct MPVContainerView: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        if let pbView = uiView as? MPVPlayerPixelBufferView {
-            if isPlaying { pbView.play() } else { pbView.pause() }
-            applySettingsCallbacks(to: pbView)
-            return
-        }
-        if let metalView = uiView as? MPVPlayerMetalView {
-            if isPlaying { metalView.play() } else { metalView.pause() }
-            applySettingsCallbacks(to: metalView)
-            return
-        }
-        if let glView = uiView as? MPVPlayerGLView {
-            if isPlaying { glView.play() } else { glView.pause() }
-            applySettingsCallbacks(to: glView)
-            return
-        }
+    func updateUIView(_ uiView: MPVPlayerPixelBufferView, context: Context) {
+        if isPlaying { uiView.play() } else { uiView.pause() }
+        applySettingsCallbacks(to: uiView)
     }
 
-    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        if let pbView = uiView as? MPVPlayerPixelBufferView {
-            pbView.cleanup()
-        } else if let metalView = uiView as? MPVPlayerMetalView {
-            metalView.cleanup()
-        } else {
-            (uiView as? MPVPlayerGLView)?.cleanup()
-        }
-    }
-
-    private func applySettingsCallbacks(to view: MPVPlayerMetalView) {
-        let panelBinding = $showSettingsPanel
-        let tabBinding = $settingsTab
-        let focusBinding = $tvFocusedTrackIndex
-        let openSettings = onOpenSettings
-        view.onUpArrow = openSettings
-        let dismissPanel = onDismissSettingsPanel
-        view.onMenuOverride = {
-            print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
-            guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
-            return true
-        }
-        view.onLeftArrow = {
-            guard panelBinding.wrappedValue else { return false }
-            switch tabBinding.wrappedValue {
-            case .video:
-                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
-            case .audio:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .video }
-                focusBinding.wrappedValue = -1
-            case .subtitles:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
-                focusBinding.wrappedValue = -1
-            }
-            return true
-        }
-        view.onRightArrow = {
-            guard panelBinding.wrappedValue else { return false }
-            switch tabBinding.wrappedValue {
-            case .video:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
-                focusBinding.wrappedValue = -1
-            case .audio:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .subtitles }
-                focusBinding.wrappedValue = -1
-            case .subtitles:
-                // Right-click on the last tab dismisses the panel (mirrors left-click on .video)
-                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
-            }
-            return true
-        }
-        view.onDownArrow = {
-            guard panelBinding.wrappedValue else { return false }
-            let maxIndex = (self.tvTrackCountProvider?() ?? 0) - 1
-            if maxIndex >= 0 && focusBinding.wrappedValue < maxIndex {
-                focusBinding.wrappedValue += 1
-            }
-            return true
-        }
-        view.onSelectOverride = {
-            guard panelBinding.wrappedValue else { return false }
-            self.tvSelectTrack?()
-            return true
-        }
+    static func dismantleUIView(_ uiView: MPVPlayerPixelBufferView, coordinator: Coordinator) {
+        uiView.cleanup()
     }
 
     private func applySettingsCallbacks(to view: MPVPlayerPixelBufferView) {
-        let panelBinding = $showSettingsPanel
-        let tabBinding = $settingsTab
-        let focusBinding = $tvFocusedTrackIndex
-        let openSettings = onOpenSettings
-        view.onUpArrow = openSettings
-        let dismissPanel = onDismissSettingsPanel
-        view.onMenuOverride = {
-            print("[tvOS] onMenuOverride called, panelOpen=\(panelBinding.wrappedValue)")
-            guard panelBinding.wrappedValue else { return false }
-            withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
-            return true
-        }
-        view.onLeftArrow = {
-            guard panelBinding.wrappedValue else { return false }
-            switch tabBinding.wrappedValue {
-            case .video:
-                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
-            case .audio:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .video }
-                focusBinding.wrappedValue = -1
-            case .subtitles:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
-                focusBinding.wrappedValue = -1
-            }
-            return true
-        }
-        view.onRightArrow = {
-            guard panelBinding.wrappedValue else { return false }
-            switch tabBinding.wrappedValue {
-            case .video:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .audio }
-                focusBinding.wrappedValue = -1
-            case .audio:
-                withAnimation(.easeInOut(duration: 0.15)) { tabBinding.wrappedValue = .subtitles }
-                focusBinding.wrappedValue = -1
-            case .subtitles:
-                // Right-click on the last tab dismisses the panel (mirrors left-click on .video)
-                withAnimation(.easeInOut(duration: 0.25)) { dismissPanel?() }
-            }
-            return true
-        }
-        view.onDownArrow = {
-            guard panelBinding.wrappedValue else { return false }
-            let maxIndex = (self.tvTrackCountProvider?() ?? 0) - 1
-            if maxIndex >= 0 && focusBinding.wrappedValue < maxIndex {
-                focusBinding.wrappedValue += 1
-            }
-            return true
-        }
-        view.onSelectOverride = {
-            guard panelBinding.wrappedValue else { return false }
-            self.tvSelectTrack?()
-            return true
-        }
-    }
-
-    private func applySettingsCallbacks(to view: MPVPlayerGLView) {
         let panelBinding = $showSettingsPanel
         let tabBinding = $settingsTab
         let focusBinding = $tvFocusedTrackIndex
@@ -497,7 +212,7 @@ struct MPVContainerView: UIViewRepresentable {
     }
 
     class Coordinator {
-        var playerView: UIView?
+        var playerView: MPVPlayerPixelBufferView?
     }
 }
 

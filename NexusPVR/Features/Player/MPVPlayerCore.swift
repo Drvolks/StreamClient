@@ -12,17 +12,13 @@ import QuartzCore
 #if os(macOS)
 import AppKit
 import IOKit.pwr_mgt
-import OpenGL.GL
-import OpenGL.GL3
 #else
 import UIKit
-import GLKit
-import OpenGLES
 #endif
 
 nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     /// Helper to schedule work safely onto the main dispatch queue from any thread (including mpv render callbacks).
-    /// Uses DispatchQueue.main.async to satisfy queue-assertion APIs (e.g. OpenGL) that crash on non-main-queue invocation.
+    /// Uses DispatchQueue.main.async to satisfy queue-assertion APIs that crash on non-main-queue invocation.
     internal nonisolated static func scheduleOnMain(_ closure: @MainActor @escaping () -> Void) {
         DispatchQueue.main.async {
             closure()
@@ -30,7 +26,6 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     }
 
     private var mpv: OpaquePointer?
-    var mpvGL: OpaquePointer?
     private var errorBinding: Binding<String?>?
     private var isDestroyed = false
     private var positionTimer: Timer?
@@ -128,14 +123,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         onVideoInfoUpdate = nil
         recordingMonitor.stop()
 
-        if let mpvGL = mpvGL {
-            mpv_render_context_set_update_callback(mpvGL, nil, nil)
-            mpv_render_context_free(mpvGL)
-            self.mpvGL = nil
-        }
-
         // Tell mpv to quit gracefully — this shuts down the VO thread, audio, etc.
-        // Critical for vo=gpu+wid where mpv owns the render loop.
         if let mpv = mpv {
             mpv_command_string(mpv, "quit")
         }
@@ -766,59 +754,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             return false
         }
 
-        // Video output
-        #if os(macOS)
-        let gpuAPI = UserPreferences.load().macosGPUAPI
-        if gpuAPI == .pixelbuffer {
-            mpv_set_option_string(mpv, "vo", "pixelbuffer")
-            print("MPV: macOS VO = pixelbuffer (AVSampleBufferDisplayLayer)")
-        } else if gpuAPI == .metal {
-            mpv_set_option_string(mpv, "vo", "gpu")
-            mpv_set_option_string(mpv, "gpu-api", "metal")
-            mpv_set_option_string(mpv, "gpu-context", "metal")
-            print("MPV: macOS GPU API = Metal")
-        } else {
-            mpv_set_option_string(mpv, "vo", "libmpv")
-            mpv_set_option_string(mpv, "gpu-api", "opengl")
-            print("MPV: macOS GPU API = OpenGL")
-        }
-        #elseif os(tvOS)
-        let gpuAPI = UserPreferences.load().tvosGPUAPI
-        if gpuAPI == .pixelbuffer {
-            mpv_set_option_string(mpv, "vo", "pixelbuffer")
-            print("MPV: tvOS VO = pixelbuffer (AVSampleBufferDisplayLayer)")
-        } else if gpuAPI == .metal {
-            mpv_set_option_string(mpv, "vo", "gpu")
-            mpv_set_option_string(mpv, "gpu-api", "metal")
-            mpv_set_option_string(mpv, "gpu-context", "metal")
-            print("MPV: tvOS GPU API = Metal")
-        } else {
-            mpv_set_option_string(mpv, "vo", "libmpv")
-            mpv_set_option_string(mpv, "gpu-api", "opengl")
-            mpv_set_option_string(mpv, "opengl-es", "yes")
-            print("MPV: tvOS GPU API = OpenGL")
-        }
-        #elseif os(iOS)
-        let gpuAPI = UserPreferences.load().iosGPUAPI
-        if gpuAPI == .pixelbuffer {
-            mpv_set_option_string(mpv, "vo", "pixelbuffer")
-            print("MPV: iOS VO = pixelbuffer (AVSampleBufferDisplayLayer)")
-        } else if gpuAPI == .metal {
-            mpv_set_option_string(mpv, "vo", "gpu")
-            mpv_set_option_string(mpv, "gpu-api", "metal")
-            mpv_set_option_string(mpv, "gpu-context", "metal")
-            print("MPV: iOS GPU API = Metal")
-        } else {
-            mpv_set_option_string(mpv, "vo", "libmpv")
-            mpv_set_option_string(mpv, "gpu-api", "opengl")
-            mpv_set_option_string(mpv, "opengl-es", "yes")
-            print("MPV: iOS GPU API = OpenGL")
-        }
-        #else
-        mpv_set_option_string(mpv, "vo", "libmpv")
-        mpv_set_option_string(mpv, "gpu-api", "opengl")
-        mpv_set_option_string(mpv, "opengl-es", "yes")
-        #endif
+        // Video output: mpv hands decoded frames to an AVSampleBufferDisplayLayer
+        // (via MPVPixelBufferBridge), which also gives us native Picture-in-Picture.
+        mpv_set_option_string(mpv, "vo", "pixelbuffer")
 
         // Keep video letterboxed to source aspect ratio across view size changes.
         mpv_set_option_string(mpv, "keepaspect", "yes")
@@ -1080,114 +1018,6 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         return flag != 0
     }
 
-    #if os(macOS) || os(tvOS) || os(iOS)
-    func setWindowID(_ layer: CAMetalLayer) {
-        guard let mpv = mpv else { return }
-
-        // Cast the layer pointer to Int64 for mpv's wid option
-        let wid = Int64(Int(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
-        var widValue = wid
-
-        // wid can change at runtime on rotation/resize; use property update.
-        let result = mpv_set_property(mpv, "wid", MPV_FORMAT_INT64, &widValue)
-        if result < 0 {
-            let errorStr = String(cString: mpv_error_string(result))
-            print("MPV: Failed to set wid: \(errorStr)")
-        } else {
-            print("MPV: Successfully set window ID")
-        }
-    }
-    #endif
-
-    #if os(iOS) || os(tvOS)
-    @MainActor
-    func createRenderContext(view: MPVPlayerGLView) {
-        guard let mpv = mpv else { return }
-
-        let api = UnsafeMutableRawPointer(mutating: (MPV_RENDER_API_TYPE_OPENGL as NSString).utf8String)
-        var initParams = mpv_opengl_init_params(
-            get_proc_address: { (ctx, name) -> UnsafeMutableRawPointer? in
-                let symbolName = CFStringCreateWithCString(kCFAllocatorDefault, name, CFStringBuiltInEncodings.ASCII.rawValue)
-                let identifier = CFBundleGetBundleWithIdentifier("com.apple.opengles" as CFString)
-                return CFBundleGetFunctionPointerForName(identifier, symbolName)
-            },
-            get_proc_address_ctx: nil
-        )
-
-        withUnsafeMutablePointer(to: &initParams) { initParamsPtr in
-            var params = [
-                mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: api),
-                mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, data: initParamsPtr),
-                mpv_render_param()
-            ]
-
-            let result = mpv_render_context_create(&mpvGL, mpv, &params)
-            if result < 0 {
-                let errorStr = String(cString: mpv_error_string(result))
-                print("MPV: Failed to create render context: \(errorStr)")
-                return
-            }
-            print("MPV: Render context created successfully")
-
-            view.mpvGL = UnsafeMutableRawPointer(mpvGL)
-
-            // iOS/tvOS OpenGL path: rely exclusively on CADisplayLink-driven rendering.
-            // Avoid libmpv VO-thread callback interactions that can trigger queue assertions
-            // in debug builds on Apple platforms.
-            mpv_render_context_set_update_callback(mpvGL, nil, nil)
-        }
-    }
-    #endif
-
-    #if os(macOS)
-    func createRenderContext(view: MPVPlayerMacOGLView) {
-        guard let mpv = mpv else { return }
-
-        let api = UnsafeMutableRawPointer(mutating: (MPV_RENDER_API_TYPE_OPENGL as NSString).utf8String)
-        var initParams = mpv_opengl_init_params(
-            get_proc_address: { (_, name) -> UnsafeMutableRawPointer? in
-                let symbolName = CFStringCreateWithCString(kCFAllocatorDefault, name, CFStringBuiltInEncodings.ASCII.rawValue)
-                let identifier = CFBundleGetBundleWithIdentifier("com.apple.opengl" as CFString)
-                return CFBundleGetFunctionPointerForName(identifier, symbolName)
-            },
-            get_proc_address_ctx: nil
-        )
-
-        withUnsafeMutablePointer(to: &initParams) { initParamsPtr in
-            var params = [
-                mpv_render_param(type: MPV_RENDER_PARAM_API_TYPE, data: api),
-                mpv_render_param(type: MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, data: initParamsPtr),
-                mpv_render_param()
-            ]
-
-            let result = mpv_render_context_create(&mpvGL, mpv, &params)
-            if result < 0 {
-                let errorStr = String(cString: mpv_error_string(result))
-                print("MPV: Failed to create macOS OpenGL render context: \(errorStr)")
-                return
-            }
-            print("MPV: macOS OpenGL render context created successfully")
-
-            view.mpvGL = UnsafeMutableRawPointer(mpvGL)
-
-            mpv_render_context_set_update_callback(
-                mpvGL,
-                { ctx in
-                    guard let ctx else { return }
-                    let view = Unmanaged<MPVPlayerMacOGLView>.fromOpaque(ctx).takeUnretainedValue()
-                    guard view.needsDrawing else { return }
-                    view.renderQueue.async {
-                        DispatchQueue.main.async {
-                            view.display()
-                        }
-                    }
-                },
-                UnsafeMutableRawPointer(Unmanaged.passUnretained(view).toOpaque())
-            )
-        }
-    }
-    #endif
-
     private func startEventLoop() {
         eventLoopGroup.enter()
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
@@ -1292,9 +1122,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                     return
                 }
 
-                // Detect hardware decoding texture failures on iOS/tvOS where
-                // OpenGL ES can't handle certain VideoToolbox surface formats
-                // (e.g. p010 for 10-bit HDR, or standard 4K HEVC textures).
+                // Detect hardware decoding surface failures on iOS/tvOS for
+                // VideoToolbox formats the device can't hand over
+                // (e.g. p010 for 10-bit HDR, or some 4K HEVC streams).
                 // Fall back to videotoolbox-copy which copies frames to CPU memory.
                 #if !os(macOS)
                 if !hasTriedHwdecCopy && level == "error" && (

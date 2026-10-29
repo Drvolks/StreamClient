@@ -13,8 +13,7 @@ import CoreGraphics
 /// to the *coded* resolution with no sample-aspect metadata attached, so the
 /// layer treats every frame as square-pixel. Anamorphic broadcast SD — e.g. a
 /// 720x576 DVB-T feed with a 64:45 sample aspect and a 16:9 display aspect —
-/// therefore renders horizontally squeezed. The Metal/OpenGL renderers are
-/// unaffected because mpv applies the aspect itself.
+/// therefore renders horizontally squeezed.
 ///
 /// The fix is to size the display layer to the stream's display aspect ratio
 /// and let it fill that rect, instead of letting it fit the raw pixel grid.

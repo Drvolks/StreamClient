@@ -58,8 +58,8 @@ nonisolated enum SettingsCategory: Int, CaseIterable, Identifiable {
             "Hiding recording features removes every recording menu, button and tab across "
                 + "the app. Scheduled recordings keep running on the server."
         case .advanced:
-            "The defaults suit almost every setup. Change these only when a specific channel "
-                + "misbehaves — both apply to the next stream you play."
+            "The default suits almost every setup. Change deinterlacing only when a specific "
+                + "channel misbehaves — it applies to the next stream you play."
         }
     }
 }

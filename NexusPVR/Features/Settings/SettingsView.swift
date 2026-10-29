@@ -18,9 +18,6 @@ struct SettingsView: View {
     @State private var seekBackwardSeconds: Int = UserPreferences.load().seekBackwardSeconds
     @State private var seekForwardSeconds: Int = UserPreferences.load().seekForwardSeconds
     @State private var audioChannels: String = UserPreferences.load().audioChannels
-    @State private var tvosGPUAPI: GPUAPI = UserPreferences.load().tvosGPUAPI
-    @State private var iosGPUAPI: GPUAPI = UserPreferences.load().iosGPUAPI
-    @State private var macosGPUAPI: GPUAPI = UserPreferences.load().macosGPUAPI
     @State private var subtitleMode: SubtitleMode = UserPreferences.load().subtitleMode
     @State private var subtitleSize: SubtitleSize = UserPreferences.load().subtitleSize
     @State private var subtitleBackground: Bool = UserPreferences.load().subtitleBackground
@@ -98,7 +95,6 @@ struct SettingsView: View {
         case outputProfile
         case liveStreamFormat
         #endif
-        case renderer
         case landingTab
         case theme
         case uiFontSize
@@ -331,7 +327,6 @@ struct SettingsView: View {
                 saveHideRecordings(!hideRecordings)
             }
         case .advanced:
-            tvRow("Renderer", value: rendererName(for: tvosGPUAPI)) { activeTVPopup = .renderer }
             tvRow("Deinterlacing", value: deinterlaceMode.label) { activeTVPopup = .deinterlace }
             tvRow("Event Log", value: "\(eventLog.events.count)") { showingTVEventLog = true }
             #if DEBUG
@@ -728,17 +723,6 @@ struct SettingsView: View {
     }
     #endif
 
-    private func rendererName(for api: GPUAPI) -> String {
-        switch api {
-        case .metal:
-            return "Metal"
-        case .pixelbuffer:
-            return "PixelBuffer (Recommended)"
-        case .opengl:
-            return "OpenGL"
-        }
-    }
-
     #if os(tvOS)
     @ViewBuilder
     private func tvSettingsPopup(for popup: TVSettingsPopup) -> some View {
@@ -819,8 +803,6 @@ struct SettingsView: View {
             return "Subtitles"
         case .subtitleSize:
             return "Subtitle Size"
-        case .renderer:
-            return "Renderer"
         case .landingTab:
             return "Landing Page"
         case .theme:
@@ -1009,20 +991,6 @@ struct SettingsView: View {
                     prefs.save()
                 }
             }
-        case .renderer:
-            return GPUAPI.allCases.map { api in
-                TVPopupOption(
-                    id: "settings-popup-renderer-\(rendererName(for: api))",
-                    title: rendererName(for: api),
-                    isCurrent: tvosGPUAPI == api,
-                    isDestructive: false
-                ) {
-                    tvosGPUAPI = api
-                    var prefs = UserPreferences.load()
-                    prefs.tvosGPUAPI = api
-                    prefs.save()
-                }
-            }
         case .landingTab:
             return availableLandingOptions
                 .map { option in
@@ -1207,19 +1175,6 @@ struct SettingsView: View {
             prefs.subtitleBackground = subtitleBackground
             prefs.save()
         }
-        #if os(iOS)
-        .onChange(of: iosGPUAPI) { _ in
-            var prefs = UserPreferences.load()
-            prefs.iosGPUAPI = iosGPUAPI
-            prefs.save()
-        }
-        #elseif os(macOS)
-        .onChange(of: macosGPUAPI) { _ in
-            var prefs = UserPreferences.load()
-            prefs.macosGPUAPI = macosGPUAPI
-            prefs.save()
-        }
-        #endif
     }
 
     private var subtitleModeDescription: String {
@@ -1328,17 +1283,6 @@ struct SettingsView: View {
     /// when the player is created.
     private var deinterlaceDescription: String {
         deinterlaceMode.summary + " Applies to the next stream you play."
-    }
-
-    private func rendererDescription(for api: GPUAPI) -> String {
-        switch api {
-        case .pixelbuffer:
-            return "Renders directly to a Metal surface + Supports native Picture-in-Picture"
-        case .metal:
-            return "Renders directly to a Metal surface. May offer lower latency but lacks Picture-in-Picture support."
-        case .opengl:
-            return "Legacy OpenGL-based rendering. Broad compatibility but no Picture-in-Picture support."
-        }
     }
 
 
@@ -1625,29 +1569,11 @@ extension SettingsView {
         }
     }
 
-    /// A phone-width row has no room for "(Recommended)" beside the label.
-    private static func rendererPickerLabel(_ name: String) -> String {
-        #if os(iOS)
-        name.replacingOccurrences(of: " (Recommended)", with: "")
-        #else
-        name
-        #endif
-    }
-
     private static var unlinkSubtitle: String {
         #if os(macOS)
         "Forget this server on this Mac."
         #else
         "Forget this server on this device."
-        #endif
-    }
-
-    /// The renderer setting of the platform the app is running on.
-    private var platformGPUAPI: Binding<GPUAPI> {
-        #if os(macOS)
-        $macosGPUAPI
-        #else
-        $iosGPUAPI
         #endif
     }
 
@@ -1918,13 +1844,6 @@ extension SettingsView {
                 options: DeinterlaceMode.allCases.map { ($0.label, $0) }
             )
         }
-        MacSettingsRow(title: "Renderer", subtitle: rendererDescription(for: platformGPUAPI.wrappedValue)) {
-            MidnightPicker(
-                title: "Renderer",
-                selection: platformGPUAPI,
-                options: [GPUAPI.opengl, .metal, .pixelbuffer].map { (Self.rendererPickerLabel(rendererName(for: $0)), $0) }
-            )
-        }
         MacSettingsRow(
             title: "Event Log",
             subtitle: eventLog.events.isEmpty ? "No events recorded" : Self.count(eventLog.events.count, "event")
@@ -2008,7 +1927,7 @@ extension SettingsView {
         case .recordings:
             return hideRecordings ? "Hidden" : "Shown"
         case .advanced:
-            return "\(rendererShortName) · \(deinterlaceMode.label)"
+            return "Deinterlacing: \(deinterlaceMode.label)"
         }
     }
 
@@ -2025,22 +1944,6 @@ extension SettingsView {
         #else
         return streamQualityDescription
         #endif
-    }
-
-    /// The renderer this platform uses, without the "(Recommended)" note.
-    private var rendererShortName: String {
-        #if os(tvOS)
-        let api = tvosGPUAPI
-        #elseif os(iOS)
-        let api = iosGPUAPI
-        #else
-        let api = macosGPUAPI
-        #endif
-        return switch api {
-        case .pixelbuffer: "PixelBuffer"
-        case .metal: "Metal"
-        case .opengl: "OpenGL"
-        }
     }
 
     private func addTopic() {

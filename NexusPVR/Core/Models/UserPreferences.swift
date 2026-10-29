@@ -12,9 +12,6 @@ nonisolated struct UserPreferences: Codable {
     var seekBackwardSeconds: Int = 10
     var seekForwardSeconds: Int = 30
     var audioChannels: String = "auto"
-    var tvosGPUAPI: GPUAPI = .pixelbuffer
-    var iosGPUAPI: GPUAPI = .pixelbuffer
-    var macosGPUAPI: GPUAPI = .pixelbuffer
     var subtitleMode: SubtitleMode = .manual
     var subtitleSize: SubtitleSize = .medium
     var subtitleBackground: Bool = true
@@ -64,17 +61,6 @@ nonisolated struct UserPreferences: Codable {
     /// free of UI (SwiftUI) dependencies. Resolve via the `theme` property.
     var themeRawValue: String = AppTheme.defaultRawValue
     var updatedAt: Date = .distantPast
-
-    /// The GPU API for the current platform.
-    var currentGPUAPI: GPUAPI {
-        #if os(tvOS)
-        tvosGPUAPI
-        #elseif os(macOS)
-        macosGPUAPI
-        #else
-        iosGPUAPI
-        #endif
-    }
 
     /// The tab the app should open to at launch. The raw value is stored on
     /// disk so this struct doesn't need to import the navigation module.
@@ -201,9 +187,6 @@ nonisolated struct UserPreferences: Codable {
         case seekForwardSeconds
         case seekTimeSeconds // legacy
         case audioChannels
-        case tvosGPUAPI
-        case iosGPUAPI
-        case macosGPUAPI
         case subtitleMode
         case subtitleSize
         case subtitleBackground
@@ -240,9 +223,6 @@ nonisolated struct UserPreferences: Codable {
             seekForwardSeconds = 30
         }
         audioChannels = try container.decodeIfPresent(String.self, forKey: .audioChannels) ?? "auto"
-        tvosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .tvosGPUAPI) ?? .pixelbuffer
-        iosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .iosGPUAPI) ?? .pixelbuffer
-        macosGPUAPI = try container.decodeIfPresent(GPUAPI.self, forKey: .macosGPUAPI) ?? .pixelbuffer
         subtitleMode = try container.decodeIfPresent(SubtitleMode.self, forKey: .subtitleMode) ?? .manual
         subtitleSize = try container.decodeIfPresent(SubtitleSize.self, forKey: .subtitleSize) ?? .medium
         subtitleBackground = try container.decodeIfPresent(Bool.self, forKey: .subtitleBackground) ?? true
@@ -280,9 +260,6 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(seekBackwardSeconds, forKey: .seekBackwardSeconds)
         try container.encode(seekForwardSeconds, forKey: .seekForwardSeconds)
         try container.encode(audioChannels, forKey: .audioChannels)
-        try container.encode(tvosGPUAPI, forKey: .tvosGPUAPI)
-        try container.encode(iosGPUAPI, forKey: .iosGPUAPI)
-        try container.encode(macosGPUAPI, forKey: .macosGPUAPI)
         try container.encode(subtitleMode, forKey: .subtitleMode)
         try container.encode(subtitleSize, forKey: .subtitleSize)
         try container.encode(subtitleBackground, forKey: .subtitleBackground)

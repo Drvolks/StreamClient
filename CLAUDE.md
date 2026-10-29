@@ -16,7 +16,7 @@ StreamClient is a native Apple streaming client for PVR/DVR servers. Supports iO
 - **Architecture**: MVVM with @Observable
 - **Minimum Deployment**: iOS 16.0
 - **Package Manager**: Swift Package Manager
-- **Video Playback**: MPV (libmpv) via Metal rendering
+- **Video Playback**: MPV (libmpv), `vo=pixelbuffer` into an `AVSampleBufferDisplayLayer`
 - **Networking**: URLSession with async/await
 - **Data Sync**: iCloud Key-Value Store (NSUbiquitousKeyValueStore)
 
@@ -177,7 +177,7 @@ All API responses use `Codable` structs in `Core/Models/`:
 
 All player code lives in `Features/Player/PlayerView.swift`:
 - Uses libmpv compiled for each platform (`import Libmpv`)
-- Metal-based rendering via `CAMetalLayer`
+- Single renderer (#97): `vo=pixelbuffer` hands frames to an `AVSampleBufferDisplayLayer` through `MPVPixelBufferBridge` (`MPVPlayerPixelBufferView` on iOS/tvOS, `MPVPlayerPixelBufferNSViewController` on macOS), which is also what gives native Picture-in-Picture. There is no renderer setting; the old `tvosGPUAPI` / `iosGPUAPI` / `macosGPUAPI` preference keys are ignored when decoding
 - `MPVPlayerCore` class - Core player logic (defined inside PlayerView.swift)
 - `MPVContainerView` struct - Platform wrapper (NSViewRepresentable on macOS, UIViewRepresentable on iOS/tvOS)
 - `PlayerView` - Main SwiftUI view wrapping the player

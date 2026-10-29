@@ -2,7 +2,7 @@
 //  SimpleModelTests.swift
 //  NexusPVRTests
 //
-//  Tests for small models and enums: PlayerStats, SubtitleMode, GPUAPI,
+//  Tests for small models and enums: PlayerStats, SubtitleMode,
 //  ChannelGroup, ChannelProfile, RecordingsFilter, WatchedChannel.
 //
 
@@ -72,25 +72,6 @@ struct SimpleModelTests {
         #expect(SubtitleMode.allCases.contains(.manual))
         #expect(SubtitleMode.allCases.contains(.auto))
         #expect(SubtitleMode.allCases.count == 2)
-    }
-
-    // MARK: - GPUAPI
-
-    @Test("GPUAPI round-trips via raw value and Codable")
-    func gpuAPICodable() throws {
-        for api in GPUAPI.allCases {
-            let data = try JSONEncoder().encode(api)
-            let decoded = try JSONDecoder().decode(GPUAPI.self, from: data)
-            #expect(decoded == api)
-        }
-    }
-
-    @Test("GPUAPI covers metal, opengl, and pixelbuffer")
-    func gpuAPICases() {
-        #expect(GPUAPI.allCases.contains(.metal))
-        #expect(GPUAPI.allCases.contains(.opengl))
-        #expect(GPUAPI.allCases.contains(.pixelbuffer))
-        #expect(GPUAPI.allCases.count == 3)
     }
 
     // MARK: - ChannelGroup

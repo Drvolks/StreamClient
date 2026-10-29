@@ -183,22 +183,22 @@ struct UserPreferencesTests {
         #expect(resolved?.keywords == ["cloud"])
     }
 
-    // MARK: - currentGPUAPI
+    // MARK: - Removed renderer setting (#97)
 
-    @Test("currentGPUAPI picks the per-platform GPU setting")
-    func currentGPUAPI_perPlatform() {
-        var prefs = UserPreferences()
-        prefs.iosGPUAPI = .metal
-        prefs.tvosGPUAPI = .opengl
-        prefs.macosGPUAPI = .pixelbuffer
+    @Test("Preferences saved with the old renderer keys still decode")
+    func legacyRendererKeysAreIgnored() throws {
+        let json = """
+        {"keywords": ["news"], "seekForwardSeconds": 45,
+         "tvosGPUAPI": "opengl", "iosGPUAPI": "metal", "macosGPUAPI": "pixelbuffer"}
+        """
+        let prefs = try JSONDecoder().decode(UserPreferences.self, from: Data(json.utf8))
+        #expect(prefs.keywords == ["news"])
+        #expect(prefs.seekForwardSeconds == 45)
 
-        #if os(tvOS)
-        #expect(prefs.currentGPUAPI == .opengl)
-        #elseif os(macOS)
-        #expect(prefs.currentGPUAPI == .pixelbuffer)
-        #else
-        #expect(prefs.currentGPUAPI == .metal)
-        #endif
+        let reencoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(prefs)) as? [String: Any]
+        #expect(reencoded?["tvosGPUAPI"] == nil)
+        #expect(reencoded?["iosGPUAPI"] == nil)
+        #expect(reencoded?["macosGPUAPI"] == nil)
     }
 
     // MARK: - Guide group sidebar preferences (#158)

@@ -9,15 +9,9 @@ import Libmpv
 import MPVPixelBufferBridge
 import AVFoundation
 import AVKit
-#if !os(macOS)
-import GLKit
-import OpenGLES
-#endif
 #if os(macOS)
 import AppKit
 import IOKit.pwr_mgt
-import OpenGL.GL
-import OpenGL.GL3
 #else
 import UIKit
 #endif
@@ -644,7 +638,7 @@ struct PlayerView: View {
             savePlaybackPosition()
             #if os(iOS)
             let session = activePlayerSession
-            let nativePiPActive = isUsingPixelBufferRenderer && (session.isPiPActive || session.dismissingForPiP)
+            let nativePiPActive = session.isPiPActive || session.dismissingForPiP
             if nativePiPActive {
                 // Don't stop player — mpv continues feeding PiP, so the server-side
                 // stream and its keepalive have to stay up too. The keepalive is
@@ -1573,23 +1567,10 @@ struct PlayerView: View {
     }
     #endif
 
-    private var isUsingPixelBufferRenderer: Bool {
-        #if os(tvOS)
-        return UserPreferences.load().tvosGPUAPI == .pixelbuffer
-        #elseif os(iOS)
-        return UserPreferences.load().iosGPUAPI == .pixelbuffer
-        #elseif os(macOS)
-        return UserPreferences.load().macosGPUAPI == .pixelbuffer
-        #else
-        return false
-        #endif
-    }
-
     #if os(iOS)
     private func setupNativePiPIfNeeded() {
         let session = activePlayerSession
-        guard isUsingPixelBufferRenderer,
-              session.pipController == nil,
+        guard session.pipController == nil,
               session.hasActiveSession else { return }
 
         session.setupPiP(
@@ -1720,7 +1701,7 @@ struct PlayerView: View {
             #endif
 
             #if os(iOS)
-            if isUsingPixelBufferRenderer && pipIsSupported {
+            if pipIsSupported {
                 Button {
                     toggleNativePiP()
                 } label: {
@@ -1950,7 +1931,6 @@ struct PlayerView: View {
                 videoInfoRow("Profile", profile)
             }
             #endif
-            videoInfoRow("Renderer", rendererTag)
             if droppedFrames > 0 {
                 videoInfoRow("Dropped", "\(droppedFrames)")
             }
@@ -2198,23 +2178,6 @@ struct PlayerView: View {
 
     private var headerTitle: String {
         return title
-    }
-
-    private var rendererTag: String {
-        #if os(tvOS)
-        let api = UserPreferences.load().tvosGPUAPI
-        #elseif os(iOS)
-        let api = UserPreferences.load().iosGPUAPI
-        #elseif os(macOS)
-        let api = UserPreferences.load().macosGPUAPI
-        #else
-        return ""
-        #endif
-        switch api {
-        case .metal: return "M"
-        case .pixelbuffer: return "PB"
-        case .opengl: return "GL"
-        }
     }
 
     #if DISPATCHERPVR

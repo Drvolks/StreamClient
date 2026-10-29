@@ -1971,7 +1971,6 @@ struct GuideView: View {
     @ViewBuilder
     private func programContextMenu(program: Program, channel: Channel, isScheduled: Bool) -> some View {
                     if program.isCurrentlyAiring, let recId = viewModel.activeRecordingId(for: program, channelId: channel.id) {
-                        let canPlay = UserPreferences.load().currentGPUAPI == .pixelbuffer
                         Button {
                             Task {
                                 do {
@@ -1986,9 +1985,8 @@ struct GuideView: View {
                                 }
                             }
                         } label: {
-                            Label(canPlay ? "Watch from Beginning" : "Watch from Beginning (requires PixelBuffer)", systemImage: "play.fill")
+                            Label("Watch from Beginning", systemImage: "play.fill")
                         }
-                        .disabled(!canPlay)
 
                         Button {
                             playLiveChannel(channel)
