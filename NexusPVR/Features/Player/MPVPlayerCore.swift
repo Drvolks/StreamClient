@@ -825,6 +825,10 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         // Network
         mpv_set_option_string(mpv, "network-timeout", "30")
+        // mpv 0.42 turns tls-verify on by default, but the gnutls build used by
+        // MPVKit has no CA store on iOS/tvOS, so every HTTPS stream would fail.
+        // Keep the pre-0.42 behaviour.
+        mpv_set_option_string(mpv, "tls-verify", "no")
         mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=3")
         if isRecordingInProgress {
             // Growing file: reopen HTTP connection on EOF to pick up new bytes
