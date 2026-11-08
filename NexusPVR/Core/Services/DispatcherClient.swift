@@ -15,8 +15,16 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
 
     private(set) var config: ServerConfig
     private let networkPath: any NetworkPathReporting
-    private var accessToken: String?
+    private var accessToken: String? {
+        didSet {
+            guard accessToken != oldValue else { return }
+            // Streams already playing pick up the new token on their next request.
+            StreamHeaderOverride.setAuthorization(accessToken.map { "Bearer \($0)" })
+            scheduleTokenRenewal()
+        }
+    }
     private var refreshToken: String?
+    private var tokenRenewalTask: Task<Void, Never>?
     /// When true, use `X-API-Key` header instead of `Bearer` JWT
     private var useApiKeyAuth = false
     /// When true, use output/XC endpoints instead of REST API (for Streamer users)
@@ -842,6 +850,32 @@ final class DispatcherClient: ObservableObject, PVRClientProtocol, VODProviding,
     }
 
     // MARK: - Token Refresh
+
+    /// Renews a JWT access token 5 minutes before it expires. During a long
+    /// recording mpv fetches every chunk with the token while the app may
+    /// send no request of its own, so waiting for a 401 to renew would let
+    /// the stream fail first. API keys don't expire and have no `exp`.
+    private func scheduleTokenRenewal() {
+        tokenRenewalTask?.cancel()
+        tokenRenewalTask = nil
+        guard let accessToken, let expiry = JWTExpiry.expirationDate(of: accessToken) else { return }
+        let delay = max(expiry.timeIntervalSinceNow - 300, 30)
+        tokenRenewalTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            await self.renewTokenBeforeExpiry()
+        }
+    }
+
+    private func renewTokenBeforeExpiry() async {
+        guard isAuthenticated, !useApiKeyAuth else { return }
+        do {
+            try await refreshAccessToken()
+        } catch {
+            isAuthenticated = false
+            try? await authenticate()
+        }
+    }
 
     private func refreshAccessToken() async throws {
         guard let refreshToken else {
