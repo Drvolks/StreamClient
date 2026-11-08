@@ -540,11 +540,22 @@ final class RecordingsViewModel: ObservableObject {
             for (key, value) in headers {
                 request.setValue(value, forHTTPHeaderField: key)
             }
+            // A recording whose MKV was never written redirects to its HLS
+            // playlist; the delegate keeps the auth headers across that hop.
+            let redirectDelegate = SameServerAuthRedirectDelegate(headers: headers)
+            var rangeRequest = request
             // MKV duration is in Segment Info, typically within first 64KB
-            request.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
-            let (data, _) = try await URLSession.shared.data(for: request)
+            rangeRequest.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
+            var (data, response) = try await URLSession.shared.data(for: rangeRequest, delegate: redirectDelegate)
+            if Self.isHLSPlaylist(data), (response as? HTTPURLResponse)?.statusCode == 206 {
+                // Only part of the playlist came back; its length needs all of it.
+                (data, response) = try await URLSession.shared.data(for: request, delegate: redirectDelegate)
+            }
 
-            guard let detectedSeconds = Self.extractMKVDuration(from: data) else {
+            let detected = Self.isHLSPlaylist(data)
+                ? Self.completedHLSPlaylistDuration(from: data)
+                : Self.extractMKVDuration(from: data)
+            guard let detectedSeconds = detected else {
                 print("Duration probe: '\(recording.name)' — could not extract MKV duration")
                 return
             }
@@ -655,6 +666,20 @@ final class RecordingsViewModel: ObservableObject {
     }
 
     /// Parse MKV/WebM EBML to extract duration from Segment Info
+    nonisolated static func isHLSPlaylist(_ data: Data) -> Bool {
+        data.starts(with: Data("#EXTM3U".utf8))
+    }
+
+    /// Length of a finished HLS recording (the playlist has `#EXT-X-ENDLIST`),
+    /// or nil when it is still growing, unreadable or empty.
+    nonisolated static func completedHLSPlaylistDuration(from data: Data) -> Int? {
+        guard let text = String(data: data, encoding: .utf8),
+              text.contains("#EXT-X-ENDLIST") else { return nil }
+        let seconds = HLSPlaylistDuration.totalSeconds(in: text)
+        guard seconds > 0 else { return nil }
+        return Int(seconds.rounded())
+    }
+
     nonisolated static func extractMKVDuration(from data: Data) -> Int? {
         var offset = 0
         var timestampScale: UInt64 = 1_000_000 // Default: 1ms
