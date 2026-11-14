@@ -17,6 +17,8 @@ import Foundation
 nonisolated struct PlaybackSession: Identifiable, Sendable, Equatable {
     static let maxLineCount = 600
     static let headLineCount = 150
+    /// Longer lines (an mpv dump, a huge URL) are cut to this many characters.
+    static let maxLineLength = 2_000
 
     let id: UUID
     let startedAt: Date
@@ -43,9 +45,10 @@ nonisolated struct PlaybackSession: Identifiable, Sendable, Equatable {
         errorCount > 0 || outcome.isFailure
     }
 
-    /// Where the "lines omitted" marker goes in `lines`, when lines were dropped.
+    /// Where the "lines omitted" marker goes in `lines`, when lines were
+    /// dropped; equal to `lines.count` when the marker goes after the last line.
     var omissionIndex: Int? {
-        omittedLineCount > 0 ? Self.headLineCount : nil
+        omittedLineCount > 0 ? min(Self.headLineCount, lines.count) : nil
     }
 
     /// Seconds from start to end, or to `now` while still in progress.
@@ -54,6 +57,16 @@ nonisolated struct PlaybackSession: Identifiable, Sendable, Equatable {
     }
 
     mutating func append(_ line: PlaybackLogLine) {
+        var line = line
+        if line.text.count > Self.maxLineLength {
+            line = PlaybackLogLine(
+                id: line.id,
+                timestamp: line.timestamp,
+                level: line.level,
+                text: String(line.text.prefix(Self.maxLineLength)) + " … (truncated)",
+                repeatCount: line.repeatCount
+            )
+        }
         if line.level.isProblem { errorCount += 1 }
         if line.level == .warn { warningCount += 1 }
 
@@ -68,6 +81,19 @@ nonisolated struct PlaybackSession: Identifiable, Sendable, Equatable {
             omittedLineCount += 1
         }
         lines.append(line)
+    }
+
+    /// Drops every line after the first `keeping`, to keep the whole Event
+    /// Log under its line budget. Counts and the outcome stay. Returns how
+    /// many lines were dropped.
+    @discardableResult
+    mutating func discardLines(keeping: Int = 0) -> Int {
+        let keep = max(0, min(keeping, lines.count))
+        let dropped = lines.count - keep
+        guard dropped > 0 else { return 0 }
+        lines.removeSubrange(keep...)
+        omittedLineCount += dropped
+        return dropped
     }
 
     /// Records the end. An earlier failure stays the outcome when the player

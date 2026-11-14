@@ -55,6 +55,11 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
     /// reads a snapshot when it opens rather than following every line.
     private(set) var sessions: [UUID: PlaybackSession] = [:]
     private let maxEvents = 200
+    /// Lines kept across all playback sessions. Each session holds at most
+    /// `PlaybackSession.maxLineCount`; past this total the oldest sessions
+    /// lose their logs (their rows, counts and outcome stay).
+    static let maxPlaybackLines = 5_000
+    private(set) var playbackLineCount = 0
 
     nonisolated init() {}
 
@@ -98,12 +103,30 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
                 sessionId: id
             ))
         case .line(let level, let text):
+            guard let before = sessions[id]?.lines.count else { return }
             sessions[id]?.append(PlaybackLogLine(timestamp: update.timestamp, level: level, text: text))
+            playbackLineCount += (sessions[id]?.lines.count ?? before) - before
+            enforcePlaybackLineBudget(sparing: id)
             #if DEBUG
             if level.isProblem { print("PLAYBACK [\(level.tag)] \(text)") }
             #endif
         case .end(let outcome):
             sessions[id]?.finish(outcome, at: update.timestamp)
+        }
+    }
+
+    /// Empties the oldest sessions' logs until the total is back under
+    /// `maxPlaybackLines`. The session being written is trimmed last, and
+    /// then only past its first lines.
+    private func enforcePlaybackLineBudget(sparing current: UUID) {
+        guard playbackLineCount > Self.maxPlaybackLines else { return }
+        let oldestFirst = events.compactMap(\.sessionId).filter { $0 != current }
+        for id in oldestFirst where playbackLineCount > Self.maxPlaybackLines {
+            playbackLineCount -= sessions[id]?.discardLines() ?? 0
+        }
+        if playbackLineCount > Self.maxPlaybackLines, let lines = sessions[current]?.lines.count {
+            let keep = max(0, lines - (playbackLineCount - Self.maxPlaybackLines))
+            playbackLineCount -= sessions[current]?.discardLines(keeping: keep) ?? 0
         }
     }
 
@@ -113,6 +136,7 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
             let dropped = events.prefix(events.count - maxEvents)
             events.removeFirst(events.count - maxEvents)
             for id in dropped.compactMap(\.sessionId) {
+                playbackLineCount -= sessions[id]?.lines.count ?? 0
                 sessions[id] = nil
             }
         }
@@ -121,6 +145,7 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
     func clear() {
         events.removeAll()
         sessions.removeAll()
+        playbackLineCount = 0
     }
 
     /// The whole log as shareable text (header, events, full sessions).

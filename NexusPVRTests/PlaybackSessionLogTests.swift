@@ -128,6 +128,61 @@ struct PlaybackSessionLogTests {
         #expect(log.sessions[id] == nil)
     }
 
+    @Test("All sessions together stay under the line budget; the oldest lose their logs first")
+    func globalLineBudget() {
+        let log = NetworkEventLog()
+        let perSession = PlaybackSession.maxLineCount
+        let sessionCount = NetworkEventLog.maxPlaybackLines / perSession + 2
+        var ids: [UUID] = []
+        for s in 0..<sessionCount {
+            let id = UUID()
+            ids.append(id)
+            log.apply(PlaybackSessionUpdate(sessionId: id, timestamp: t0, kind: .start(title: "/s\(s)", host: nil)))
+            for i in 0..<perSession {
+                log.apply(PlaybackSessionUpdate(sessionId: id, timestamp: t0, kind: .line(.info, "s\(s) l\(i)")))
+            }
+        }
+        let total = log.sessions.values.reduce(0) { $0 + $1.lines.count }
+        #expect(total <= NetworkEventLog.maxPlaybackLines)
+        #expect(log.playbackLineCount == total)
+        #expect(log.sessions[ids[0]]?.lines.isEmpty == true)
+        #expect(log.sessions[ids[0]]?.omittedLineCount == perSession)
+        #expect(log.sessions[ids.last!]?.lines.count == perSession)
+        #expect(log.events.count == sessionCount)
+    }
+
+    @Test("Clearing resets the line count")
+    func clearResetsLineCount() {
+        let log = NetworkEventLog()
+        let id = UUID()
+        log.apply(PlaybackSessionUpdate(sessionId: id, timestamp: t0, kind: .start(title: "/live", host: nil)))
+        log.apply(PlaybackSessionUpdate(sessionId: id, timestamp: t0, kind: .line(.info, "a")))
+        log.apply(PlaybackSessionUpdate(sessionId: id, timestamp: t0, kind: .line(.info, "a")))
+        #expect(log.playbackLineCount == 1)
+        log.clear()
+        #expect(log.playbackLineCount == 0)
+    }
+
+    @Test("Very long lines are truncated")
+    func longLinesTruncated() {
+        var session = PlaybackSession(id: UUID(), startedAt: t0, title: "/live")
+        session.append(line(String(repeating: "x", count: PlaybackSession.maxLineLength + 500)))
+        let text = session.lines[0].text
+        #expect(text.hasSuffix("… (truncated)"))
+        #expect(text.count < PlaybackSession.maxLineLength + 20)
+    }
+
+    @Test("A session whose log was emptied shows the omission marker")
+    func emptiedSessionMarker() {
+        var session = PlaybackSession(id: UUID(), startedAt: t0, title: "/live")
+        session.append(line("a"))
+        session.append(line("b"))
+        #expect(session.discardLines() == 2)
+        #expect(session.omissionIndex == 0)
+        let text = EventLogExporter.text(session: session, header: [])
+        #expect(text.contains("… 2 line(s) omitted …"))
+    }
+
     // MARK: - Filter
 
     @Test("Problems shows failed requests and sessions with problems only")

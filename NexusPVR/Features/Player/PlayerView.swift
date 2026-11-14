@@ -19,6 +19,7 @@ import UIKit
 struct PlayerView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
+    @Environment(\.scenePhase) private var scenePhase
 
     let url: URL
     let title: String
@@ -235,6 +236,7 @@ struct PlayerView: View {
                     scheduleHideControls()
                 },
                 onDismiss: {
+                    logPlayerEvent("Close requested: Menu/Back pressed on the video")
                     savePlaybackPosition()
                     appState.stopPlayback()
                 },
@@ -606,9 +608,21 @@ struct PlayerView: View {
                 dismissSettingsPanel()
                 tvFocusedTrackIndex = -1
             } else {
+                logPlayerEvent("Close requested: Menu/Back (exit command)")
                 savePlaybackPosition()
                 appState.stopPlayback()
             }
+        }
+        #endif
+        .onChange(of: scenePhase) { _, phase in
+            logPlayerEvent("App is now \(phase)")
+        }
+        #if !os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+            logPlayerEvent(PlayerDiagnostics.describeInterruption(note))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { note in
+            logPlayerEvent(PlayerDiagnostics.describeRouteChange(note))
         }
         #endif
         .onAppear {
@@ -626,6 +640,11 @@ struct PlayerView: View {
             #endif
         }
         .onDisappear {
+            // Still "showing" means nothing in the app asked to close the
+            // player: the system dismissed it, or the view was replaced.
+            logPlayerEvent(appState.isShowingPlayer
+                ? "Player view went away without a close request"
+                : "Player view closed")
             qualityNoticeTask?.cancel()
             #if os(tvOS)
             clearDisplayCriteria()
@@ -996,9 +1015,15 @@ struct PlayerView: View {
     /// stream ended for a recording, but for live TV and for catch-up on a
     /// programme that is still airing it only means the readable edge moved
     /// ahead of us — both get a chance to recover before playback ends.
+    /// Writes to this player's playback session in the Event Log.
+    private func logPlayerEvent(_ text: String) {
+        activePlayerSession.player?.recordAppEvent(text)
+    }
+
     private func handlePlaybackEnded() {
         if recoverFromLiveEdgeEOF() { return }
         if continueCatchupIfNeeded() { return }
+        logPlayerEvent("Close: playback ended")
         savePlaybackPosition()
         markAsWatched()
         if !isRecordingInProgress {
@@ -1111,6 +1136,7 @@ struct PlayerView: View {
     /// Ends playback the way `handlePlaybackEnded` would have, once the
     /// continuation chain decides there is nothing left to play.
     private func endCatchupPlayback() {
+        logPlayerEvent("Close: catch-up programme finished")
         endCatchupSeekIndicator()
         savePlaybackPosition()
         markAsWatched()

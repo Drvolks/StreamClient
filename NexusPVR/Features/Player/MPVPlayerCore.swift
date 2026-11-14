@@ -1580,6 +1580,13 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         recordPlayback(.event, "Player: \(playerSettingsSummary())")
     }
 
+    /// Lets the views around the player note what they did to it (why it
+    /// was closed, app lifecycle, audio session changes), so a session log
+    /// says whether the app or mpv ended playback.
+    func recordAppEvent(_ text: String, level: PlaybackLogLevel = .event) {
+        recordPlayback(level, text)
+    }
+
     /// Adds a line to this player's session. Text is redacted first.
     private func recordPlayback(_ level: PlaybackLogLevel, _ text: String) {
         guard let id = playbackSessionId else { return }

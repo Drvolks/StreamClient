@@ -65,6 +65,9 @@ nonisolated enum EventLogExporter {
             }
             out.append("    " + lineText(line))
         }
+        if session.omissionIndex == session.lines.count {
+            out.append("    … \(session.omittedLineCount) line(s) omitted …")
+        }
         out.append("=== End of playback")
         return out
     }

@@ -1325,7 +1325,7 @@ struct TVOSNavigation: View {
                 appState.tvosSettingsShowingCategory = false
             }
         }
-        .fullScreenCover(isPresented: $appState.isShowingPlayer) {
+        .fullScreenCover(isPresented: playerCoverBinding) {
              if let url = appState.currentlyPlayingURL {
                 PlayerView(
                     url: url,
@@ -1344,6 +1344,22 @@ struct TVOSNavigation: View {
         .onReceive(NotificationCenter.default.publisher(for: .restoreFromPiP)) { _ in
             appState.isShowingPlayer = true
         }
+    }
+
+    /// The player cover's binding. SwiftUI writes `false` here only when the
+    /// cover is dismissed by the system rather than by `stopPlayback()`; that
+    /// goes into the playback session log, since a player closed this way
+    /// otherwise leaves no trace of why.
+    private var playerCoverBinding: Binding<Bool> {
+        Binding(
+            get: { appState.isShowingPlayer },
+            set: { isShowing in
+                if !isShowing, appState.isShowingPlayer {
+                    Dependencies.activePlayerSession.player?.recordAppEvent("Player cover dismissed by the system")
+                }
+                appState.isShowingPlayer = isShowing
+            }
+        )
     }
 
     private var rootExitAction: TVRootExitAction {

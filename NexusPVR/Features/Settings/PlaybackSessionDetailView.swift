@@ -51,6 +51,9 @@ struct PlaybackSessionDetailView: View {
             }
             result.append(.line(line))
         }
+        if session.omissionIndex == session.lines.count {
+            result.append(.omission(session.omittedLineCount))
+        }
         return result
     }
 
