@@ -22,6 +22,9 @@ struct NetworkEvent: Identifiable, Sendable {
     /// was used (e.g. "pvr.example.com" or "192.168.1.50:8866"). Tells the
     /// server address and the custom host apart in the log (#165).
     var host: String? = nil
+    /// Set on the row that stands for a playback session; the session itself
+    /// is in `NetworkEventLog.sessions`.
+    var sessionId: UUID? = nil
 
     /// "host" or "host:port" for `url`; nil when it has no host.
     nonisolated static func hostLabel(for url: URL?) -> String? {
@@ -34,22 +37,30 @@ struct NetworkEvent: Identifiable, Sendable {
 /// Protocol for logging network events — allows test doubles and alternative implementations.
 protocol NetworkEventLogging: AnyObject, Sendable {
     nonisolated func log(_ event: NetworkEvent)
+    /// Starts, adds to, or ends a playback session. Callable from any thread;
+    /// updates are applied in the order they are sent.
+    nonisolated func logPlayback(_ update: PlaybackSessionUpdate)
+}
+
+extension NetworkEventLogging {
+    nonisolated func logPlayback(_ update: PlaybackSessionUpdate) {}
 }
 
 /// Concrete observable implementation for network event logging.
 @MainActor
 final class NetworkEventLog: ObservableObject, NetworkEventLogging {
     @Published private(set) var events: [NetworkEvent] = []
+    /// Playback sessions by id, one per `sessionId` row in `events`. Not
+    /// published: mpv can log several lines a second, and the Event Log
+    /// reads a snapshot when it opens rather than following every line.
+    private(set) var sessions: [UUID: PlaybackSession] = [:]
     private let maxEvents = 200
 
     nonisolated init() {}
 
     nonisolated func log(_ event: NetworkEvent) {
         Task { @MainActor in
-            self.events.append(event)
-            if self.events.count > self.maxEvents {
-                self.events.removeFirst(self.events.count - self.maxEvents)
-            }
+            self.append(event)
             #if DEBUG
             if Self.printsToConsole(event) {
                 print(Self.consoleLine(for: event))
@@ -58,8 +69,63 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
         }
     }
 
+    /// Playback updates come from mpv's event thread; the main queue keeps
+    /// them in order, so a session never receives a line before its start.
+    nonisolated func logPlayback(_ update: PlaybackSessionUpdate) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                self.apply(update)
+            }
+        }
+    }
+
+    func apply(_ update: PlaybackSessionUpdate) {
+        let id = update.sessionId
+        switch update.kind {
+        case .start(let title, let host):
+            guard sessions[id] == nil else { return }
+            sessions[id] = PlaybackSession(id: id, startedAt: update.timestamp, title: title, host: host)
+            append(NetworkEvent(
+                timestamp: update.timestamp,
+                method: "PLAY",
+                path: title,
+                statusCode: nil,
+                isSuccess: true,
+                durationMs: 0,
+                responseSize: 0,
+                errorDetail: nil,
+                host: host,
+                sessionId: id
+            ))
+        case .line(let level, let text):
+            sessions[id]?.append(PlaybackLogLine(timestamp: update.timestamp, level: level, text: text))
+            #if DEBUG
+            if level.isProblem { print("PLAYBACK [\(level.tag)] \(text)") }
+            #endif
+        case .end(let outcome):
+            sessions[id]?.finish(outcome, at: update.timestamp)
+        }
+    }
+
+    private func append(_ event: NetworkEvent) {
+        events.append(event)
+        if events.count > maxEvents {
+            let dropped = events.prefix(events.count - maxEvents)
+            events.removeFirst(events.count - maxEvents)
+            for id in dropped.compactMap(\.sessionId) {
+                sessions[id] = nil
+            }
+        }
+    }
+
     func clear() {
         events.removeAll()
+        sessions.removeAll()
+    }
+
+    /// The whole log as shareable text (header, events, full sessions).
+    func exportText() -> String {
+        EventLogExporter.text(events: events, sessions: sessions)
     }
 
     /// Only failures go to the console (debug builds). Requests that
@@ -69,7 +135,7 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
         !event.isSuccess
     }
 
-    private static let timeFormatter: DateFormatter = {
+    nonisolated private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         return f
@@ -81,7 +147,7 @@ final class NetworkEventLog: ObservableObject, NetworkEventLogging {
         }.joined(separator: "\n")
     }
 
-    static func consoleLine(for event: NetworkEvent) -> String {
+    nonisolated static func consoleLine(for event: NetworkEvent) -> String {
         let time = timeFormatter.string(from: event.timestamp)
         let status = event.statusCode.map { " → \($0)" } ?? (event.isSuccess ? "" : " → ERR")
         let duration = event.durationMs > 0 ? " (\(event.durationMs)ms)" : ""
