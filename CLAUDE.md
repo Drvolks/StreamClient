@@ -179,6 +179,7 @@ All API responses use `Codable` structs in `Core/Models/`:
 - **Input Components**: `TVTextField`, `TVNumberField` (alert-based input), `TVSettingsSection`
 - **Remote Control**: MPV player handles play/pause, seek via Siri Remote
 - **Larger UI**: Theme provides larger sizes for tvOS (e.g., `cellHeight: 100` vs `60`, `iconSize: 80` vs `48`)
+- **Player vs detail pages**: detail pages (`detailCover`) and the player are both full-screen covers, and a detail page starts playback then `dismiss()`es itself. A player presented before that dismissal was torn down with it (PlayerView's `onDisappear` ended the brand-new catch-up session → Dispatcharr 400 "Missing start parameter" → one frame, then closed). `TVDetailCoverGate` keeps `TVOSNavigation`'s player cover binding false until every detail page has disappeared; keep new detail pages on `detailCover` so they register with it
 
 ## iPhone landscape and the Dynamic Island (#176)
 

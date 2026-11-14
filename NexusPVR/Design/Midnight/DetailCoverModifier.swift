@@ -18,8 +18,12 @@ extension View {
     ) -> some View {
         #if os(tvOS)
         fullScreenCover(item: item, onDismiss: onDismiss) { value in
-            content(value)
-                .presentationBackground(.clear)
+            // Registered with TVDetailCoverGate: the player waits until this
+            // page has gone before presenting, see the gate.
+            TVDetailCoverContent {
+                content(value)
+            }
+            .presentationBackground(.clear)
         }
         #else
         sheet(item: item, onDismiss: onDismiss, content: content)

@@ -1242,6 +1242,7 @@ struct TVOSNavigation: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var client: PVRClient
     @EnvironmentObject private var epgCache: EPGCache
+    @ObservedObject private var detailCoverGate = TVDetailCoverGate.shared
     @State private var sidebarEnabled = true
     @State private var guideSidebarPreferences = UserPreferences.load()
 
@@ -1346,13 +1347,15 @@ struct TVOSNavigation: View {
         }
     }
 
-    /// The player cover's binding. SwiftUI writes `false` here only when the
-    /// cover is dismissed by the system rather than by `stopPlayback()`; that
-    /// goes into the playback session log, since a player closed this way
-    /// otherwise leaves no trace of why.
+    /// The player cover's binding. It stays false while a detail page is on
+    /// screen (`TVDetailCoverGate`): a detail page starts playback and then
+    /// dismisses itself, and a player presented before that dismissal was
+    /// torn down with it. SwiftUI writes `false` here only when the cover is
+    /// dismissed by the system rather than by `stopPlayback()`; that goes into
+    /// the playback session log.
     private var playerCoverBinding: Binding<Bool> {
         Binding(
-            get: { appState.isShowingPlayer },
+            get: { appState.isShowingPlayer && !detailCoverGate.hasOpenCover },
             set: { isShowing in
                 if !isShowing, appState.isShowingPlayer {
                     Dependencies.activePlayerSession.player?.recordAppEvent("Player cover dismissed by the system")
