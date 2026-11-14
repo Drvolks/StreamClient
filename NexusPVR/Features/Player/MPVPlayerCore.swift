@@ -94,6 +94,12 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     private var lastPrintedMPVLog: String?
     private var lastPrintedMPVLogAt: Date = .distantPast
     private let networkEventLogger: any NetworkEventLogging
+    /// The Event Log playback session for this player, started by the first
+    /// `loadURL` and ended by `destroy()`. Written on the main thread before
+    /// mpv is asked to open anything, read from the event loop afterwards.
+    private var playbackSessionId: UUID?
+    /// Last "paused-for-cache" value written to the session, to log changes only.
+    private var lastPausedForCache = false
 
     // Performance stats accumulation
     private var fpsSamples: [Double] = []
@@ -112,6 +118,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
     func destroy() {
         guard !isDestroyed else { return }
         isDestroyed = true
+
+        recordPlayback(.event, "Player closed by the app")
+        endPlaybackSession(.ended("Closed"))
 
         savePlayerStats()
         stopPositionPolling()
@@ -728,17 +737,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             details.append(audio)
         }
 
-        networkEventLogger.log(NetworkEvent(
-            timestamp: Date(),
-            method: "PLAY",
-            path: details.joined(separator: " · "),
-            statusCode: nil,
-            isSuccess: true,
-            durationMs: 0,
-            responseSize: 0,
-            errorDetail: nil,
-            host: NetworkEvent.hostLabel(for: currentURL)
-        ))
+        recordPlayback(.event, "Video: \(details.joined(separator: " · "))")
     }
 
     func setup(errorBinding: Binding<String?>?, isRecordingInProgress: Bool = false, recordingStartTime: Date? = nil, preferKeyframeSeek: Bool = false) -> Bool {
@@ -910,8 +909,11 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         print("MPV: Initialized successfully")
 
-        // Request error/fatal logs only to avoid MPV log buffer overflows
-        // on noisy live HLS streams. Catch-up (#119) gets verbose logging
+        // Info-level logs go to the Event Log's playback session (stream
+        // open, chosen tracks, AO/VO setup, reconnects, why playback ended);
+        // only error/fatal are printed to the console. ffmpeg's own chatter
+        // (HLS segment opens) is at mpv's verbose level, so live HLS doesn't
+        // flood the log buffer. Catch-up (#119) gets verbose logging
         // instead — temporary, for diagnosing the still-unexplained ~25s
         // seek stall (ruled out: decode-error recovery, the seek command
         // and position-poll blocking the main thread, the PixelBuffer
@@ -919,11 +921,13 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         // none of those reproduce it). This should surface exactly which
         // internal step (cache fill, demuxer probe, stream reopen, ...) is
         // slow.
-        mpv_request_log_messages(mpv, preferKeyframeSeek ? "v" : "error")
+        mpv_request_log_messages(mpv, preferKeyframeSeek ? "v" : "info")
 
         // Observe eof-reached so we know when playback finishes
         // (keep-open=yes prevents MPV_EVENT_END_FILE from firing on EOF)
         mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
+        // Buffering stalls, for the playback session log.
+        mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
 
         // Start event loop
         startEventLoop()
@@ -961,6 +965,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         }
         applyHTTPHeaders()
         print("MPV: Loading URL: \(urlString)")
+        startPlaybackSessionIfNeeded(url: url)
+        recordPlayback(.event, "Loading \(LogRedactor.redact(url: url))\(isFallbackAttempt ? " (fallback)" : "")")
 
         let ext = url.pathExtension.lowercased()
         if isRecordingInProgress && ext == "m3u8" {
@@ -984,6 +990,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         if result < 0 {
             let errorStr = String(cString: mpv_error_string(result))
             print("MPV: loadfile command failed: \(errorStr) (\(result))")
+            recordPlayback(.error, "loadfile failed: \(errorStr) (\(result))")
         } else {
             print("MPV: loadfile command sent successfully")
         }
@@ -1003,6 +1010,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         let result = mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag)
         if result < 0 {
             print("MPV: Failed to unpause: \(result)")
+        } else if isPausedFlagChange(to: false) {
+            recordPlayback(.event, "Resumed")
         }
     }
 
@@ -1012,6 +1021,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         let result = mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &flag)
         if result < 0 {
             print("MPV: Failed to pause: \(result)")
+        } else if isPausedFlagChange(to: true) {
+            recordPlayback(.event, "Paused")
         }
     }
 
@@ -1049,17 +1060,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         guard description != lastAudioOutput else { return }
         lastAudioOutput = description
         print("MPV: audio output = \(description)")
-        networkEventLogger.log(NetworkEvent(
-            timestamp: Date(),
-            method: "INFO",
-            path: "audio output",
-            statusCode: nil,
-            isSuccess: true,
-            durationMs: 0,
-            responseSize: 0,
-            errorDetail: "Audio output: \(description)",
-            host: NetworkEvent.hostLabel(for: currentURL)
-        ))
+        recordPlayback(.event, "Audio output: \(description)")
     }
 
     private func stringProperty(_ name: String) -> String? {
@@ -1076,6 +1077,10 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                let text = msg.text {
                 let logText = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
                 let level = msg.level.map { String(cString: $0) } ?? "info"
+                let prefix = msg.prefix.map { String(cString: $0) } ?? "mpv"
+                if Self.belongsInPlaybackLog(logText) {
+                    recordPlayback(PlaybackLogLevel(mpvLevel: level), "[\(prefix)] \(logText)")
+                }
                 if (level == "error" || level == "fatal"),
                    !logText.isEmpty,
                    !logText.hasPrefix("Set property:"),
@@ -1093,21 +1098,8 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                     print("MPV [\(level)]: \(logText)")
                 }
 
-                // Log mpv errors and HTTP warnings to the event log
-                // Skip transient errors during audio/subtitle track changes
-                if (level == "error" || level == "fatal") && !isChangingTrack {
-                    networkEventLogger.log(NetworkEvent(
-                        timestamp: Date(),
-                        method: "PLAY",
-                        path: currentURLPath ?? "mpv",
-                        statusCode: nil,
-                        isSuccess: false,
-                        durationMs: 0,
-                        responseSize: 0,
-                        errorDetail: logText,
-                        host: NetworkEvent.hostLabel(for: currentURL)
-                    ))
-                }
+                // mpv errors reach the Event Log through the playback
+                // session above (a session with errors counts as a problem).
 
                 // Capture HTTP errors for on-screen display.
                 // Prefer HTTP errors (e.g. "503 Service Unavailable") over generic
@@ -1140,17 +1132,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                     print("MPV: Hardware texture failure — falling back to videotoolbox-copy")
                     mpv_set_property_string(mpv, "hwdec", "videotoolbox-copy")
                     hasLoggedVideoInfo = false  // Re-log video info after hwdec change
-                    networkEventLogger.log(NetworkEvent(
-                        timestamp: Date(),
-                        method: "PLAY",
-                        path: "hwdec fallback → videotoolbox-copy",
-                        statusCode: nil,
-                        isSuccess: false,
-                        durationMs: 0,
-                        responseSize: 0,
-                        errorDetail: logText,
-                        host: NetworkEvent.hostLabel(for: currentURL)
-                    ))
+                    recordPlayback(.warn, "Hardware decoding fallback → videotoolbox-copy")
                 }
 
                 // Some live HLS feeds repeatedly fail VT init (err=-12906) before
@@ -1161,19 +1143,23 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                     hasDisabledHwdecForSession = true
                     mpv_set_property_string(mpv, "hwdec", "no")
                     print("MPV: Disabled hwdec for this session after repeated VT init failures")
+                    recordPlayback(.warn, "Hardware decoding disabled after VideoToolbox setup failures")
                 }
                 #endif
             }
 
         case MPV_EVENT_START_FILE:
             print("MPV: Starting file")
+            recordPlayback(.event, "Opening stream")
 
         case MPV_EVENT_FILE_LOADED:
             print("MPV: File loaded successfully")
+            recordPlayback(.event, "Stream opened: \(streamSummary())")
             avoidAccessibilityAudioTrackIfNeeded()
 
         case MPV_EVENT_PLAYBACK_RESTART:
             print("MPV: Playback started/restarted")
+            recordPlayback(.event, "Playback started")
             let info = getVideoInfo()
             DispatchQueue.main.async { [weak self] in
                 self?.onVideoInfoUpdate?(info.codec, info.height, info.hwdec, info.audioChannels, info.droppedFrames, info.gamma, info.fps)
@@ -1189,11 +1175,20 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
 
         case MPV_EVENT_VIDEO_RECONFIG:
             print("MPV: Video reconfigured")
+            if let params = videoOutputSummary() {
+                recordPlayback(.event, "Video output: \(params)")
+            }
 
         case MPV_EVENT_END_FILE:
             if let data = event.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee {
                 let reason = data.reason
                 print("MPV: Playback ended (reason: \(reason))")
+                let errorSuffix = reason == MPV_END_FILE_REASON_ERROR
+                    ? ": \(String(cString: mpv_error_string(data.error)))" : ""
+                recordPlayback(
+                    reason == MPV_END_FILE_REASON_ERROR ? .error : .event,
+                    "Stream ended (\(Self.endFileReasonName(reason)))\(errorSuffix)"
+                )
                 if reason == MPV_END_FILE_REASON_EOF {
                     if shouldIgnoreEOFAsTransientLiveHLS() {
                         print("MPV: Ignoring transient EOF for live HLS stream")
@@ -1222,22 +1217,9 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                         recoverLiveHLSAfterFailureIfNeeded()
                         return
                     }
-                    let path = currentURLPath ?? "unknown"
                     let detail = lastPlaybackError ?? errorStr
                     print("MPV: Playback error: \(errorStr)")
-
-                    // Log to event log (no weak self — NetworkEventLog is a singleton)
-                    networkEventLogger.log(NetworkEvent(
-                        timestamp: Date(),
-                        method: "PLAY",
-                        path: path,
-                        statusCode: nil,
-                        isSuccess: false,
-                        durationMs: 0,
-                        responseSize: 0,
-                        errorDetail: detail,
-                        host: NetworkEvent.hostLabel(for: currentURL)
-                    ))
+                    endPlaybackSession(.failed(LogRedactor.redact(detail)))
 
                     // Show error on screen
                     let errorBinding = self.errorBinding
@@ -1251,6 +1233,16 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
         case MPV_EVENT_PROPERTY_CHANGE:
             if let prop = event.data?.assumingMemoryBound(to: mpv_event_property.self).pointee {
                 let name = String(cString: prop.name)
+                if name == "paused-for-cache",
+                   prop.format == MPV_FORMAT_FLAG,
+                   let flag = prop.data?.assumingMemoryBound(to: Int32.self).pointee {
+                    let buffering = flag != 0
+                    if buffering != lastPausedForCache {
+                        lastPausedForCache = buffering
+                        recordPlayback(.event, buffering ? "Buffering (cache empty)" : "Buffering finished")
+                    }
+                    return
+                }
                 if name == "eof-reached",
                    prop.format == MPV_FORMAT_FLAG,
                    let flag = prop.data?.assumingMemoryBound(to: Int32.self).pointee,
@@ -1265,6 +1257,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
                         return
                     }
                     print("MPV: EOF reached (keep-open)")
+                    recordPlayback(.event, "End of stream reached")
                     DispatchQueue.main.async { [weak self] in
                         self?.onPlaybackEnded?()
                     }
@@ -1300,17 +1293,7 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             self.failedVariantURLs.removeAll()
             self.recoveryVariantCursor = 0
 
-            networkEventLogger.log(NetworkEvent(
-                timestamp: Date(),
-                method: "PLAY",
-                path: mediaURL.path,
-                statusCode: nil,
-                isSuccess: true,
-                durationMs: 0,
-                responseSize: 0,
-                errorDetail: "Master playlist fallback applied",
-                host: NetworkEvent.hostLabel(for: mediaURL)
-            ))
+            self.recordPlayback(.warn, "Master playlist fallback → \(LogRedactor.pathAndQuery(of: mediaURL))")
 
             self.loadURL(mediaURL, isFallbackAttempt: true)
         }
@@ -1579,6 +1562,101 @@ nonisolated class MPVPlayerCore: NSObject, @unchecked Sendable {
             return masterVariantCandidates[index]
         }
         return preferredRecoveryURL(from: current)
+    }
+
+    // MARK: - Playback session (Event Log)
+
+    /// Opens this player's Event Log session on the first URL it plays, with
+    /// the device and the player settings that matter when a stream fails.
+    private func startPlaybackSessionIfNeeded(url: URL) {
+        guard playbackSessionId == nil else { return }
+        let id = UUID()
+        playbackSessionId = id
+        networkEventLogger.logPlayback(PlaybackSessionUpdate(
+            sessionId: id,
+            kind: .start(title: LogRedactor.pathAndQuery(of: url), host: NetworkEvent.hostLabel(for: url))
+        ))
+        recordPlayback(.event, "Device: \(DiagnosticsInfo.deviceModel), \(DiagnosticsInfo.osVersion), app \(DiagnosticsInfo.appVersion)")
+        recordPlayback(.event, "Player: \(playerSettingsSummary())")
+    }
+
+    /// Adds a line to this player's session. Text is redacted first.
+    private func recordPlayback(_ level: PlaybackLogLevel, _ text: String) {
+        guard let id = playbackSessionId else { return }
+        networkEventLogger.logPlayback(PlaybackSessionUpdate(
+            sessionId: id,
+            kind: .line(level, LogRedactor.redact(text))
+        ))
+    }
+
+    private func endPlaybackSession(_ outcome: PlaybackSessionOutcome) {
+        guard let id = playbackSessionId else { return }
+        networkEventLogger.logPlayback(PlaybackSessionUpdate(sessionId: id, kind: .end(outcome)))
+    }
+
+    private var lastRecordedPause: Bool?
+
+    /// True when `paused` differs from what was last written to the session.
+    private func isPausedFlagChange(to paused: Bool) -> Bool {
+        defer { lastRecordedPause = paused }
+        return lastRecordedPause != paused
+    }
+
+    /// mpv lines worth keeping. "Set property:" echoes every option the app
+    /// sets, including `http-header-fields` with the Authorization header.
+    nonisolated static func belongsInPlaybackLog(_ text: String) -> Bool {
+        !text.isEmpty
+            && !text.hasPrefix("Set property:")
+            && !text.localizedCaseInsensitiveContains("http-header-fields")
+            && !text.localizedCaseInsensitiveContains("authorization:")
+    }
+
+    nonisolated static func endFileReasonName(_ reason: mpv_end_file_reason) -> String {
+        switch reason {
+        case MPV_END_FILE_REASON_EOF: return "end of file"
+        case MPV_END_FILE_REASON_STOP: return "stopped"
+        case MPV_END_FILE_REASON_QUIT: return "quit"
+        case MPV_END_FILE_REASON_ERROR: return "error"
+        case MPV_END_FILE_REASON_REDIRECT: return "redirect"
+        default: return "reason \(reason.rawValue)"
+        }
+    }
+
+    private func playerSettingsSummary() -> String {
+        var parts = ["vo", "hwdec", "ao", "audio-channels", "deinterlace", "cache-secs"].map { name in
+            "\(name)=\(stringProperty(name) ?? "?")"
+        }
+        if isRecordingInProgress { parts.append("recording in progress") }
+        if preferKeyframeSeek { parts.append("catch-up") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Container, duration and seekability once mpv has opened the stream.
+    private func streamSummary() -> String {
+        var parts: [String] = []
+        if let format = stringProperty("file-format") { parts.append(format) }
+        if let duration = stringProperty("duration"), let seconds = Double(duration), seconds > 0 {
+            parts.append("duration \(Int(seconds))s")
+        } else {
+            parts.append("no duration")
+        }
+        if let seekable = stringProperty("seekable") { parts.append("seekable=\(seekable)") }
+        if let tracks = stringProperty("track-list/count") { parts.append("\(tracks) track(s)") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Size, pixel format and decoder of the video mpv now outputs.
+    private func videoOutputSummary() -> String? {
+        guard let width = stringProperty("video-params/w"),
+              let height = stringProperty("video-params/h") else { return nil }
+        var parts = ["\(width)x\(height)"]
+        if let format = stringProperty("video-params/pixelformat") { parts.append(format) }
+        if let gamma = stringProperty("video-params/gamma") { parts.append(gamma) }
+        if let fps = stringProperty("container-fps"), let value = Double(fps), value > 0 {
+            parts.append(String(format: "%.3g fps", value))
+        }
+        parts.append("hwdec=\(stringProperty("hwdec-current") ?? "no")")
+        return parts.joined(separator: ", ")
     }
 
     private func shouldEmitMPVLog(level: String, text: String) -> Bool {
