@@ -203,6 +203,9 @@ struct DispatcharrPositionSyncTests {
             }
         }
         try await waitUntil { uploadedTopics()?.keywords == ["Hockey"] }
+        // The observer and the debounced task only hold `sync` weakly: without
+        // this, ARC may release it right after `start()` and nothing is sent.
+        withExtendedLifetime(sync) {}
 
         let uploaded = uploadedTopics()
         #expect(uploaded?.keywords == ["Hockey"])
