@@ -406,10 +406,11 @@ struct VODDetailView: View {
             if viewModel.seasons.count > 1 {
                 #if os(tvOS)
                 VODSeasonPicker(seasons: viewModel.seasons, selection: $viewModel.selectedSeasonNumber, focus: focus)
+                    .padding(.top, 16)
                 #else
                 VODSeasonPicker(seasons: viewModel.seasons, selection: $viewModel.selectedSeasonNumber)
-                #endif
                     .padding(.top, 16)
+                #endif
             }
             if let season = viewModel.selectedSeason {
                 MidnightSectionHeader(title: season.title, meta: seasonMeta(season))
