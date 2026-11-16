@@ -213,6 +213,51 @@ Also defines `PlayerStats` struct for MPV playback statistics.
 Server config stored separately in `ServerConfig` (Core/Models/Session.swift).
 - `customHost` / `customHostMode` - Optional second address for the same server (#165). Edited in Settings without unlinking (`CustomHostSettingsRows` on iOS/macOS, `TVCustomHostSettingsRow` on tvOS). Both sync through iCloud. Apple TV has no mode picker and uses the host only when the mode is `.always` (a host typed on the TV sets `.always`); with another mode chosen elsewhere the TV keeps the server address and shows the row disabled. Top Shelf fetches through `activeBaseURL(onExpensiveNetwork: false)`. Clients resolve `baseURL` per request via `config.activeBaseURL(onExpensiveNetwork: networkPath.isExpensive)` — `.cellularOnly` uses it on cellular/personal hotspot, `.always` everywhere. `updateCustomHost(_:mode:)` changes it without dropping the session.
 
+## App Apple : compiler et tester
+
+L'app est à la racine du dépôt (`NexusPVR.xcodeproj`, schemes `Dispatcharr` et `NextPVR`, iOS 26.2+ pour les tests sur simulateur, iPhone et iPad,
+plus tvOS et macOS). Pas de paquet Swift local : les tests sont ceux des cibles `NexusPVRTests` (Swift Testing)
+et `NexusPVRUITests` (XCUITest, en mode démo), communes aux deux schemes, sur un simulateur.
+
+**D'abord : Xcode est-il sur cette machine ?** Vérifie avec `xcodebuild -version` (ou `xcode-select -p`).
+
+- **Oui (un Mac avec Xcode)** : travaille en local avec XcodeBuildMCP (voir plus bas), n'utilise pas le MCP `macbuild`.
+- **Non (t3code, Linux)** : utilise le MCP `macbuild`, qui compile et teste sur le Mac Studio.
+  N'essaie pas d'installer Xcode ni de lancer `xcodebuild` ici.
+
+### Avec le MCP `macbuild`
+Deux projets côté Mac, un par scheme : `dispatcharr` (scheme `Dispatcharr`) et `nextpvr`
+(scheme `NextPVR`). Vérifie avec `list_projects` ; quand un changement touche du code `#if DISPATCHERPVR`
+ou propre à NextPVR, teste le projet concerné, et les deux pour du code commun.
+
+1. **Commite d'abord.** Un commit local suffit, pas besoin de pousser : le Mac lit le dépôt sur le NAS au SHA demandé,
+   et les worktrees t3code partagent les objets git du dépôt. Passe le SHA complet : `git rev-parse HEAD`.
+2. Choisis un simulateur : `list_devices` avec `project: "dispatcharr"` (ou `"nextpvr"`) (seulement les familles et les versions d'iOS
+   que le projet accepte). Passe un `device` précis, ou seulement `family: "iphone"` / `"ipad"`.
+   Quand l'interface change, teste sur chaque famille visée (iPhone et iPad).
+3. `test_start { project: "dispatcharr" | "nextpvr", sha, device | family }` renvoie un `job_id`.
+4. `job_wait { job_id }` jusqu'à ce que le job soit terminé. Un test complet prend plusieurs minutes.
+5. `job_result { job_id }` :
+   - `passed` : tout passe.
+   - `failed` : des tests échouent. Pour chaque échec, tu reçois le fichier:ligne (relatif au dépôt), le message,
+     et pour un test d'interface la dernière image de l'enregistrement d'écran (en image), la vidéo et la hiérarchie
+     de l'interface au moment de l'échec (en texte). Regarde l'image et la hiérarchie avant de modifier le code.
+   - `build_failed` : ça ne compile pas. Voir `build_errors` (fichier:ligne).
+   - `error` : problème d'infrastructure (Mac, NAS, simulateur, dépendance introuvable, `Configs/Secret.xcconfig`
+     absent du `secrets_dir` du Mac). Lis le message et `job_log`. Ne « corrige » pas le code de l'app pour ça : signale-le.
+6. Corrige, commite, recommence.
+
+Autres outils : `build_start` (compile seulement ; `platform: "ios-sim"` ou `"macos"`),
+`screenshot_start` (lance l'app d'un build iOS, ouvre éventuellement un lien profond `dispatcharr://…`
+ou `nexuspvr://…` selon le projet, renvoie une capture), `job_log`, `job_cancel`, `list_jobs`.
+Les fichiers complets sont dans `/mnt/agents/macbuild/results/<job_id>/`.
+
+**Limites connues** :
+- tvOS n'est pas couvert par `macbuild` (simulateurs iOS et build macOS seulement) : le code `#if os(tvOS)`
+  n'est ni compilé ni testé là-bas. Signale-le quand un changement touche tvOS.
+- `Configs/Secret.xcconfig` est hors git : le Mac le fournit depuis son `secrets_dir`.
+- MPVKit (`https://github.com/Drvolks/MPVKit`) est une dépendance publique en HTTPS, résolue par le Mac.
+
 ## XcodeBuildMCP Integration
 **IMPORTANT**: This project uses XcodeBuildMCP for all Xcode operations.
 ## Build Commands
