@@ -32,6 +32,15 @@ struct DispatcharrPositionSyncTests {
             .flatMap { DispatcharrAppData.decode(RecordingPositionStore.self, from: $0) }
     }
 
+    /// Polls until `condition` holds or `timeout` passes. A fixed sleep is not enough
+    /// on a loaded test machine (the whole suite runs in parallel).
+    private func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     // MARK: - Detecting the endpoint
 
     @Test("An older server's web page means no server sync, and nothing is written")
@@ -187,11 +196,18 @@ struct DispatcharrPositionSyncTests {
 
         local.topics.add("Hockey", at: date(0))
         center.post(name: TopicKeywordStore.didSaveNotification, object: nil)
-        try await Task.sleep(for: .milliseconds(200))
 
-        let uploaded = server.values[DispatcharrAppData.topicKeywordsKey].flatMap {
-            DispatcharrAppData.decode(TopicKeywordStore.self, from: $0)
+        func uploadedTopics() -> TopicKeywordStore? {
+            server.values[DispatcharrAppData.topicKeywordsKey].flatMap {
+                DispatcharrAppData.decode(TopicKeywordStore.self, from: $0)
+            }
         }
+        try await waitUntil { uploadedTopics()?.keywords == ["Hockey"] }
+        // The observer and the debounced task only hold `sync` weakly: without
+        // this, ARC may release it right after `start()` and nothing is sent.
+        withExtendedLifetime(sync) {}
+
+        let uploaded = uploadedTopics()
         #expect(uploaded?.keywords == ["Hockey"])
     }
 
