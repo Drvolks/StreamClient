@@ -113,6 +113,7 @@ caffeinate -di -w $$ &
 # --- Determine build number from git commit count ---
 
 cd "$SCRIPT_DIR"
+git pull
 BUILD_NUMBER=$(git rev-list HEAD --count)
 echo "=== Build number (git commit count): $BUILD_NUMBER ==="
 
