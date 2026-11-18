@@ -11,6 +11,11 @@ import SwiftUI
 struct VODSeasonPicker: View {
     let seasons: [VODSeason]
     @Binding var selection: Int?
+    #if os(tvOS)
+    /// The On Demand page's focus: a season chip has neighbors to its left,
+    /// so a left press only goes to the sidebar from the first one.
+    var focus: FocusState<String?>.Binding
+    #endif
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -41,6 +46,7 @@ struct VODSeasonPicker: View {
         }
         .buttonStyle(TVMidnightButtonStyle(focusScale: 1.04))
         .accessibilityIdentifier("vod-season-\(season.number)")
+        .focused(focus, equals: "vod-focus-season-\(season.number)")
     }
     #else
     private let spacing: CGFloat = 8

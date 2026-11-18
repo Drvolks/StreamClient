@@ -18,18 +18,37 @@ struct VODDetailView: View {
     @State private var resumeCandidate: VODPlayable?
     @State private var playError: String?
     #if os(tvOS)
-    @FocusState private var isPrimaryActionFocused: Bool
+    /// The On Demand page's focus, which tells it whether a left press moved
+    /// between this page's buttons or should go to the sidebar.
+    private var focus: FocusState<String?>.Binding
     @State private var showingStreamPicker = false
+
+    static let playFocusKey = "vod-focus-play"
+    static let startOverFocusKey = "vod-focus-start-over"
+    static let streamFocusKey = "vod-focus-stream"
     #endif
 
+    #if os(tvOS)
+    init(item: VODItem, client: PVRClient, appState: AppState, focus: FocusState<String?>.Binding) {
+        self.client = client
+        self.appState = appState
+        self.focus = focus
+        self._viewModel = StateObject(wrappedValue: Self.makeViewModel(item: item, client: client))
+    }
+    #else
     init(item: VODItem, client: PVRClient, appState: AppState) {
         self.client = client
         self.appState = appState
-        self._viewModel = StateObject(wrappedValue: VODDetailViewModel(
+        self._viewModel = StateObject(wrappedValue: Self.makeViewModel(item: item, client: client))
+    }
+    #endif
+
+    private static func makeViewModel(item: VODItem, client: PVRClient) -> VODDetailViewModel {
+        VODDetailViewModel(
             item: item,
             provider: client,
             seededProgress: client.config.isDemoMode ? DemoVODLibrary.seededProgress : [:]
-        ))
+        )
     }
 
     private var item: VODItem { viewModel.item }
@@ -105,7 +124,7 @@ struct VODDetailView: View {
         }
         #if os(tvOS)
         .onAppear {
-            DispatchQueue.main.async { isPrimaryActionFocused = true }
+            DispatchQueue.main.async { focus.wrappedValue = Self.playFocusKey }
         }
         #endif
     }
@@ -227,13 +246,16 @@ struct VODDetailView: View {
         }
         .accessibilityIdentifier("vod-play-button")
         #if os(tvOS)
-        .focused($isPrimaryActionFocused)
+        .focused(focus, equals: Self.playFocusKey)
         #endif
 
         if item.kind == .movies, viewModel.watchState(for: playable.uuid) != .new {
             actionButton("Start over", systemImage: "gobackward", isPrimary: false) {
                 play(playable, fromBeginning: true)
             }
+            #if os(tvOS)
+            .focused(focus, equals: Self.startOverFocusKey)
+            #endif
         }
         if let remaining = remainingText(for: playable.uuid) {
             Text(remaining)
@@ -254,6 +276,7 @@ struct VODDetailView: View {
                 showingStreamPicker = true
             }
             .accessibilityIdentifier("vod-stream-picker")
+            .focused(focus, equals: Self.streamFocusKey)
             #else
             HStack(spacing: 8) {
                 Text("Stream")
@@ -381,8 +404,13 @@ struct VODDetailView: View {
             .accessibilityIdentifier("vod-episodes-empty")
         } else {
             if viewModel.seasons.count > 1 {
+                #if os(tvOS)
+                VODSeasonPicker(seasons: viewModel.seasons, selection: $viewModel.selectedSeasonNumber, focus: focus)
+                    .padding(.top, 16)
+                #else
                 VODSeasonPicker(seasons: viewModel.seasons, selection: $viewModel.selectedSeasonNumber)
                     .padding(.top, 16)
+                #endif
             }
             if let season = viewModel.selectedSeason {
                 MidnightSectionHeader(title: season.title, meta: seasonMeta(season))

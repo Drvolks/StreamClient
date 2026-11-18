@@ -27,7 +27,14 @@ private struct VODContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     #if os(tvOS)
     @Environment(\.requestSidebarFocus) private var requestSidebarFocus
-    @FocusState private var focusedItemID: String?
+    /// The focused poster (its item id) or control (one of the `*FocusKey`s).
+    @FocusState private var focusedTarget: String?
+    /// Set to the focused target at the end of each move command and cleared
+    /// whenever focus changes. Focus updates (and the resulting `onChange`)
+    /// happen before `.onMoveCommand` runs, so when the handler still finds
+    /// the focused target in here, a left press did not move focus: nothing
+    /// sits to its left and the sidebar takes it, as on the Channels grid.
+    @State private var lastKnownFocusedTarget: String?
     @State private var requestSearchKeyboard = false
     /// The poster to return focus to when a title's page closes.
     @State private var lastOpenedItemID: String?
@@ -67,8 +74,13 @@ private struct VODContentView: View {
                     .accessibilityHidden(selectedItem != nil)
                     .disabled(selectedItem != nil)
                 if let selectedItem {
+                    #if os(tvOS)
+                    VODDetailView(item: selectedItem, client: client, appState: appState, focus: $focusedTarget)
+                        .id(selectedItem.id)
+                    #else
                     VODDetailView(item: selectedItem, client: client, appState: appState)
                         .id(selectedItem.id)
+                    #endif
                 }
             }
         }
@@ -104,7 +116,18 @@ private struct VODContentView: View {
             }
         }
         .onMoveCommand { direction in
-            if direction == .left { requestSidebarFocus() }
+            // Left moves to the poster or button beside the focused one; only
+            // when there is none (the press left focus where it was) does it
+            // hand focus to the sidebar. Controls that aren't tracked have
+            // nothing beside them, so left always leaves them for the sidebar.
+            if direction == .left,
+               focusedTarget == nil || focusedTarget == lastKnownFocusedTarget {
+                requestSidebarFocus()
+            }
+            lastKnownFocusedTarget = focusedTarget
+        }
+        .onChange(of: focusedTarget) { _, _ in
+            lastKnownFocusedTarget = nil
         }
         #endif
     }
@@ -189,7 +212,9 @@ private struct VODContentView: View {
         } else {
             TVPageHeader(kicker: "On Demand", title: kind.title, readout: readout) {
                 categoryPicker
+                    .focused($focusedTarget, equals: Self.categoryFocusKey)
                 tvSearchButton
+                    .focused($focusedTarget, equals: Self.searchFocusKey)
             }
             .focusSection()
         }
@@ -223,12 +248,15 @@ private struct VODContentView: View {
         )
     }
 
+    private static let categoryFocusKey = "vod-focus-category"
+    private static let searchFocusKey = "vod-focus-search"
+
     private func focusPoster(_ id: String?) {
         guard selectedItem == nil else { return }
         let ids = viewModel.items.map(\.id)
         guard let target = id.flatMap({ ids.contains($0) ? $0 : nil }) ?? ids.first else { return }
         DispatchQueue.main.async {
-            focusedItemID = target
+            focusedTarget = target
         }
     }
     #endif
@@ -314,10 +342,10 @@ private struct VODContentView: View {
         #endif
         #if os(tvOS)
         .onAppear {
-            if focusedItemID == nil { focusPoster(lastOpenedItemID) }
+            if focusedTarget == nil { focusPoster(lastOpenedItemID) }
         }
         .onChange(of: viewModel.items.map(\.id)) { _, ids in
-            if !ids.contains(focusedItemID ?? "") { focusPoster(nil) }
+            if !ids.contains(focusedTarget ?? "") { focusPoster(nil) }
         }
         #endif
     }
@@ -357,7 +385,7 @@ private struct VODContentView: View {
             )
         }
         .buttonStyle(TVMidnightButtonStyle(focusScale: 1.04))
-        .focused($focusedItemID, equals: item.id)
+        .focused($focusedTarget, equals: item.id)
         #else
         PosterCard(
             title: item.name,
