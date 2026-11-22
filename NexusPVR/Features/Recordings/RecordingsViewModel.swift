@@ -23,9 +23,26 @@ final class RecordingsViewModel: ObservableObject {
 
     private let client: PVRClient
     private let launchArguments = ProcessInfo.processInfo.arguments
+    /// Whether to read the recordings' files to check their duration
+    /// (Settings › Recordings, off by default).
+    private let verifiesDurations: () -> Bool
+    /// The running duration check; replaced (and cancelled) on every load.
+    private(set) var probeTask: Task<Void, Never>?
 
-    init(client: PVRClient) {
+    /// Recordings checked at the same time. Each check sends the server
+    /// several range requests, so a library of thousands is walked a couple
+    /// at a time instead of all at once.
+    nonisolated static let maxConcurrentProbes = 2
+    /// Most bytes a single probe request keeps, whatever the server sends:
+    /// one that ignores `Range` answers with the whole recording.
+    nonisolated static let maxProbeResponseBytes = 4 * 1_048_576
+
+    init(
+        client: PVRClient,
+        verifiesDurations: @escaping () -> Bool = { UserPreferences.load().verifyRecordingDurations }
+    ) {
         self.client = client
+        self.verifiesDurations = verifiesDurations
     }
 
     var hasActiveRecordings: Bool {
@@ -177,13 +194,11 @@ final class RecordingsViewModel: ObservableObject {
         detected >= (expected * 90 / 100)
     }
 
-    private func probeDurations() {
-        durationMismatches.removeAll()
-        durationVerified.removeAll()
-        durationUnverifiable.removeAll()
+    /// The completed recordings whose duration still needs checking: the
+    /// ones with a trusted cached result are applied right away instead.
+    func recordingsToProbe() -> [(recording: Recording, expectedDuration: Int)] {
         let cache = Self.loadProbeCache()
-
-        #if DISPATCHERPVR
+        var pending: [(recording: Recording, expectedDuration: Int)] = []
         for recording in completedRecordings {
             guard recording.recordingStatus.isCompleted,
                   let expectedDuration = recording.duration,
@@ -196,37 +211,74 @@ final class RecordingsViewModel: ObservableObject {
                 // Don't trust cached mismatches; source files may be fixed later.
                 removeProbeCache(recordingId: recording.id)
             }
-            Task {
-                await probeMKVDuration(recording, expectedDuration: expectedDuration)
+            pending.append((recording, expectedDuration))
+        }
+        return pending
+    }
+
+    func probeDurations() {
+        probeTask?.cancel()
+        probeTask = nil
+        durationMismatches.removeAll()
+        durationVerified.removeAll()
+        durationUnverifiable.removeAll()
+        guard verifiesDurations() else { return }
+
+        let pending = recordingsToProbe()
+        guard !pending.isEmpty else { return }
+        print("Duration probe: \(pending.count) completed recordings to check")
+        probeTask = Task { [weak self] in
+            await withTaskGroup(of: Void.self) { group in
+                var index = 0
+                while index < pending.count {
+                    if index >= Self.maxConcurrentProbes {
+                        // Wait for a check to finish before starting the next.
+                        await group.next()
+                    }
+                    guard !Task.isCancelled else { break }
+                    let item = pending[index]
+                    index += 1
+                    group.addTask { [weak self] in
+                        await self?.probeDuration(item.recording, expectedDuration: item.expectedDuration)
+                    }
+                }
+                if Task.isCancelled { group.cancelAll() }
             }
         }
-        return
+    }
+
+    private func probeDuration(_ recording: Recording, expectedDuration: Int) async {
+        #if DISPATCHERPVR
+        await probeMKVDuration(recording, expectedDuration: expectedDuration)
+        #else
+        let fileExt = recording.file?.lowercased().components(separatedBy: ".").last
+        if fileExt == "mp4" || fileExt == "m4v" {
+            await probeMP4Duration(recording, expectedDuration: expectedDuration)
+        } else {
+            await probeRecordingDuration(recording, expectedDuration: expectedDuration)
+        }
         #endif
-        print("Duration probe: \(completedRecordings.count) completed recordings to check")
-        for recording in completedRecordings {
-            guard recording.recordingStatus.isCompleted,
-                  let expectedDuration = recording.duration,
-                  expectedDuration > 0 else {
-                print("Duration probe: skipping '\(recording.name)' — status: \(recording.recordingStatus), duration: \(recording.duration ?? -1)")
-                continue
-            }
-            if let cached = cache[String(recording.id)] {
-                if isDurationLikelyValid(expected: expectedDuration, detected: cached) {
-                    applyProbeResult(recording: recording, expectedDuration: expectedDuration, detectedSeconds: cached)
-                    continue
-                }
-                // Don't trust cached mismatches; source files may be fixed later.
-                removeProbeCache(recordingId: recording.id)
-            }
-            let fileExt = recording.file?.lowercased().components(separatedBy: ".").last
-            Task {
-                if fileExt == "mp4" || fileExt == "m4v" {
-                    await probeMP4Duration(recording, expectedDuration: expectedDuration)
-                } else {
-                    await probeRecordingDuration(recording, expectedDuration: expectedDuration)
-                }
-            }
+    }
+
+    /// Fetches `request`, keeping at most `maxBytes` of the body and closing
+    /// the connection once that many have arrived, so a server that ignores
+    /// `Range` can't stream a whole recording into memory.
+    @concurrent
+    nonisolated static func fetchCapped(
+        _ request: URLRequest,
+        maxBytes: Int = maxProbeResponseBytes,
+        delegate: (any URLSessionTaskDelegate & Sendable)? = nil
+    ) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await URLSession.shared.bytes(for: request, delegate: delegate)
+        defer { bytes.task.cancel() }
+        var data = Data()
+        data.reserveCapacity(min(maxBytes, 2_097_152))
+        guard maxBytes > 0 else { return (data, response) }
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count >= maxBytes { break }
         }
+        return (data, response)
     }
 
     private func applyProbeResult(recording: Recording, expectedDuration: Int, detectedSeconds: Int) {
@@ -266,7 +318,7 @@ final class RecordingsViewModel: ObservableObject {
             if contentLength == nil {
                 var rangeProbe = request
                 rangeProbe.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-                let (_, rangeResponse) = try await URLSession.shared.data(for: rangeProbe)
+                let (_, rangeResponse) = try await Self.fetchCapped(rangeProbe, maxBytes: 0)
                 if let httpResponse = rangeResponse as? HTTPURLResponse,
                    let rangeStr = httpResponse.value(forHTTPHeaderField: "Content-Range"),
                    let slashIndex = rangeStr.lastIndex(of: "/") {
@@ -282,7 +334,7 @@ final class RecordingsViewModel: ObservableObject {
 
             // Download first 2MB for first PTS
             request.setValue("bytes=0-2097151", forHTTPHeaderField: "Range")
-            let (headData, headDataResponse) = try await URLSession.shared.data(for: request)
+            let (headData, headDataResponse) = try await Self.fetchCapped(request)
             let headHTTP = headDataResponse as? HTTPURLResponse
             let headStatus = headHTTP?.statusCode ?? 0
             let headContentType = headHTTP?.value(forHTTPHeaderField: "Content-Type") ?? "<none>"
@@ -305,7 +357,7 @@ final class RecordingsViewModel: ObservableObject {
                 // Download last 2MB for last PTS
                 let tailStart = fileSize - 2_097_152
                 request.setValue("bytes=\(tailStart)-\(fileSize - 1)", forHTTPHeaderField: "Range")
-                let (tailData, tailResponse) = try await URLSession.shared.data(for: request)
+                let (tailData, tailResponse) = try await Self.fetchCapped(request)
                 let tailHTTP = tailResponse as? HTTPURLResponse
                 tailStatus = tailHTTP?.statusCode ?? 0
                 tailContentType = tailHTTP?.value(forHTTPHeaderField: "Content-Type") ?? "<none>"
@@ -329,6 +381,12 @@ final class RecordingsViewModel: ObservableObject {
             } else {
                 // Server sent the whole file, extract last PTS from the end of what we got
                 print("Duration probe: '\(recording.name)' — server doesn't support range requests, using full response (\(headData.count) bytes)")
+                guard Int64(headData.count) >= fileSize else {
+                    // Only the first few MB were kept: its end isn't the recording's.
+                    print("Duration probe: '\(recording.name)' — response capped at \(headData.count) of \(fileSize) bytes, can't verify")
+                    durationUnverifiable.insert(recording.id)
+                    return
+                }
                 tailStatus = headStatus
                 tailContentType = headContentType
                 tailBytes = headData.count
@@ -490,7 +548,7 @@ final class RecordingsViewModel: ObservableObject {
                 request.setValue(value, forHTTPHeaderField: key)
             }
             request.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
-            let (chunk, response) = try await URLSession.shared.data(for: request)
+            let (chunk, response) = try await Self.fetchCapped(request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 206 else { continue }
 
             let ptsValues = Self.extractPTSValues(from: chunk, matchingPID: pid)
@@ -546,10 +604,10 @@ final class RecordingsViewModel: ObservableObject {
             var rangeRequest = request
             // MKV duration is in Segment Info, typically within first 64KB
             rangeRequest.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
-            var (data, response) = try await URLSession.shared.data(for: rangeRequest, delegate: redirectDelegate)
+            var (data, response) = try await Self.fetchCapped(rangeRequest, delegate: redirectDelegate)
             if Self.isHLSPlaylist(data), (response as? HTTPURLResponse)?.statusCode == 206 {
                 // Only part of the playlist came back; its length needs all of it.
-                (data, response) = try await URLSession.shared.data(for: request, delegate: redirectDelegate)
+                (data, response) = try await Self.fetchCapped(request, delegate: redirectDelegate)
             }
 
             let detected = Self.isHLSPlaylist(data)
@@ -585,7 +643,7 @@ final class RecordingsViewModel: ObservableObject {
             }
             // mvhd is typically within the first 64KB (inside moov/mvhd)
             request.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await Self.fetchCapped(request)
 
             guard let detectedSeconds = Self.extractMP4Duration(from: data) else {
                 print("Duration probe: '\(recording.name)' — could not extract MP4 duration")
