@@ -56,6 +56,11 @@ nonisolated struct UserPreferences: Codable {
     var landingTabRawValue: String = LandingTabOption.defaultRawValue
     /// When true, all recording features (tabs, menus, buttons) are hidden (#110).
     var hideRecordings: Bool = false
+    /// When true, the Recordings screen reads the start (and, for MPEG-TS,
+    /// the end) of each completed recording's file to check its real length
+    /// against the server's. Off by default: with a large library it sends
+    /// the server a stream of requests every time the list loads.
+    var verifyRecordingDurations: Bool = false
     /// Persisted raw value of the appearance override (#108). Stored as a
     /// `String` for the same reason as `landingTabRawValue`: this model stays
     /// free of UI (SwiftUI) dependencies. Resolve via the `theme` property.
@@ -204,6 +209,7 @@ nonisolated struct UserPreferences: Codable {
         case guideProfileIds
         case landingTabRawValue
         case hideRecordings
+        case verifyRecordingDurations
         case themeRawValue
         case updatedAt
     }
@@ -250,6 +256,9 @@ nonisolated struct UserPreferences: Codable {
         guideProfileIds = try container.decodeIfPresent([Int].self, forKey: .guideProfileIds) ?? []
         landingTabRawValue = try container.decodeIfPresent(String.self, forKey: .landingTabRawValue) ?? LandingTabOption.defaultRawValue
         hideRecordings = try container.decodeIfPresent(Bool.self, forKey: .hideRecordings) ?? false
+        // Prefs written before this setting existed don't scan: an upgrade
+        // stops the duration check until it's turned on.
+        verifyRecordingDurations = try container.decodeIfPresent(Bool.self, forKey: .verifyRecordingDurations) ?? false
         themeRawValue = try container.decodeIfPresent(String.self, forKey: .themeRawValue) ?? AppTheme.defaultRawValue
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
@@ -277,6 +286,7 @@ nonisolated struct UserPreferences: Codable {
         try container.encode(guideProfileIds, forKey: .guideProfileIds)
         try container.encode(landingTabRawValue, forKey: .landingTabRawValue)
         try container.encode(hideRecordings, forKey: .hideRecordings)
+        try container.encode(verifyRecordingDurations, forKey: .verifyRecordingDurations)
         try container.encode(themeRawValue, forKey: .themeRawValue)
         try container.encode(updatedAt, forKey: .updatedAt)
     }

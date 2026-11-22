@@ -30,6 +30,7 @@ struct SettingsView: View {
     #endif
     @State private var landingTab: LandingTabOption = UserPreferences.load().landingTab
     @State private var hideRecordings: Bool = UserPreferences.load().hideRecordings
+    @State private var verifyRecordingDurations: Bool = UserPreferences.load().verifyRecordingDurations
     @State private var theme: AppTheme = UserPreferences.load().theme
     #if os(tvOS)
     @State private var uiFontSize: UIFontSize = UserPreferences.load().uiFontSize
@@ -326,6 +327,11 @@ struct SettingsView: View {
         case .recordings:
             tvSwitchRow("Hide Recording Features", isOn: hideRecordings) {
                 saveHideRecordings(!hideRecordings)
+            }
+            if !hideRecordings {
+                tvSwitchRow("Verify Recording Durations", isOn: verifyRecordingDurations) {
+                    saveVerifyRecordingDurations(!verifyRecordingDurations)
+                }
             }
         case .advanced:
             tvRow("Deinterlacing", value: deinterlaceMode.label) { activeTVPopup = .deinterlace }
@@ -1058,6 +1064,13 @@ struct SettingsView: View {
         )
     }
 
+    private var verifyRecordingDurationsSelection: Binding<Bool> {
+        Binding(
+            get: { verifyRecordingDurations },
+            set: { newValue in saveVerifyRecordingDurations(newValue) }
+        )
+    }
+
     private var availableLandingOptions: [LandingTabOption] {
         LandingTabOption.allCases.filter { option in
             #if DISPATCHERPVR
@@ -1096,6 +1109,13 @@ struct SettingsView: View {
         prefs.save()
         // Apply immediately so tabs, menus and buttons update without relaunch.
         appState.hideRecordings = hidden
+    }
+
+    private func saveVerifyRecordingDurations(_ enabled: Bool) {
+        verifyRecordingDurations = enabled
+        var prefs = UserPreferences.load()
+        prefs.verifyRecordingDurations = enabled
+        prefs.save()
     }
 
 
@@ -1834,6 +1854,15 @@ extension SettingsView {
             Toggle("Hide Recording Features", isOn: hideRecordingsSelection)
                 .accessibilityIdentifier("settings-hide-recordings-toggle")
         }
+        if !hideRecordings {
+            MacSettingsRow(
+                title: "Verify Recording Durations",
+                subtitle: "Reads part of each completed recording's file to flag ones shorter than expected. Sends the server several requests per recording."
+            ) {
+                Toggle("Verify Recording Durations", isOn: verifyRecordingDurationsSelection)
+                    .accessibilityIdentifier("settings-verify-recording-durations-toggle")
+            }
+        }
     }
 
     @ViewBuilder
@@ -1926,7 +1955,8 @@ extension SettingsView {
         case .topics:
             return topicList.isEmpty ? "None" : topicList.joined(separator: " · ")
         case .recordings:
-            return hideRecordings ? "Hidden" : "Shown"
+            if hideRecordings { return "Hidden" }
+            return verifyRecordingDurations ? "Shown · Durations verified" : "Shown"
         case .advanced:
             return "Deinterlacing: \(deinterlaceMode.label)"
         }
